@@ -6,9 +6,9 @@
 \begin_preamble
  \usepackage{parskip}
 \setlength{\parindent}{0pt}
-\lhead{Spark --- Specifications}
+\lhead{Specifications for the Spark File-transfer Tool}
 \chead{}
-\rhead{Version 1.0}
+\rhead{Version 0.1}
 \lfoot{Pierre-André Saulais <pasaulais@free.fr>}
 \cfoot{}
 \rfoot{\thepage}
@@ -57,6 +57,34 @@
 \end_header
 
 \begin_body
+
+\begin_layout Title
+Specifications for the Spark File-transfer Tool (version 0.1)
+\end_layout
+
+\begin_layout Author
+Pierre-André Saulais <pasaulais@free.fr>
+\end_layout
+
+\begin_layout Date
+Last updated --- August 18, 2009
+\end_layout
+
+\begin_layout Standard
+\begin_inset CommandInset toc
+LatexCommand tableofcontents
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Newpage pagebreak
+\end_inset
+
+
+\end_layout
 
 \begin_layout Section*
 Project summary and goals
@@ -247,10 +275,48 @@ Exact version to be determined
 \end_inset
 
  through PyQt4 for the GUI.
+ SQLite is used for data persistence.
  The reason behind these choices is to be able to quickly develop a multi-platfo
 rm GUI application with a language that is simple, flexible and fun to use.
  In the future, extension modules might be written in C to improve the performan
 ce of critical parts of the application.
+\end_layout
+
+\begin_layout Subsection
+Common concepts
+\end_layout
+
+\begin_layout Subsubsection
+Blocks
+\end_layout
+
+\begin_layout Standard
+One major feature is the ability to resume a transfer that's been aborted
+ for whatever reason.
+ This feature is implemented by dividing a file into chunks (called 
+\emph on
+blocks
+\emph default
+) and keeping track of which blocks have been successfully received.
+ That way, resuming an aborted transfer is only a matter of figuring out
+ which blocks are missing and sending them.
+\end_layout
+
+\begin_layout Subsubsection
+Transfers
+\end_layout
+
+\begin_layout Standard
+A transfer is the operation of sending blocks from the server to the client.
+ Transfers have a state (eg.
+ active, paused, finished, failed, etc) and notifications are sent whenever
+ it changes.
+ Transfers also have an identifier, which means a server can have many transfers
+ active at the same time.
+ Every block sent in the context of a transfer comes from the same file,
+ but the client is free to specify which blocks are to be sent.
+ Typically the client asks for every missing block of a given file, which
+ is the whole file if it is the first transfer.
 \end_layout
 
 \begin_layout Subsection
@@ -294,22 +360,6 @@ The client and the server communicate through messages.
 A notification is a message that says something has happened.
  For example, the client periodically sends a message to notify the server
  of the number of blocks that have been received (valid or not).
-\end_layout
-
-\begin_layout Subsubsection
-Blocks
-\end_layout
-
-\begin_layout Standard
-One major feature is the ability to resume a transfer that's been aborted
- for whatever reason.
- This feature is implemented by dividing a file into chunks (called 
-\emph on
-blocks
-\emph default
-) and keeping track of which blocks have been successfully received.
- That way, resuming an aborted transfer is only a matter of figuring out
- which blocks are missing and sending them.
 \end_layout
 
 \begin_layout Subsubsection
@@ -357,23 +407,6 @@ SSH
  transfering data.
  It would also be fairly easy to implement another kind of channel without
  modifying the file-transfer logic.
-\end_layout
-
-\begin_layout Subsubsection
-Transfers
-\end_layout
-
-\begin_layout Standard
-A transfer is the operation of sending blocks from the server to the client.
- Transfers have a state (eg.
- active, paused, finished, failed, etc) and notifications are sent whenever
- it changes.
- Transfers also have an identifier, which means a server can have many transfers
- active at the same time.
- Every block sent in the context of a transfer comes from the same file,
- but the client is free to specify which blocks are to be sent.
- Typically the client asks for every missing block of a given file, which
- is the whole file if it is the first transfer.
 \end_layout
 
 \begin_layout Subsection
