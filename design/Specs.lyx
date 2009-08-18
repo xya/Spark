@@ -1,0 +1,237 @@
+#LyX 1.5.6 created this file. For more info see http://www.lyx.org/
+\lyxformat 276
+\begin_document
+\begin_header
+\textclass article
+\begin_preamble
+\usepackage{parskip}
+\setlength{\parindent}{0pt}
+\lhead{Spark --- Specifications}
+\chead{}
+\rhead{Version 1.0}
+\lfoot{Pierre-André Saulais <pasaulais@free.fr>}
+\cfoot{}
+\rfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\end_preamble
+\language english
+\inputencoding auto
+\font_roman charter
+\font_sans helvet
+\font_typewriter beramono
+\font_default_family default
+\font_sc false
+\font_osf false
+\font_sf_scale 100
+\font_tt_scale 100
+\graphics default
+\paperfontsize default
+\spacing single
+\papersize a4paper
+\use_geometry true
+\use_amsmath 1
+\use_esint 1
+\cite_engine basic
+\use_bibtopic false
+\paperorientation portrait
+\leftmargin 2cm
+\topmargin 2cm
+\rightmargin 2cm
+\bottommargin 2cm
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\defskip medskip
+\quotes_language english
+\papercolumns 1
+\papersides 1
+\paperpagestyle fancy
+\tracking_changes false
+\output_changes false
+\author "" 
+\author "" 
+\end_header
+
+\begin_body
+
+\begin_layout Section*
+Project summary and goals
+\end_layout
+
+\begin_layout Standard
+Spark is a tool for transfering files over the Internet.
+ It is meant to be robust and easy to use, as well as replacing IM software
+ for sending files.
+ Indeed IM file-transfer protocols are usually lacking in robustness (interrupte
+d transfers can't be resumed) and sometimes in privacy and speed (files
+ might be forwarded by an IM server).
+ 
+\end_layout
+
+\begin_layout Standard
+Spark is 
+\emph on
+synchronous
+\emph default
+, which means both parties have to agree to use it at the same time before
+ sending files.
+ It requires some additional communication, typically exchanging IP addresses.
+ That's why it's meant to be used along with IM software and only as a replaceme
+nt for the file-transfer part.
+ There is no chat features built-in and no plan to implement such features
+ in the future.
+\end_layout
+
+\begin_layout Standard
+IM software isn't the only way to send file over the Internet, but other
+ tools have their share of constraints.
+ Most file-transfer protocols (like FTP or SCP/SFTP) require a permanent
+ server to be set up and configured before you can start using them.
+ Most networking file systems (like NFS or SMB) haven't been designed with
+ security or the Internet in mind.
+ Email can be used to transfer files, but typically mailboxes have either
+ a per-file size cap or a global size quota.
+ That's why sending files by email is only practical for small files.
+\end_layout
+
+\begin_layout Section
+Functional specifications
+\end_layout
+
+\begin_layout Section
+Technical specifications
+\end_layout
+
+\begin_layout Subsection
+Client and server
+\end_layout
+
+\begin_layout Standard
+From an implementation point of view there is a clear separation between
+ sending and receiving files.
+ The part in charge of sending files is called the 
+\emph on
+server
+\emph default
+ while it is the 
+\emph on
+client's
+\emph default
+ responsability to receive them.
+ As far as the user is concerned there is no separation.
+ When two users are connected they can both send and receive files at the
+ same time.
+\end_layout
+
+\begin_layout Subsection
+Messages
+\end_layout
+
+\begin_layout Standard
+The client and the server communicate through messages.
+ A message could be a request, a response or a notification.
+ Requests are usually sent by the client, and are answered by a response
+ from the server.
+ 
+\end_layout
+
+\begin_layout Standard
+A notification is a message that says something has happened.
+ For example, the client periodically sends a message to notify the server
+ of the number of blocks that have been received (valid or not).
+\end_layout
+
+\begin_layout Subsection
+Blocks
+\end_layout
+
+\begin_layout Standard
+One major feature is the ability to resume a transfer that's been aborted
+ for whatever reason.
+ This feature is implemented by dividing a file into chunks (called 
+\emph on
+blocks
+\emph default
+) and keeping track of which blocks have been successfully received.
+ That way, resuming an aborted transfer is only a matter of figuring out
+ which blocks are missing and sending them.
+\end_layout
+
+\begin_layout Subsection
+Channels
+\end_layout
+
+\begin_layout Standard
+Different transport protocols can be used for transfering data (ie.
+ messages and blocks) between the client and the server.
+ While a raw TCP connection is the main (and first) transport implemented
+ for Spark, blocks could be sent with UDP.
+ Likewise authentication and privacy could be implemented by using a SSH
+ library.
+ 
+\end_layout
+
+\begin_layout Standard
+The idea behind channels is to abstract away the differences between transport
+ protocols.
+ That way 
+\begin_inset Quotes eld
+\end_inset
+
+TCP
+\begin_inset Quotes erd
+\end_inset
+
+, 
+\begin_inset Quotes eld
+\end_inset
+
+UDP
+\begin_inset Quotes erd
+\end_inset
+
+ and 
+\begin_inset Quotes eld
+\end_inset
+
+SSH
+\begin_inset Quotes erd
+\end_inset
+
+ would be three kinds of channels which could be used interchangeably for
+ transfering data.
+ It would also be fairly easy to implement another kind of channel without
+ modifying the file-transfer logic.
+\end_layout
+
+\begin_layout Subsection
+Transfers
+\end_layout
+
+\begin_layout Standard
+A transfer is the operation of sending blocks from the server to the client.
+ Transfers have a state (eg.
+ active, paused, finished, failed, etc) and notifications are sent whenever
+ it changes.
+ Transfers also have an identifier, which means a server can have many transfers
+ active at the same time.
+ Every block sent in the context of a transfer comes from the same file,
+ but the client is free to specify which blocks are to be sent.
+ Typically the client asks for every missing block of a given file, which
+ is the whole file if it is the first transfer.
+\end_layout
+
+\begin_layout Standard
+\align center
+\begin_inset Graphics
+	filename Transfer.png
+	scale 40
+
+\end_inset
+
+
+\end_layout
+
+\end_body
+\end_document
