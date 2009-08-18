@@ -1,7 +1,9 @@
 TARGET = Specs.pdf
-DIAGRAMS = Transfer.png
+DIAGRAMS = Transfer.eps ProcessArch.eps View.eps
 
 all: $(TARGET)
+
+diagrams: $(DIAGRAMS)
 
 %.pdf: %.tex
 	pdflatex -halt-on-error $<
@@ -9,8 +11,8 @@ all: $(TARGET)
 %.tex: %.lyx $(DIAGRAMS)
 	lyx -e pdflatex $<
 
-%.png: %.dia
-	dia -t png-libart -e $@ $<
+%.eps: %.dia
+	dia -t eps-pango -e $@ $<
 
 clean:
-	rm -f *.log *.aux $(TARGET) *.png *.tex
+	rm -f *.log *.aux $(TARGET) *.eps *.tex

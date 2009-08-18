@@ -1,10 +1,10 @@
-#LyX 1.5.6 created this file. For more info see http://www.lyx.org/
-\lyxformat 276
+#LyX 1.6.2 created this file. For more info see http://www.lyx.org/
+\lyxformat 345
 \begin_document
 \begin_header
 \textclass article
 \begin_preamble
-\usepackage{parskip}
+ \usepackage{parskip}
 \setlength{\parindent}{0pt}
 \lhead{Spark --- Specifications}
 \chead{}
@@ -15,6 +15,7 @@
 \renewcommand{\headrulewidth}{0.4pt}
 \renewcommand{\footrulewidth}{0.4pt}
 \end_preamble
+\use_default_options false
 \language english
 \inputencoding auto
 \font_roman charter
@@ -25,9 +26,11 @@
 \font_osf false
 \font_sf_scale 100
 \font_tt_scale 100
+
 \graphics default
 \paperfontsize default
 \spacing single
+\use_hyperref false
 \papersize a4paper
 \use_geometry true
 \use_amsmath 1
@@ -99,11 +102,162 @@ IM software isn't the only way to send file over the Internet, but other
 Functional specifications
 \end_layout
 
+\begin_layout Subsection
+Users and peers
+\end_layout
+
+\begin_layout Standard
+Spark is intended to be used by pairs of users.
+ The person using Spark on the machine of interest is called the 
+\emph on
+user
+\emph default
+.
+ Any person remotely connected to the user through the network is called
+ the 
+\emph on
+peer
+\emph default
+.
+ Of course this is arbitrary: the peer is also an user and can have a peer.
+\end_layout
+
+\begin_layout Subsection
+The shared file lists
+\end_layout
+
+\begin_layout Standard
+From the user point of view, Spark can be used to manipulate a list of 
+\emph on
+shared files
+\emph default
+.
+ Each file is either 
+\emph on
+local
+\emph default
+ (originated from the user's machine) or 
+\emph on
+remote
+\emph default
+ (originated from the peer's machine).
+ Each file also has a 
+\emph on
+transfer state
+\emph default
+; this indicates how much of the file has been sent or received, but also
+ when it started, when it is estimated to be finished, the download or upload
+ speed, etc.
+\end_layout
+
+\begin_layout Standard
+Despite the name, each user has their own shared file list.
+ The files are shared between users, not the lists.
+ Most actions affect both lists in the same way, but the two can differ.
+\end_layout
+
+\begin_layout Subsubsection
+Adding files
+\end_layout
+
+\begin_layout Standard
+The user can add (local) files from their machine to the list, whether they
+ are connected to a peer or not.
+ Peers can see the user's shared files and receive them only when the two
+ are connected.
+\end_layout
+
+\begin_layout Subsubsection
+Removing files
+\end_layout
+
+\begin_layout Standard
+The user can remove local files from the list.
+ The files are removed from the peer's list, but only if they have never
+ been transfered at all.
+ In any case, they aren't deleted from the user's disk.
+\end_layout
+
+\begin_layout Standard
+The user can also remove remote files from the list.
+ This causes the files to be hidden from the user, but doesn't remove them
+ from the peer's shared list.
+ Nor does it delete them from the peer's computer
+\end_layout
+
+\begin_layout Standard
+A warning dialog is shown when the user tries to remove a file which is
+ being transfered.
+ This dialog asks the user to confirm they really want to cancel the transfer.
+ It also gives the option to remove any partially received file (associated
+ to the transfer) from the user's disk.
+\end_layout
+
+\begin_layout Subsubsection
+Persistence
+\end_layout
+
+\begin_layout Standard
+This file list is expected to be persistent, ie.
+ closing Spark and launching it again shows the same list.
+ The main purpose of this feature is to enable resuming transfers no matter
+ what happens to Spark (eg.
+ connection loss, OS crash or reboot while Spark is running in the background,
+ bug/freeze in Spark).
+ Another reason for the list to be persistent is to easily let the user
+ open a received file without having to know where the file actually is
+ on the disk.
+\end_layout
+
+\begin_layout Subsection
+Connection
+\end_layout
+
+\begin_layout Standard
+Most of Spark's features are only usable when the user is connected to a
+ peer.
+ To do so they have to know the IP address (or DNS name) and port used by
+ the peer.
+ This information is expected to be communicated through another mean (eg.
+ IM).
+ It doesn't matter which user initiates the connection as it goes both ways.
+\end_layout
+
+\begin_layout Subsection
+Transfers
+\end_layout
+
 \begin_layout Section
 Technical specifications
 \end_layout
 
 \begin_layout Subsection
+Language and dependencies
+\end_layout
+
+\begin_layout Standard
+Spark is written in Python 2.6 and uses Qt 4
+\begin_inset Foot
+status collapsed
+
+\begin_layout Plain Layout
+Exact version to be determined
+\end_layout
+
+\end_inset
+
+ through PyQt4 for the GUI.
+ The reason behind these choices is to be able to quickly develop a multi-platfo
+rm GUI application with a language that is simple, flexible and fun to use.
+ In the future, extension modules might be written in C to improve the performan
+ce of critical parts of the application.
+\end_layout
+
+\begin_layout Subsection
+Network architecture
+\end_layout
+
+\begin_layout Subsubsection
 Client and server
 \end_layout
 
@@ -124,7 +278,7 @@ client's
  same time.
 \end_layout
 
-\begin_layout Subsection
+\begin_layout Subsubsection
 Messages
 \end_layout
 
@@ -142,7 +296,7 @@ A notification is a message that says something has happened.
  of the number of blocks that have been received (valid or not).
 \end_layout
 
-\begin_layout Subsection
+\begin_layout Subsubsection
 Blocks
 \end_layout
 
@@ -158,7 +312,7 @@ blocks
  which blocks are missing and sending them.
 \end_layout
 
-\begin_layout Subsection
+\begin_layout Subsubsection
 Channels
 \end_layout
 
@@ -205,7 +359,7 @@ SSH
  modifying the file-transfer logic.
 \end_layout
 
-\begin_layout Subsection
+\begin_layout Subsubsection
 Transfers
 \end_layout
 
@@ -222,15 +376,190 @@ A transfer is the operation of sending blocks from the server to the client.
  is the whole file if it is the first transfer.
 \end_layout
 
+\begin_layout Subsection
+Process and thread architecture
+\end_layout
+
 \begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status collapsed
+
+\begin_layout Plain Layout
 \align center
 \begin_inset Graphics
-	filename Transfer.png
+	filename ProcessArch.eps
+	lyxscale 50
 	scale 40
 
 \end_inset
 
 
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+Overview of the process architecture
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "Flo:ProcessArch"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+In my opinion using separate processes or threads is a given when writing
+ graphical tools that use sockets (eg.
+ network-aware applications).
+ Indeed networking code has no place in the GUI thread, and the 
+\begin_inset Quotes eld
+\end_inset
+
+blocking until a message is received from the socket
+\begin_inset Quotes erd
+\end_inset
+
+ approach fits separate threads/processes very well.
+ 
+\end_layout
+
+\begin_layout Standard
+Spark needs to run a GUI, a server and a client.
+ These different parts are only very loosely related, it makes sense to
+ separate them thread- or process-wise.
+ Since the client and server parts share no state (besides maybe the persistent
+ data store), each will run in a separate process.
+ This doesn't prevent them to share code though.
+ 
+\end_layout
+
+\begin_layout Standard
+This approach (shown in figure 
+\begin_inset CommandInset ref
+LatexCommand vref
+reference "Flo:ProcessArch"
+
+\end_inset
+
+) does make the communication betweens parts more complicated (ie.
+ it requires an inter-process communication mechanism, rather than just
+ function calls with share state).
+ On the upside, the interface between them has to be clearly defined and
+ is easier to understand than if a single process approach was used.
+ This architecture is also in my opinion more flexible and robust.
+ In particular, the client and server can each be used as a stand-alone
+ command-line application, without using the GUI at all.
+ This makes testing simpler and more easily automated.
+\end_layout
+
+\begin_layout Subsection
+GUI-FileShare interface
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status collapsed
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename View.eps
+	lyxscale 50
+	scale 35
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+Overview of the GUI-FileShare interface
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "Flo:GUI_FileShare_Interface"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Since the GUI and FileShare (Client/Server) parts are running on different
+ processes, the method they use for communicating should be clearly defined
+ (see the class diagram in figure 
+\begin_inset CommandInset ref
+LatexCommand vref
+reference "Flo:GUI_FileShare_Interface"
+
+\end_inset
+
+).
+\end_layout
+
+\begin_layout Standard
+The simplest and most flexible approach I have found so far is serializing/deser
+ializing objects with Python's 
+\emph on
+pickle
+\emph default
+ module on the process' standard input/output streams.
+ For unfrequent events (file added, removed, state changed), a notification
+ is sent to stdout.
+ For very frequent events (transfer progress changed), the GUI has to ask
+ the file share process for the transfer's latest progress info (eg.
+ 
+\begin_inset Quotes eld
+\end_inset
+
+poll
+\begin_inset Quotes erd
+\end_inset
+
+ the file share process for progress info every 
+\begin_inset Formula $x$
+\end_inset
+
+ ms).
 \end_layout
 
 \end_body
