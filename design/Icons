@@ -1,0 +1,30 @@
+/usr/share/icons/gnome/
+
+Toolbar
+Connect:        status/network-transmit-receive
+Disconnect:     status/network-offline, actions/stop, device/network-wired
+
+Add file:       actions/add
+Start:          actions/media-playback-start
+Pause:          actions/media-playback-pause
+Cancel:         actions/media-playback-stop
+Remove:         actions/remove
+
+Status bar
+Disconnected:   status/network-offline
+Connected:      status/network-idle
+(Active:)       status/network-(receive|transmit|transmit-receive)
+
+Upload:         actions/up
+Download:       actions/down
+
+Transfer status
+Generic file:   mimetypes/text-x-preview, <mime icon>
+Receiving:      actions/down
+Sending:        actions/up
+Paused:         actions/media-playback-pause
+Received:       actions/document-save, status/dialog-information, emblems/emblem-default, <mime icon>
+Error:          status/dialog-warning, emblems/emblem-important
+
+Local:          actions/go-home, places/folder-home
+Remote:         categories/applications-internet, places/folder-remote
