@@ -106,7 +106,11 @@ Spark is
 synchronous
 \emph default
 , which means both parties have to agree to use it at the same time before
- sending files.
+ sending files; it is meant for 
+\emph on
+ad-hoc
+\emph default
+ transfers.
  It requires some additional communication, typically exchanging IP addresses.
  That's why it's meant to be used along with IM software and only as a replaceme
 nt for the file-transfer part.
@@ -117,8 +121,8 @@ nt for the file-transfer part.
 \begin_layout Standard
 IM software isn't the only way to send file over the Internet, but other
  tools have their share of constraints.
- Most file-transfer protocols (like FTP or SCP/SFTP) require a permanent
- server to be set up and configured before you can start using them.
+ Most file-transfer tools (like FTP or SCP/SFTP) require a permanent server
+ to be set up and configured before you can start using them.
  Most networking file systems (like NFS or SMB) haven't been designed with
  security or the Internet in mind.
  Email can be used to transfer files, but typically mailboxes have either
@@ -144,10 +148,39 @@ user
  Any person remotely connected to the user through the network is called
  the 
 \emph on
+remote peer
+\emph default
+ or just 
+\emph on
 peer
 \emph default
 .
- Of course this is arbitrary: the peer is also an user and can have a peer.
+ Of course the remote peer is also an user whose peer is the 
+\begin_inset Quotes eld
+\end_inset
+
+local
+\begin_inset Quotes erd
+\end_inset
+
+ user.
+ Both users can be considered peers, there is no client or server.
+ 
+\end_layout
+
+\begin_layout Standard
+Most of Spark's features are only usable when the user is connected to a
+ peer.
+ To do so they have to know the IP address (or DNS name) and port used by
+ the peer.
+ This information is expected to be communicated through another mean (e.g.
+ IM).
+ It doesn't matter which user initiates the connection as it goes both ways.
+\end_layout
+
+\begin_layout Standard
+This specification makes little difference between the person using the
+ software and the processus executing on the user's machine.
 \end_layout
 
 \begin_layout Subsection
@@ -155,7 +188,8 @@ The shared file lists
 \end_layout
 
 \begin_layout Standard
-From the user point of view, Spark can be used to manipulate a list of 
+From the user's point of view, Spark can be used to manipulate a list of
+ 
 \emph on
 shared files
 \emph default
@@ -168,19 +202,19 @@ local
 \emph on
 remote
 \emph default
- (originated from the peer's machine).
+ (originated from the remote peer's machine).
  Each file also has a 
 \emph on
 transfer state
 \emph default
 ; this indicates how much of the file has been sent or received, but also
- when it started, when it is estimated to be finished, the download or upload
- speed, etc.
+ when it started, when it is estimated to be finished, the transfer speed,
+ etc.
 \end_layout
 
 \begin_layout Standard
-Despite the name, each user has their own shared file list.
- The files are shared between users, not the lists.
+Despite the name, each peer has their own shared file list.
+ The files are shared between peers, not the lists.
  Most actions affect both lists in the same way, but the two can differ.
 \end_layout
 
@@ -191,7 +225,7 @@ Adding files
 \begin_layout Standard
 The user can add (local) files from their machine to the list, whether they
  are connected to a peer or not.
- Peers can see the user's shared files and receive them only when the two
+ A peer can see the user's shared files and receive them only when the two
  are connected.
 \end_layout
 
@@ -201,15 +235,15 @@ Removing files
 
 \begin_layout Standard
 The user can remove local files from the list.
- The files are removed from the peer's list, but only if they have never
- been transfered at all.
+ The files are removed from the remote peer's list, but only if they have
+ never been transfered at all.
  In any case, they aren't deleted from the user's disk.
 \end_layout
 
 \begin_layout Standard
 The user can also remove remote files from the list.
  This causes the files to be hidden from the user, but doesn't remove them
- from the peer's shared list.
+ from the remote peer's shared list.
  Nor does it delete them from the peer's computer
 \end_layout
 
@@ -235,20 +269,6 @@ This file list is expected to be persistent, ie.
  Another reason for the list to be persistent is to easily let the user
  open a received file without having to know where the file actually is
  on the disk.
-\end_layout
-
-\begin_layout Subsection
-Connection
-\end_layout
-
-\begin_layout Standard
-Most of Spark's features are only usable when the user is connected to a
- peer.
- To do so they have to know the IP address (or DNS name) and port used by
- the peer.
- This information is expected to be communicated through another mean (eg.
- IM).
- It doesn't matter which user initiates the connection as it goes both ways.
 \end_layout
 
 \begin_layout Subsection
@@ -307,16 +327,79 @@ Transfers
 \end_layout
 
 \begin_layout Standard
-A transfer is the operation of sending blocks from the server to the client.
+A transfer is the operation of sending blocks from a peer to the other.
  Transfers have a state (eg.
  active, paused, finished, failed, etc) and notifications are sent whenever
  it changes.
- Transfers also have an identifier, which means a server can have many transfers
- active at the same time.
+ Transfers also have an identifier, which means a peer can have many transfers
+ (both incoming and outgoing) active at the same time.
  Every block sent in the context of a transfer comes from the same file,
- but the client is free to specify which blocks are to be sent.
- Typically the client asks for every missing block of a given file, which
- is the whole file if it is the first transfer.
+ but the receiving peer is free to specify which blocks are to be sent.
+ Typically it asks for every missing block of a given file, which is the
+ whole file if it is the first time this file is transfered.
+\end_layout
+
+\begin_layout Subsubsection
+Persistent shared file list
+\end_layout
+
+\begin_layout Standard
+To implement resuming interrupted transfers, a SQLite database is used to
+ persist information about shared files and transfers.
+ The class diagram describing the information stored in this database is
+ shown in figure 
+\begin_inset CommandInset ref
+LatexCommand vref
+reference "Flo:SharedFileDBSchema"
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status collapsed
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename FileDB.eps
+	lyxscale 50
+	scale 50
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+Persisted shared file/transfer information
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "Flo:SharedFileDBSchema"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Subsection
@@ -349,17 +432,19 @@ Messages
 \end_layout
 
 \begin_layout Standard
-The client and the server communicate through messages.
+Peers communicate through messages.
  A message could be a request, a response or a notification.
- Requests are usually sent by the client, and are answered by a response
- from the server.
+ Requests are usually sent by the receiving peer, and are answered by a
+ response from the sending peer.
  
 \end_layout
 
 \begin_layout Standard
 A notification is a message that says something has happened.
- For example, the client periodically sends a message to notify the server
- of the number of blocks that have been received (valid or not).
+ For example, the receiving peer might periodically send a message to notify
+ the sending peer of the number of blocks that have been received (valid
+ or not).
+ Unlike requests, peers aren't expected to answer notifications.
 \end_layout
 
 \begin_layout Subsubsection
@@ -367,10 +452,10 @@ Channels
 \end_layout
 
 \begin_layout Standard
-Different transport protocols can be used for transfering data (ie.
- messages and blocks) between the client and the server.
- While a raw TCP connection is the main (and first) transport implemented
- for Spark, blocks could be sent with UDP.
+Different transport protocols can be used for transfering data (i.e.
+ messages and blocks) between the peers.
+ While TCP connections is the main (and first) transport implemented for
+ Spark, blocks could be sent with UDP.
  Likewise authentication and privacy could be implemented by using a SSH
  library.
  
@@ -414,53 +499,8 @@ Process and thread architecture
 \end_layout
 
 \begin_layout Standard
-\begin_inset Float figure
-wide false
-sideways false
-status collapsed
-
-\begin_layout Plain Layout
-\align center
-\begin_inset Graphics
-	filename ProcessArch.eps
-	lyxscale 50
-	scale 40
-
-\end_inset
-
-
-\end_layout
-
-\begin_layout Plain Layout
-\begin_inset Caption
-
-\begin_layout Plain Layout
-Overview of the process architecture
-\end_layout
-
-\end_inset
-
-
-\end_layout
-
-\begin_layout Plain Layout
-\begin_inset CommandInset label
-LatexCommand label
-name "Flo:ProcessArch"
-
-\end_inset
-
-
-\end_layout
-
-\end_inset
-
-
-\end_layout
-
-\begin_layout Standard
 In my opinion using separate processes or threads is a given when writing
- graphical tools that use sockets (eg.
+ graphical tools that use sockets (e.g.
  network-aware applications).
  Indeed networking code has no place in the GUI thread, and the 
 \begin_inset Quotes eld
@@ -474,112 +514,15 @@ blocking until a message is received from the socket
  
 \end_layout
 
-\begin_layout Standard
-Spark needs to run a GUI, a server and a client.
- These different parts are only very loosely related, it makes sense to
- separate them thread- or process-wise.
- Since the client and server parts share no state (besides maybe the persistent
- data store), each will run in a separate process.
- This doesn't prevent them to share code though.
- 
-\end_layout
-
-\begin_layout Standard
-This approach (shown in figure 
-\begin_inset CommandInset ref
-LatexCommand vref
-reference "Flo:ProcessArch"
-
-\end_inset
-
-) does make the communication betweens parts more complicated (ie.
- it requires an inter-process communication mechanism, rather than just
- function calls with share state).
- On the upside, the interface between them has to be clearly defined and
- is easier to understand than if a single process approach was used.
- This architecture is also in my opinion more flexible and robust.
- In particular, the client and server can each be used as a stand-alone
- command-line application, without using the GUI at all.
- This makes testing simpler and more easily automated.
-\end_layout
-
 \begin_layout Subsection
-GUI-FileShare interface
+Observers and events
 \end_layout
 
 \begin_layout Standard
-\begin_inset Float figure
-wide false
-sideways false
-status collapsed
-
-\begin_layout Plain Layout
-\align center
-\begin_inset Graphics
-	filename View.eps
-	lyxscale 50
-	scale 35
-
-\end_inset
-
-
-\end_layout
-
-\begin_layout Plain Layout
-\begin_inset Caption
-
-\begin_layout Plain Layout
-Overview of the GUI-FileShare interface
-\end_layout
-
-\end_inset
-
-
-\end_layout
-
-\begin_layout Plain Layout
-\begin_inset CommandInset label
-LatexCommand label
-name "Flo:GUI_FileShare_Interface"
-
-\end_inset
-
-
-\end_layout
-
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-
-
-\end_layout
-
-\begin_layout Standard
-Since the GUI and FileShare (Client/Server) parts are running on different
- processes, the method they use for communicating should be clearly defined
- (see the class diagram in figure 
-\begin_inset CommandInset ref
-LatexCommand vref
-reference "Flo:GUI_FileShare_Interface"
-
-\end_inset
-
-).
-\end_layout
-
-\begin_layout Standard
-The simplest and most flexible approach I have found so far is serializing/deser
-ializing objects with Python's 
-\emph on
-pickle
-\emph default
- module on the process' standard input/output streams.
- For unfrequent events (file added, removed, state changed), a notification
- is sent to stdout.
- For very frequent events (transfer progress changed), the GUI has to ask
- the file share process for the transfer's latest progress info (eg.
+For unfrequent events (file added, removed, state changed), a notification
+ is sent to the observers.
+ For very frequent events (transfer progress changed), the observers have
+ to ask the file share for the transfer's latest progress info (e.g.
  
 \begin_inset Quotes eld
 \end_inset
@@ -588,19 +531,19 @@ poll
 \begin_inset Quotes erd
 \end_inset
 
- the file share process for progress info every 
+ the file share for progress info every 
 \begin_inset Formula $x$
 \end_inset
 
  ms).
 \end_layout
 
-\begin_layout Subsection
-Network protocol
+\begin_layout Section
+Application protocol
 \end_layout
 
 \begin_layout Standard
-A protocol is needed to communicate between both peers' Spark processes.
+A protocol is needed to communicate between both peers.
  The proposed protocol is a simple text protocol based on JSON to encode
  more complex data.
  It isn't 100% text though, since blocks are sent as binary data.
@@ -618,7 +561,7 @@ This section assumes a stream-based transport protocol (e.g.
  UDP, SCTP) without newline delimiters.
 \end_layout
 
-\begin_layout Subsubsection
+\begin_layout Subsection
 Protocol negociation
 \end_layout
 
@@ -632,7 +575,7 @@ For now there is only one version of the protocol, but it is anticipated
 
 \begin_layout Standard
 The peer initiating the connection first sends the list of every supported
- protocol (separated by spaces): 
+ protocol in order of preference (separated by spaces): 
 \end_layout
 
 \begin_layout Standard
@@ -643,7 +586,7 @@ status open
 
 
 \backslash
-begin{verbatim}spark > SPARKv1 SPARKv2
+begin{verbatim}spark > SPARKv2 SPARKv1
 \backslash
 r
 \backslash
@@ -712,11 +655,11 @@ SPARKv1
  Maybe it doesn't support the second version.
 \end_layout
 
-\begin_layout Subsubsection
+\begin_layout Subsection
 General structure of a message
 \end_layout
 
-\begin_layout Paragraph*
+\begin_layout Subsubsection
 Text messages
 \end_layout
 
@@ -727,7 +670,7 @@ In the current version of the protocol, there are three kinds of text messages:
 \end_layout
 
 \begin_layout Itemize
-a type, represented by a string (starting with a non-digit character, eg.
+a type, represented by a string (starting with a non-digit character, e.g.
  
 \begin_inset Quotes eld
 \end_inset
@@ -838,7 +781,7 @@ end{verbatim}
 
 \end_layout
 
-\begin_layout Paragraph*
+\begin_layout Subsubsection
 Binary messages
 \end_layout
 
@@ -901,7 +844,7 @@ end{verbatim}
 
 \end_layout
 
-\begin_layout Subsubsection
+\begin_layout Subsection
 Example of an exchange between two peers
 \end_layout
 
@@ -1066,12 +1009,733 @@ end{verbatim}
 
 \end_layout
 
-\begin_layout Subsubsection
+\begin_layout Subsection
 List of requests and responses
 \end_layout
 
-\begin_layout Subsubsection
+\begin_layout Subsection
 List of notifications
+\end_layout
+
+\begin_layout Section
+GUI prototype
+\end_layout
+
+\begin_layout Standard
+The main object in the GUI is the shared file/transfer list (see figure
+ 
+\begin_inset CommandInset ref
+LatexCommand vref
+reference "Flo:MainGUIPrototype"
+
+\end_inset
+
+).
+ It presents to the user all kind of information about their shared files,
+ about the peer's, and about the currently active transfers.
+ Below are tables containing information that can be shown to the user about
+ files and transfers.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Tabular
+<lyxtabular version="3" rows="5" columns="7">
+<features>
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Name
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Size
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+LastModified
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+MIME type
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Local
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Remote
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+State
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Report.pdf
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+3 MiB
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+2009-06-19 17:35:29
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\size small
+application/pdf
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+No
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Yes
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Idle
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+SeisRoX-2.0.9660.exe
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+22 MiB
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\size small
+application/x-exec...
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Yes
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Yes
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Receive
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Spark-1.0_noarch.deb
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+1 MiB
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\size small
+application/x-deb
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Yes
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Yes
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Idle
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+TestArchive.zip
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+117 MiB
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\size small
+application/zip
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Yes
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+No
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Idle
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Tabular
+<lyxtabular version="3" rows="5" columns="6">
+<features>
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Progress
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+TrSize
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+TrSpeed
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+TrDuration
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+TrETA
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Hash
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+--
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+--
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+--
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+--
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+--
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\size small
+9773dd4f4441f672a7235e9bee71297075f64261
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+24.5%
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+5.25 MiB
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+50 KiB/s
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+00:01:40
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+5 min
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\size small
+b7d7f7c5b7d4fb3f5a595fcbe7904a68432047ae
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+100%
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+1 MiB
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+100 KiB/s
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+00:00:10
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+--
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\size small
+c9590658cf5d764bd2bddda769ba70a93891cdb7
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+--
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+--
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+--
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+--
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+--
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\size small
+4565a6a89a0f36af3c428923a862036f8c084f24
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status collapsed
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename UI-prototype.png
+	lyxscale 60
+	scale 90
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+Prototype of the main window
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "Flo:MainGUIPrototype"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
 \end_layout
 
 \end_body

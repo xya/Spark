@@ -1,5 +1,5 @@
 TARGET = Specs.pdf
-DIAGRAMS = Transfer.eps ProcessArch.eps View.eps
+DIAGRAMS = Transfer.eps View.eps FileDB.eps UI-prototype.png
 
 all: $(TARGET)
 
@@ -13,6 +13,9 @@ diagrams: $(DIAGRAMS)
 
 %.eps: %.dia
 	dia -t eps-pango -e $@ $<
+
+UI-prototype.png: UI-prototype.svg
+    inkscape --export-png=$@ --export-dpi=150 $<
 
 clean:
 	rm -f *.log *.aux $(TARGET) *.eps *.tex

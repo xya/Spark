@@ -15,16 +15,17 @@ Disconnected:   status/network-offline
 Connected:      status/network-idle
 (Active:)       status/network-(receive|transmit|transmit-receive)
 
+Transfer st
 Upload:         actions/up
 Download:       actions/down
 
-Transfer status
-Generic file:   mimetypes/text-x-preview, <mime icon>
-Receiving:      actions/down
-Sending:        actions/up
-Paused:         actions/media-playback-pause
-Received:       actions/document-save, status/dialog-information, emblems/emblem-default, <mime icon>
-Error:          status/dialog-warning, emblems/emblem-important
-
 Local:          actions/go-home, places/folder-home
 Remote:         categories/applications-internet, places/folder-remote
+
+Transfer status
+Hashing:        actions/system-run, actions/system-search
+Syncing:        actions/object-flip-horizontal
+Receiving:      actions/go-previous
+Sending:        actions/go-next
+Paused:         actions/media-playback-pause
+Error:          status/dialog-warning, emblems/emblem-important
