@@ -67,7 +67,7 @@ Pierre-André Saulais <pasaulais@free.fr>
 \end_layout
 
 \begin_layout Date
-Last updated --- August 18, 2009
+Last updated --- August 21, 2009
 \end_layout
 
 \begin_layout Standard
@@ -593,6 +593,485 @@ poll
 \end_inset
 
  ms).
+\end_layout
+
+\begin_layout Subsection
+Network protocol
+\end_layout
+
+\begin_layout Standard
+A protocol is needed to communicate between both peers' Spark processes.
+ The proposed protocol is a simple text protocol based on JSON to encode
+ more complex data.
+ It isn't 100% text though, since blocks are sent as binary data.
+ The reason behind a mostly-text protocol is to make it easy to read by
+ humans.
+ This makes debugging (e.g.
+ with a packet sniffer) and interoperability easier.
+\end_layout
+
+\begin_layout Standard
+This section assumes a stream-based transport protocol (e.g.
+ TCP) is used.
+ This is why all messages end with a newline.
+ This protocol could be used with message-based protocols (e.g.
+ UDP, SCTP) without newline delimiters.
+\end_layout
+
+\begin_layout Subsubsection
+Protocol negociation
+\end_layout
+
+\begin_layout Standard
+For now there is only one version of the protocol, but it is anticipated
+ that there will be other, incompatible versions of the protocol in the
+ future.
+ This is why after a connection is initiated both peers have to agree on
+ the protocol to use.
+\end_layout
+
+\begin_layout Standard
+The peer initiating the connection first sends the list of every supported
+ protocol (separated by spaces): 
+\end_layout
+
+\begin_layout Standard
+\begin_inset ERT
+status open
+
+\begin_layout Plain Layout
+
+
+\backslash
+begin{verbatim}spark > SPARKv1 SPARKv2
+\backslash
+r
+\backslash
+n
+\backslash
+end{verbatim}
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+The other peers replies with the name of the protocol it chose:
+\end_layout
+
+\begin_layout Standard
+\begin_inset ERT
+status open
+
+\begin_layout Plain Layout
+
+
+\backslash
+begin{verbatim}spark < SPARKv1
+\backslash
+r
+\backslash
+n
+\backslash
+end{verbatim}
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+In this example the initiating peer supports the 
+\begin_inset Quotes eld
+\end_inset
+
+SPARKv1
+\begin_inset Quotes erd
+\end_inset
+
+ and 
+\begin_inset Quotes eld
+\end_inset
+
+SPARKv2
+\begin_inset Quotes erd
+\end_inset
+
+ protocols, but the other peer chose to use the 
+\begin_inset Quotes eld
+\end_inset
+
+SPARKv1
+\begin_inset Quotes erd
+\end_inset
+
+ protocol.
+ Maybe it doesn't support the second version.
+\end_layout
+
+\begin_layout Subsubsection
+General structure of a message
+\end_layout
+
+\begin_layout Paragraph*
+Text messages
+\end_layout
+
+\begin_layout Standard
+In the current version of the protocol, there are three kinds of text messages:
+ requests, responses and notifications.
+ Each message contains several elements:
+\end_layout
+
+\begin_layout Itemize
+a type, represented by a string (starting with a non-digit character, eg.
+ 
+\begin_inset Quotes eld
+\end_inset
+
+start-transfer
+\begin_inset Quotes erd
+\end_inset
+
+)
+\end_layout
+
+\begin_layout Itemize
+a kind, represented by one character:
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+\begin_inset Quotes eld
+\end_inset
+
+>
+\begin_inset Quotes erd
+\end_inset
+
+ for requests
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Quotes eld
+\end_inset
+
+<
+\begin_inset Quotes erd
+\end_inset
+
+ for responses
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Quotes eld
+\end_inset
+
+!
+\begin_inset Quotes erd
+\end_inset
+
+ for notifications
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+an integer identifier.
+ This is mainly used for matching responses with requests
+\end_layout
+
+\begin_layout Itemize
+optional data, which is formatted in JSON
+\end_layout
+
+\begin_layout Itemize
+a newline (either 
+\begin_inset Quotes eld
+\end_inset
+
+
+\backslash
+r
+\backslash
+n
+\begin_inset Quotes erd
+\end_inset
+
+ or 
+\begin_inset Quotes eld
+\end_inset
+
+
+\backslash
+n
+\begin_inset Quotes erd
+\end_inset
+
+)
+\end_layout
+
+\begin_layout Standard
+Elements are separated with spaces.
+ As an exception no space is needed before the trailing newline.
+ The following is an example of a text message: 
+\begin_inset ERT
+status open
+
+\begin_layout Plain Layout
+
+
+\backslash
+begin{verbatim}start-transfer > 27 {'id' : 1}
+\backslash
+r
+\backslash
+n
+\backslash
+end{verbatim}
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Paragraph*
+Binary messages
+\end_layout
+
+\begin_layout Standard
+In the current version of the protocol, binary messages are only used to
+ send blocks.
+ The syntax for such messages is very simple.
+ Before the binary data is added a text prefix indicating its size.
+ This prefix consists of the text 
+\begin_inset Quotes eld
+\end_inset
+
+0x
+\begin_inset Quotes erd
+\end_inset
+
+ followed by six hexadecimal digits.
+ A newline follows the binary data.
+\end_layout
+
+\begin_layout Standard
+The following is an example of a binary message: (
+\begin_inset Quotes eld
+\end_inset
+
+<
+\begin_inset Quotes erd
+\end_inset
+
+ and 
+\begin_inset Quotes eld
+\end_inset
+
+>
+\begin_inset Quotes erd
+\end_inset
+
+ denote binary data)
+\end_layout
+
+\begin_layout Standard
+\begin_inset ERT
+status open
+
+\begin_layout Plain Layout
+
+
+\backslash
+begin{verbatim}0x000408<0x0001><0x0001><0x00000000><0x0400><block data>
+\backslash
+r
+\backslash
+n
+\backslash
+end{verbatim}
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsubsection
+Example of an exchange between two peers
+\end_layout
+
+\begin_layout Standard
+\begin_inset ERT
+status open
+
+\begin_layout Plain Layout
+
+
+\backslash
+begin{verbatim}Peer A initiates the connection.
+\end_layout
+
+\begin_layout Plain Layout
+
+Peer B accepts the connection.
+\end_layout
+
+\begin_layout Plain Layout
+
+A: spark > SPARKv1
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+B: spark < SPARKv1
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+A: list-files > 0 {'register' : true}
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+B: list-files < 0 {'<guid>' : {'id' : '<guid>', 'name' : 'Report.pdf', 
+\end_layout
+
+\begin_layout Plain Layout
+
+    'size' : 3145728, 'last-modified' : '20090619T173529.000Z'}}
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+...
+\end_layout
+
+\begin_layout Plain Layout
+
+B: file-added ! 55 {'id' : '<guid>', 'name' : 'SeisRoX-2.0.9660.exe',
+\end_layout
+
+\begin_layout Plain Layout
+
+    'size' : 3145728, 'last-modified' : '20090619T173529.000Z'}
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+A: create-transfer > 26 {'blocksize' : 1024, 'ranges' : 
+\end_layout
+
+\begin_layout Plain Layout
+
+    [{'start' : 0, 'end' : 3071}]}
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+B: create-transfer < 26 {'id' : 1, 'state' : 'unstarted'}
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+A: start-transfer > 27 {'id' : 1}
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+B: start-transfer < 27 {'id' : 1, 'state' : 'starting'}
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+...
+\end_layout
+
+\begin_layout Plain Layout
+
+B: transfer-state ! 56 {'id' : 1, 'state' : 'active'}
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+B: 0x000408<0x0001><0x0001><0x00000000><0x0400><raw block data>
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+...
+\end_layout
+
+\begin_layout Plain Layout
+
+B: 0x000408<0x0001><0x0001><0x00000BFF><0x0400><raw block data>
+\backslash
+r
+\backslash
+n
+\backslash
+end{verbatim}
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsubsection
+List of requests and responses
+\end_layout
+
+\begin_layout Subsubsection
+List of notifications
 \end_layout
 
 \end_body
