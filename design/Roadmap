@@ -1,0 +1,5 @@
+0.1 working transfers
+0.2 shared file list persistence (SQLite)
+0.3 resuming transfers, fine grained hashing
+0.4 SSH transport layer
+0.5 UPnP support for port forwarding

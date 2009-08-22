@@ -155,7 +155,7 @@ remote peer
 peer
 \emph default
 .
- Of course the remote peer is also an user whose peer is the 
+ Of course the remote peer is also an user (whose peer is the 
 \begin_inset Quotes eld
 \end_inset
 
@@ -163,19 +163,18 @@ local
 \begin_inset Quotes erd
 \end_inset
 
- user.
- Both users can be considered peers, there is no client or server.
+ user).
+ Both users are peers, there is no client or server.
  
 \end_layout
 
 \begin_layout Standard
-Most of Spark's features are only usable when the user is connected to a
- peer.
+Most of the features are only usable when the user is connected to a peer.
  To do so they have to know the IP address (or DNS name) and port used by
  the peer.
  This information is expected to be communicated through another mean (e.g.
  IM).
- It doesn't matter which user initiates the connection as it goes both ways.
+ The connection goes both ways, it doesn't matter which user initiates it.
 \end_layout
 
 \begin_layout Standard
@@ -311,8 +310,8 @@ Blocks
 \end_layout
 
 \begin_layout Standard
-One major feature is the ability to resume a transfer that's been aborted
- for whatever reason.
+One major feature is the ability to resume a transfer that was aborted for
+ whatever reason.
  This feature is implemented by dividing a file into chunks (called 
 \emph on
 blocks
@@ -331,8 +330,8 @@ A transfer is the operation of sending blocks from a peer to the other.
  Transfers have a state (eg.
  active, paused, finished, failed, etc) and notifications are sent whenever
  it changes.
- Transfers also have an identifier, which means a peer can have many transfers
- (both incoming and outgoing) active at the same time.
+ Transfers also have an identifier, which means a peer can have many active
+ transfers (both incoming and outgoing) at the same time.
  Every block sent in the context of a transfer comes from the same file,
  but the receiving peer is free to specify which blocks are to be sent.
  Typically it asks for every missing block of a given file, which is the
@@ -407,44 +406,128 @@ Network architecture
 \end_layout
 
 \begin_layout Subsubsection
-Client and server
+Messaging
 \end_layout
 
 \begin_layout Standard
-From an implementation point of view there is a clear separation between
- sending and receiving files.
- The part in charge of sending files is called the 
-\emph on
-server
-\emph default
- while it is the 
-\emph on
-client's
-\emph default
- responsability to receive them.
- As far as the user is concerned there is no separation.
- When two users are connected they can both send and receive files at the
- same time.
-\end_layout
-
-\begin_layout Subsubsection
-Messages
+Peers communicate through messages (texts and blobs).
+ A text message could be a request, a response or a notification.
+ Blobs could be anything, but for now they are only used for transfering
+ blocks.
 \end_layout
 
 \begin_layout Standard
-Peers communicate through messages.
- A message could be a request, a response or a notification.
- Requests are usually sent by the receiving peer, and are answered by a
- response from the sending peer.
- 
-\end_layout
-
-\begin_layout Standard
-A notification is a message that says something has happened.
+Requests are usually sent by the receiving peer, and are answered by a response
+ from the sending peer.
+ Notifications are messages saying something has happened.
  For example, the receiving peer might periodically send a message to notify
  the sending peer of the number of blocks that have been received (valid
  or not).
  Unlike requests, peers aren't expected to answer notifications.
+\end_layout
+
+\begin_layout Standard
+Messages are Python objects, but transport protocols deal with bytes.
+ The application-layer protocol (see section 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "sec:AppProtocol"
+
+\end_inset
+
+) is responsible for doing the translation between the two.
+ The messaging module abstracts away the use of these protocols, to let
+ the rest of the application deal with messages directly.
+ This is shown in figure 
+\begin_inset CommandInset ref
+LatexCommand vref
+reference "Flo:MessagingOverview"
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status collapsed
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename MessagingOverview.eps
+	lyxscale 50
+	scale 37
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+Overview of the messaging module
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "Flo:MessagingOverview"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\align block
+\begin_inset Float figure
+placement h
+wide false
+sideways false
+status collapsed
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename MessagingClasses.eps
+	lyxscale 50
+	scale 40
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+Messaging classes
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Subsubsection
@@ -458,7 +541,8 @@ Different transport protocols can be used for transfering data (i.e.
  Spark, blocks could be sent with UDP.
  Likewise authentication and privacy could be implemented by using a SSH
  library.
- 
+ A channel doesn't have to support every kind of message.
+ For example UDP channels could be limited to sending and receiving blobs.
 \end_layout
 
 \begin_layout Standard
@@ -540,6 +624,13 @@ poll
 
 \begin_layout Section
 Application protocol
+\begin_inset CommandInset label
+LatexCommand label
+name "sec:AppProtocol"
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Standard
@@ -549,7 +640,7 @@ A protocol is needed to communicate between both peers.
  It isn't 100% text though, since blocks are sent as binary data.
  The reason behind a mostly-text protocol is to make it easy to read by
  humans.
- This makes debugging (e.g.
+ This makes both debugging (e.g.
  with a packet sniffer) and interoperability easier.
 \end_layout
 
@@ -586,7 +677,7 @@ status open
 
 
 \backslash
-begin{verbatim}spark > SPARKv2 SPARKv1
+begin{verbatim}supports SPARKv2 SPARKv1
 \backslash
 r
 \backslash
@@ -601,7 +692,7 @@ end{verbatim}
 \end_layout
 
 \begin_layout Standard
-The other peers replies with the name of the protocol it chose:
+The other peer replies with the name of the protocol it chose:
 \end_layout
 
 \begin_layout Standard
@@ -612,7 +703,7 @@ status open
 
 
 \backslash
-begin{verbatim}spark < SPARKv1
+begin{verbatim}protocol SPARKv1
 \backslash
 r
 \backslash
@@ -664,26 +755,13 @@ Text messages
 \end_layout
 
 \begin_layout Standard
-In the current version of the protocol, there are three kinds of text messages:
+In the current version of the protocol, there are three types of text messages:
  requests, responses and notifications.
  Each message contains several elements:
 \end_layout
 
 \begin_layout Itemize
-a type, represented by a string (starting with a non-digit character, e.g.
- 
-\begin_inset Quotes eld
-\end_inset
-
-start-transfer
-\begin_inset Quotes erd
-\end_inset
-
-)
-\end_layout
-
-\begin_layout Itemize
-a kind, represented by one character:
+a type, represented by one character:
 \end_layout
 
 \begin_deeper
@@ -722,7 +800,20 @@ a kind, represented by one character:
 
 \end_deeper
 \begin_layout Itemize
-an integer identifier.
+a tag, represented by a string containing no whitespace (e.g.
+ 
+\begin_inset Quotes eld
+\end_inset
+
+start-transfer
+\begin_inset Quotes erd
+\end_inset
+
+)
+\end_layout
+
+\begin_layout Itemize
+a transaction identifier.
  This is mainly used for matching responses with requests
 \end_layout
 
@@ -767,7 +858,7 @@ status open
 
 
 \backslash
-begin{verbatim}start-transfer > 27 {'id' : 1}
+begin{verbatim}> start-transfer 27 {'id' : 1}
 \backslash
 r
 \backslash
@@ -866,7 +957,7 @@ Peer B accepts the connection.
 
 \begin_layout Plain Layout
 
-A: spark > SPARKv1
+A: supports SPARKv1
 \backslash
 r
 \backslash
@@ -875,7 +966,7 @@ n
 
 \begin_layout Plain Layout
 
-B: spark < SPARKv1
+B: protocol SPARKv1
 \backslash
 r
 \backslash
@@ -884,7 +975,7 @@ n
 
 \begin_layout Plain Layout
 
-A: list-files > 0 {'register' : true}
+A: > list-files 0 {'register' : true}
 \backslash
 r
 \backslash
@@ -893,7 +984,7 @@ n
 
 \begin_layout Plain Layout
 
-B: list-files < 0 {'<guid>' : {'id' : '<guid>', 'name' : 'Report.pdf', 
+B: < list-files 0 {'<guid>' : {'id' : '<guid>', 'name' : 'Report.pdf', 
 \end_layout
 
 \begin_layout Plain Layout
@@ -912,7 +1003,7 @@ n
 
 \begin_layout Plain Layout
 
-B: file-added ! 55 {'id' : '<guid>', 'name' : 'SeisRoX-2.0.9660.exe',
+B: ! file-added 55 {'id' : '<guid>', 'name' : 'SeisRoX-2.0.9660.exe',
 \end_layout
 
 \begin_layout Plain Layout
@@ -926,7 +1017,7 @@ n
 
 \begin_layout Plain Layout
 
-A: create-transfer > 26 {'blocksize' : 1024, 'ranges' : 
+A: > create-transfer 26 {'blocksize' : 1024, 'ranges' : 
 \end_layout
 
 \begin_layout Plain Layout
@@ -940,7 +1031,7 @@ n
 
 \begin_layout Plain Layout
 
-B: create-transfer < 26 {'id' : 1, 'state' : 'unstarted'}
+B: < create-transfer 26 {'id' : 1, 'state' : 'unstarted'}
 \backslash
 r
 \backslash
@@ -949,7 +1040,7 @@ n
 
 \begin_layout Plain Layout
 
-A: start-transfer > 27 {'id' : 1}
+A: > start-transfer 27 {'id' : 1}
 \backslash
 r
 \backslash
@@ -958,7 +1049,7 @@ n
 
 \begin_layout Plain Layout
 
-B: start-transfer < 27 {'id' : 1, 'state' : 'starting'}
+B: < start-transfer 27 {'id' : 1, 'state' : 'starting'}
 \backslash
 r
 \backslash
@@ -972,7 +1063,7 @@ n
 
 \begin_layout Plain Layout
 
-B: transfer-state ! 56 {'id' : 1, 'state' : 'active'}
+B: ! transfer-state 56 {'id' : 1, 'state' : 'active'}
 \backslash
 r
 \backslash
@@ -1403,7 +1494,7 @@ Idle
 \begin_inset Text
 
 \begin_layout Plain Layout
-Progress
+TrProgress
 \end_layout
 
 \end_inset
