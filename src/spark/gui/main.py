@@ -111,6 +111,7 @@ class MainWindow(QMainWindow):
         sl.addFile("SeisRoX-2.0.9660.exe", "Received 5.25 MiB out of 22 MiB (24.5%)", "mimetypes/exec",
                    "actions/go-home", "actions/go-previous", "categories/applications-internet")
         sl.files[2].setTransferProgress(24)
+        sl.files[2].setTransferTime("5 minutes left (50 KiB/s)")
         sl.addFile("TestArchive.zip", "Size: 117 MiB", "mimetypes/zip",
                    "actions/go-home", None, None)
         sl.addSpace()
@@ -125,7 +126,7 @@ class SharedFileList(QWidget):
     def addFile(self, name, size, icon, *args):
         widget = SharedFileWidget(self)
         widget.setName(name)
-        widget.setSize(size)
+        widget.setTransferSize(size)
         widget.setTypeIcon(icon)
         for i, icon in enumerate(args):
             widget.setStatusIcon(icon, i)
@@ -139,38 +140,45 @@ class SharedFileWidget(QWidget):
     def __init__(self, parent=None):
         super(SharedFileWidget, self).__init__(parent)
         self.typeIcon = QLabel()
+        self.typeIcon.setFixedSize(QSize(48, 48))
         self.statusIcons = [QLabel() for i in range(0, 3)]
         self.fileName = QLabel()
-        self.fileSize = QLabel()
+        self.transferSize = QLabel()
+        self.transferTime = QLabel()
         self.transferProgress = QProgressBar()
         self.transferProgress.setTextVisible(False)
         self.transferProgress.setMaximumHeight(16)
         self.transferProgress.hide()
-        statusLayout = QHBoxLayout()
+        self.statusTooltip = ["Local file", "Transfering", "Remote file"]
+        
+        status = QHBoxLayout()
         for statusIcon in self.statusIcons:
             statusIcon.setFixedSize(QSize(16, 16))
-            statusLayout.addWidget(statusIcon)
-        iconLayout = QVBoxLayout()
-        iconLayout.addWidget(self.typeIcon)
-        iconLayout.addLayout(statusLayout)
-        iconLayout.setAlignment(self.typeIcon, Qt.AlignCenter)
-        contentLayout = QVBoxLayout()
-        contentLayout.addWidget(self.fileName)
-        contentLayout.addWidget(self.fileSize)
-        contentLayout.addWidget(self.transferProgress)
-        layout = QHBoxLayout()
-        layout.addLayout(iconLayout)
-        layout.addLayout(contentLayout)
-        self.setLayout(layout)
-        self.setStatusToolTip("Local file", 0)
-        self.setStatusToolTip("Transfer state", 1)
-        self.setStatusToolTip("Remote file", 2)
+            status.addWidget(statusIcon)
+        transferInfo = QHBoxLayout()
+        transferInfo.setSpacing(20)
+        transferInfo.addWidget(self.transferSize)
+        transferInfo.addStretch()
+        transferInfo.addWidget(self.transferTime)
+        content = QVBoxLayout()
+        content.setSpacing(0)
+        content.addWidget(self.fileName)
+        content.addLayout(transferInfo)
+        grid = QGridLayout()
+        grid.addWidget(self.typeIcon, 0, 0, Qt.AlignCenter)
+        grid.addLayout(content, 0, 1, Qt.AlignVCenter)
+        grid.addLayout(status, 1, 0)
+        grid.addWidget(self.transferProgress, 1, 1)
+        self.setLayout(grid)
     
     def setName(self, name):
         self.fileName.setText(name)
     
-    def setSize(self, size):
-        self.fileSize.setText(size)
+    def setTransferSize(self, size):
+        self.transferSize.setText(size)
+    
+    def setTransferTime(self, time):
+        self.transferTime.setText(time)
     
     def setTypeIcon(self, icon):
         self.typeIconSet = QIcon(iconPath(icon))
@@ -180,8 +188,10 @@ class SharedFileWidget(QWidget):
         statusIcon = self.statusIcons[index]
         if icon:
             statusIcon.setPixmap(QPixmap(iconPath(icon, 16)))
+            statusIcon.setToolTip(self.statusTooltip[index])
         else:
             statusIcon.setPixmap(QPixmap())
+            statusIcon.setToolTip("")
     
     def setStatusToolTip(self, text, index):
         statusIcon = self.statusIcons[index]
