@@ -662,11 +662,13 @@ For now there is only one version of the protocol, but it is anticipated
  future.
  This is why after a connection is initiated both peers have to agree on
  the protocol to use.
+ Let's call the peer initiating the connection A and the peer hosting the
+ connection B.
 \end_layout
 
 \begin_layout Standard
-The peer initiating the connection first sends the list of every supported
- protocol in order of preference (separated by spaces): 
+After the connection is initiated, A sends the list of every supported protocol
+ in order of preference: 
 \end_layout
 
 \begin_layout Standard
@@ -692,7 +694,7 @@ end{verbatim}
 \end_layout
 
 \begin_layout Standard
-The other peer replies with the name of the protocol it chose:
+B replies with the name of the protocol it chose:
 \end_layout
 
 \begin_layout Standard
@@ -718,7 +720,7 @@ end{verbatim}
 \end_layout
 
 \begin_layout Standard
-In this example the initiating peer supports the 
+In this example A supports both 
 \begin_inset Quotes eld
 \end_inset
 
@@ -734,7 +736,7 @@ SPARKv2
 \begin_inset Quotes erd
 \end_inset
 
- protocols, but the other peer chose to use the 
+ protocols, but B chose to use the 
 \begin_inset Quotes eld
 \end_inset
 
@@ -744,6 +746,101 @@ SPARKv1
 
  protocol.
  Maybe it doesn't support the second version.
+\end_layout
+
+\begin_layout Standard
+A then replies with the same name:
+\end_layout
+
+\begin_layout Standard
+\begin_inset ERT
+status open
+
+\begin_layout Plain Layout
+
+
+\backslash
+begin{verbatim}protocol SPARKv1
+\backslash
+r
+\backslash
+n
+\backslash
+end{verbatim}
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+If anything goes wrong, that is if any of the following happens
+\end_layout
+
+\begin_layout Itemize
+a peer doesn't support any protocol in the 
+\begin_inset Quotes eld
+\end_inset
+
+supports
+\begin_inset Quotes erd
+\end_inset
+
+ list
+\end_layout
+
+\begin_layout Itemize
+a peer replies with a protocol name not in the list
+\end_layout
+
+\begin_layout Itemize
+the two protocol names sent with 
+\begin_inset Quotes eld
+\end_inset
+
+protocol
+\begin_inset Quotes erd
+\end_inset
+
+ messages don't match
+\end_layout
+
+\begin_layout Itemize
+the syntax of the message is invalid (e.g.
+ B started using the application protocol before the initiating peer sent
+ its confirmation)
+\end_layout
+
+\begin_layout Standard
+Then the peer that noticed the error sends the following message and disconnects
+:
+\end_layout
+
+\begin_layout Standard
+\begin_inset ERT
+status open
+
+\begin_layout Plain Layout
+
+
+\backslash
+begin{verbatim}not-supported
+\backslash
+r
+\backslash
+n
+\backslash
+end{verbatim}
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Otherwise both peers can switch to the agreed-upon protocol.
 \end_layout
 
 \begin_layout Subsection
@@ -967,6 +1064,15 @@ n
 \begin_layout Plain Layout
 
 B: protocol SPARKv1
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+A: protocol SPARKv1
 \backslash
 r
 \backslash

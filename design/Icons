@@ -9,6 +9,7 @@ Start:          actions/media-playback-start
 Pause:          actions/media-playback-pause
 Cancel:         actions/media-playback-stop
 Remove:         actions/remove
+Open file:      places/folder-saved-search
 
 Status bar
 Disconnected:   status/network-offline
