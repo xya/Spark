@@ -15,7 +15,7 @@ diagrams: $(DIAGRAMS)
 	dia -t eps-pango -e $@ $<
 
 UI-prototype.png: UI-prototype.svg
-    inkscape --export-png=$@ --export-dpi=150 $<
+	inkscape --export-png=$@ --export-dpi=150 $<
 
 clean:
 	rm -f *.log *.aux $(TARGET) *.eps *.tex

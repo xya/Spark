@@ -24,6 +24,12 @@ from PyQt4.QtGui import *
 
 __all__ = ["MainView"]
 
+def iconPath(name, size=None):
+    if size:
+        return "/usr/share/icons/gnome/%ix%i/%s.png" % (size, size, name)
+    else:
+        return "/usr/share/icons/gnome/scalable/%s.svg" % name
+
 class MainView(object):
     def __init__(self):
         if not hasattr(MainView, "app"):
@@ -42,18 +48,15 @@ class MainWindow(QMainWindow):
     
     def __init__(self, parent=None):
         super(MainWindow, self).__init__(parent)
-        self.setWindowIcon(QIcon(self.iconPath("emblems/emblem-new", 16)))
+        self.setWindowIcon(QIcon(iconPath("emblems/emblem-new", 16)))
         self.setWindowTitle("Spark")
-        self.resize(800, 600)
         self.actions = {}
         self.initToolbar()
+        self.initFileList()
         self.initStatusBar()
     
-    def iconPath(self, name, size):
-        return "/usr/share/icons/gnome/%ix%i/%s.png" % (size, size, name)
-    
     def createAction(self, icon, size, text, help=None):
-        action = QAction(QIcon(self.iconPath(icon, size)), text, self)
+        action = QAction(QIcon(iconPath(icon, size)), text, self)
         if help:
             action.setToolTip(help)
             action.setStatusTip(help)
@@ -63,7 +66,7 @@ class MainWindow(QMainWindow):
         self.actions["connect"] = self.createAction("status/network-transmit-receive", 32, "Connect", "Connect to a peer")
         #self.actions["disconnect"] = self.createAction("status/network-offline", 32, "Disconnect", "Close the connection to the peer")
         self.actions["add"] = self.createAction("actions/add", 32, "Add", "Add a file to the shared list")
-        self.actions["remove"] = self.createAction("actions/remove", 32, "Remove", "Remove a file from the shared list")
+        self.actions["remove"] = self.createAction("actions/process-stop", 32, "Remove", "Remove the file from the shared list")
         self.actions["start"] = self.createAction("actions/media-playback-start", 32, "Start", "Start receiving the file")
         self.actions["pause"] = self.createAction("actions/media-playback-pause", 32, "Pause", "Pause the transfer")
         self.actions["stop"] = self.createAction("actions/media-playback-stop", 32, "Stop", "Cancel the transfer")
@@ -81,15 +84,15 @@ class MainWindow(QMainWindow):
     
     def initStatusBar(self):
         self.connStatus = QLabel(self.statusBar())
-        self.connStatus.setPixmap(QPixmap(self.iconPath("status/network-offline", 24)))
+        self.connStatus.setPixmap(QPixmap(iconPath("status/network-offline", 24)))
         self.connStatus.setToolTip("Not connected to a peer")
         self.myIP = QLabel("My IP: 127.0.0.1", self.statusBar())
         self.transferCount = QLabel("0 transfer(s)", self.statusBar())
         self.uploadSpeedIcon = QLabel(self.statusBar())
-        self.uploadSpeedIcon.setPixmap(QPixmap(self.iconPath("actions/up", 24)))
+        self.uploadSpeedIcon.setPixmap(QPixmap(iconPath("actions/up", 24)))
         self.uploadSpeedText = QLabel("0 KiB/s", self.statusBar())
         self.downloadSpeedIcon = QLabel(self.statusBar())
-        self.downloadSpeedIcon.setPixmap(QPixmap(self.iconPath("actions/down", 24)))
+        self.downloadSpeedIcon.setPixmap(QPixmap(iconPath("actions/down", 24)))
         self.downloadSpeedText = QLabel("0 KiB/s", self.statusBar())
         self.statusBar().addWidget(self.connStatus)
         self.statusBar().addWidget(self.myIP, 2)
@@ -98,4 +101,95 @@ class MainWindow(QMainWindow):
         self.statusBar().addWidget(self.uploadSpeedText)
         self.statusBar().addWidget(self.downloadSpeedIcon)
         self.statusBar().addWidget(self.downloadSpeedText)
+    
+    def initFileList(self):
+        sl = SharedFileList(self)
+        sl.addFile("Report.pdf", "Size: 3 MiB", "mimetypes/gnome-mime-application-pdf",
+                   None, None, "categories/applications-internet")
+        sl.addFile("Spark-0.1_noarch.deb", "Size: 1 MiB", "mimetypes/deb",
+                   "actions/go-home", None, "categories/applications-internet")
+        sl.addFile("SeisRoX-2.0.9660.exe", "Received 5.25 MiB out of 22 MiB (24.5%)", "mimetypes/exec",
+                   "actions/go-home", "actions/go-previous", "categories/applications-internet")
+        sl.files[2].setTransferProgress(24)
+        sl.addFile("TestArchive.zip", "Size: 117 MiB", "mimetypes/zip",
+                   "actions/go-home", None, None)
+        sl.addSpace()
+        self.setCentralWidget(sl)
+
+class SharedFileList(QWidget):
+    def __init__(self, parent=None):
+        super(SharedFileList, self).__init__(parent)
+        self.files = []
+        self.setLayout(QVBoxLayout())
+    
+    def addFile(self, name, size, icon, *args):
+        widget = SharedFileWidget(self)
+        widget.setName(name)
+        widget.setSize(size)
+        widget.setTypeIcon(icon)
+        for i, icon in enumerate(args):
+            widget.setStatusIcon(icon, i)
+        self.layout().addWidget(widget)
+        self.files.append(widget)
+    
+    def addSpace(self):
+        self.layout().addStretch()
         
+class SharedFileWidget(QWidget):
+    def __init__(self, parent=None):
+        super(SharedFileWidget, self).__init__(parent)
+        self.typeIcon = QLabel()
+        self.statusIcons = [QLabel() for i in range(0, 3)]
+        self.fileName = QLabel()
+        self.fileSize = QLabel()
+        self.transferProgress = QProgressBar()
+        self.transferProgress.setTextVisible(False)
+        self.transferProgress.setMaximumHeight(16)
+        self.transferProgress.hide()
+        statusLayout = QHBoxLayout()
+        for statusIcon in self.statusIcons:
+            statusIcon.setFixedSize(QSize(16, 16))
+            statusLayout.addWidget(statusIcon)
+        iconLayout = QVBoxLayout()
+        iconLayout.addWidget(self.typeIcon)
+        iconLayout.addLayout(statusLayout)
+        iconLayout.setAlignment(self.typeIcon, Qt.AlignCenter)
+        contentLayout = QVBoxLayout()
+        contentLayout.addWidget(self.fileName)
+        contentLayout.addWidget(self.fileSize)
+        contentLayout.addWidget(self.transferProgress)
+        layout = QHBoxLayout()
+        layout.addLayout(iconLayout)
+        layout.addLayout(contentLayout)
+        self.setLayout(layout)
+        self.setStatusToolTip("Local file", 0)
+        self.setStatusToolTip("Transfer state", 1)
+        self.setStatusToolTip("Remote file", 2)
+    
+    def setName(self, name):
+        self.fileName.setText(name)
+    
+    def setSize(self, size):
+        self.fileSize.setText(size)
+    
+    def setTypeIcon(self, icon):
+        self.typeIconSet = QIcon(iconPath(icon))
+        self.typeIcon.setPixmap(self.typeIconSet.pixmap(48, 48))
+    
+    def setStatusIcon(self, icon, index):
+        statusIcon = self.statusIcons[index]
+        if icon:
+            statusIcon.setPixmap(QPixmap(iconPath(icon, 16)))
+        else:
+            statusIcon.setPixmap(QPixmap())
+    
+    def setStatusToolTip(self, text, index):
+        statusIcon = self.statusIcons[index]
+        statusIcon.setToolTip(text)
+    
+    def setTransferProgress(self, progress):
+        if progress:
+            self.transferProgress.setValue(progress)
+            self.transferProgress.show()
+        else:
+            self.transferProgress.hide()
