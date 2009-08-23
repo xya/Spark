@@ -2,7 +2,7 @@
 
 Toolbar
 Connect:        status/network-transmit-receive
-Disconnect:     status/network-offline, actions/stop, device/network-wired
+Disconnect:     status/network-offline, actions/stop, devices/network-wired
 
 Add file:       actions/add
 Start:          actions/media-playback-start

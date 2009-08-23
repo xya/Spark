@@ -63,10 +63,10 @@ class MainWindow(QMainWindow):
         return action
     
     def initToolbar(self):
-        self.actions["connect"] = self.createAction("status/network-transmit-receive", 32, "Connect", "Connect to a peer")
-        #self.actions["disconnect"] = self.createAction("status/network-offline", 32, "Disconnect", "Close the connection to the peer")
-        self.actions["add"] = self.createAction("actions/add", 32, "Add", "Add a file to the shared list")
-        self.actions["remove"] = self.createAction("actions/process-stop", 32, "Remove", "Remove the file from the shared list")
+        #self.actions["connect"] = self.createAction("status/network-transmit-receive", 32, "Connect", "Connect to a peer")
+        self.actions["disconnect"] = self.createAction("actions/process-stop", 32, "Disconnect", "Close the connection to the peer")
+        self.actions["add"] = self.createAction("actions/list-add", 32, "Add", "Add a file to the list")
+        self.actions["remove"] = self.createAction("actions/list-remove", 32, "Remove", "Remove the file from the list")
         self.actions["start"] = self.createAction("actions/media-playback-start", 32, "Start", "Start receiving the file")
         self.actions["pause"] = self.createAction("actions/media-playback-pause", 32, "Pause", "Pause the transfer")
         self.actions["stop"] = self.createAction("actions/media-playback-stop", 32, "Stop", "Cancel the transfer")
@@ -75,7 +75,7 @@ class MainWindow(QMainWindow):
         self.toolbar = self.addToolBar("Actions")
         self.toolbar.setIconSize(QSize(32, 32))
         self.toolbar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-        for name in ("connect", None, "add", "remove", None, "start", "pause", "stop", None, "open"):
+        for name in ("disconnect", None, "add", "remove", None, "start", "pause", "stop", None, "open"):
             if name:
                 self.toolbar.addAction(self.actions[name])
             else:
@@ -84,16 +84,16 @@ class MainWindow(QMainWindow):
     
     def initStatusBar(self):
         self.connStatus = QLabel(self.statusBar())
-        self.connStatus.setPixmap(QPixmap(iconPath("status/network-offline", 24)))
-        self.connStatus.setToolTip("Not connected to a peer")
+        self.connStatus.setPixmap(QPixmap(iconPath("status/network-idle", 24)))
+        self.connStatus.setToolTip("Connected to a peer")
         self.myIP = QLabel("My IP: 127.0.0.1", self.statusBar())
-        self.transferCount = QLabel("0 transfer(s)", self.statusBar())
+        self.transferCount = QLabel("1 transfer(s)", self.statusBar())
         self.uploadSpeedIcon = QLabel(self.statusBar())
         self.uploadSpeedIcon.setPixmap(QPixmap(iconPath("actions/up", 24)))
         self.uploadSpeedText = QLabel("0 KiB/s", self.statusBar())
         self.downloadSpeedIcon = QLabel(self.statusBar())
         self.downloadSpeedIcon.setPixmap(QPixmap(iconPath("actions/down", 24)))
-        self.downloadSpeedText = QLabel("0 KiB/s", self.statusBar())
+        self.downloadSpeedText = QLabel("50 KiB/s", self.statusBar())
         self.statusBar().addWidget(self.connStatus)
         self.statusBar().addWidget(self.myIP, 2)
         self.statusBar().addWidget(self.transferCount)
@@ -117,11 +117,21 @@ class MainWindow(QMainWindow):
         sl.addSpace()
         self.setCentralWidget(sl)
 
-class SharedFileList(QWidget):
+class SharedFileList(QFrame):
+    # TODO: itemSelected signal
     def __init__(self, parent=None):
         super(SharedFileList, self).__init__(parent)
+        self.setFrameStyle(QFrame.StyledPanel | QFrame.Plain)
+        self.oddColor = QColor(255, 255, 255)
+        self.evenColor = QColor(236, 236, 236)
+        self.setAutoFillBackground(True)
+        self.palette().setColor(QPalette.Window, self.oddColor)
         self.files = []
-        self.setLayout(QVBoxLayout())
+        self.selectedIndex = -1
+        layout = QVBoxLayout()
+        layout.setMargin(0)
+        layout.setSpacing(0)
+        self.setLayout(layout)
     
     def addFile(self, name, size, icon, *args):
         widget = SharedFileWidget(self)
@@ -132,13 +142,45 @@ class SharedFileList(QWidget):
             widget.setStatusIcon(icon, i)
         self.layout().addWidget(widget)
         self.files.append(widget)
+        self.updateItems()
     
     def addSpace(self):
         self.layout().addStretch()
-        
+    
+    def updateItems(self):
+        for i in range(0, len(self.files)):
+            self.updateItemPalette(i)
+    
+    def updateItemPalette(self, index):
+        appPal = QApplication.palette()
+        if index == self.selectedIndex:
+            bgColor = appPal.color(QPalette.Highlight)
+            fgColor = appPal.color(QPalette.HighlightedText)
+        else:
+            bgColor = (index % 2) and self.evenColor or self.oddColor
+            fgColor = appPal.color(QPalette.WindowText)
+        item = self.files[index]
+        pal = item.palette()
+        pal.setColor(QPalette.Window, bgColor)
+        pal.setColor(QPalette.WindowText, fgColor)
+        item.updatePalette(pal)
+    
+    def mousePressEvent(self, e):
+        # the user might have clicked on a child's child widget
+        # find the direct child widget
+        widget = self.childAt(e.x(), e.y())
+        while widget and not (widget.parentWidget() is self):
+            widget = widget.parentWidget()
+        if widget is None:
+            self.selectedIndex = -1
+        else:
+            self.selectedIndex = self.files.index(widget)
+        self.updateItems()
+
 class SharedFileWidget(QWidget):
     def __init__(self, parent=None):
         super(SharedFileWidget, self).__init__(parent)
+        self.setAutoFillBackground(True)
         self.typeIcon = QLabel()
         self.typeIcon.setFixedSize(QSize(48, 48))
         self.statusIcons = [QLabel() for i in range(0, 3)]
@@ -165,11 +207,18 @@ class SharedFileWidget(QWidget):
         content.addWidget(self.fileName)
         content.addLayout(transferInfo)
         grid = QGridLayout()
+        grid.setMargin(8)
         grid.addWidget(self.typeIcon, 0, 0, Qt.AlignCenter)
         grid.addLayout(content, 0, 1, Qt.AlignVCenter)
         grid.addLayout(status, 1, 0)
         grid.addWidget(self.transferProgress, 1, 1)
         self.setLayout(grid)
+    
+    def updatePalette(self, newPalette):
+        self.fileName.setPalette(newPalette)
+        self.transferSize.setPalette(newPalette)
+        self.transferTime.setPalette(newPalette)
+        self.repaint()
     
     def setName(self, name):
         self.fileName.setText(name)
