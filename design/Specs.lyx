@@ -367,6 +367,7 @@ status collapsed
 \begin_inset Graphics
 	filename FileDB.eps
 	lyxscale 50
+	display false
 	scale 45
 
 \end_inset
@@ -416,6 +417,7 @@ status collapsed
 \begin_inset Graphics
 	filename ArchOverview.dia
 	lyxscale 50
+	display false
 	scale 45
 
 \end_inset
@@ -471,8 +473,7 @@ reference "sec:AppProtocol"
 \end_inset
 
 ) is responsible for doing the translation between the two.
- The messaging module abstracts away the use of these protocols, to let
- the rest of the application deal with messages directly.
+ 
 \end_layout
 
 \begin_layout Standard
@@ -480,13 +481,14 @@ reference "sec:AppProtocol"
 \begin_inset Float figure
 wide false
 sideways false
-status open
+status collapsed
 
 \begin_layout Plain Layout
 \align center
 \begin_inset Graphics
 	filename MessagingClasses.eps
 	lyxscale 50
+	display false
 	scale 45
 
 \end_inset
@@ -504,6 +506,13 @@ Main messaging classes
 \end_inset
 
 
+\begin_inset CommandInset label
+LatexCommand label
+name "Flo:MessagingClasses"
+
+\end_inset
+
+
 \end_layout
 
 \end_inset
@@ -511,8 +520,44 @@ Main messaging classes
 
 \end_layout
 
+\begin_layout Standard
+As can be seen in figure 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "Flo:MessagingClasses"
+
+\end_inset
+
+, the main messaging class is 
+\emph on
+Messenger
+\emph default
+, which wraps a file-like object.
+ It lets the caller send and receive messages directly without having to
+ think about the lower-level (transport layer) details.
+ The 
+\emph on
+sendMessage
+\emph default
+ and 
+\emph on
+receiveMessage
+\emph default
+ methods can be called either synchronously (the method blocks until the
+ message is sent/received) or asynchronously (i.e.
+ in a non-blocking way).
+ By default each method is blocking, but the caller can pass a 
+\emph on
+Future
+\emph default
+ object to make it non-blocking.
+ These objects accept a callback to notify the caller of the task's completion;
+ alternatively the caller can retrieve the Future's result, which blocks
+ until the task is completed.
+\end_layout
+
 \begin_layout Subsubsection
-Channels
+Transport
 \end_layout
 
 \begin_layout Standard
@@ -1882,6 +1927,7 @@ status collapsed
 \begin_inset Graphics
 	filename UI-prototype.png
 	lyxscale 60
+	display false
 	scale 90
 
 \end_inset
