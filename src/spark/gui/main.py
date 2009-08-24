@@ -81,6 +81,7 @@ class MainWindow(QMainWindow):
             else:
                 self.toolbar.addSeparator()
         self.toolbar.setMovable(False)
+        self.updateSelectedFile(-1)
     
     def initStatusBar(self):
         self.connStatus = QLabel(self.statusBar())
@@ -103,29 +104,56 @@ class MainWindow(QMainWindow):
         self.statusBar().addWidget(self.downloadSpeedText)
     
     def initFileList(self):
-        sl = SharedFileList(self)
-        sl.addFile("Report.pdf", "Size: 3 MiB", "mimetypes/gnome-mime-application-pdf",
+        self.fileList = SharedFileList()
+        self.fileList.addFile("Report.pdf", "Size: 3 MiB", "mimetypes/gnome-mime-application-pdf",
                    None, None, "categories/applications-internet")
-        sl.addFile("Spark-0.1_noarch.deb", "Size: 1 MiB", "mimetypes/deb",
+        self.fileList.addFile("Spark-0.1_noarch.deb", "Size: 1 MiB", "mimetypes/deb",
                    "actions/go-home", None, "categories/applications-internet")
-        sl.addFile("SeisRoX-2.0.9660.exe", "Received 5.25 MiB out of 22 MiB (24.5%)", "mimetypes/exec",
+        self.fileList.files[1].setTransferTime("Received in 10 secondes (100 KiB/s)")
+        self.fileList.addFile("SeisRoX-2.0.9660.exe", "Received 5.25 MiB out of 22 MiB (24.5%)", "mimetypes/exec",
                    "actions/go-home", "actions/go-previous", "categories/applications-internet")
-        sl.files[2].setTransferProgress(24)
-        sl.files[2].setTransferTime("5 minutes left (50 KiB/s)")
-        sl.addFile("TestArchive.zip", "Size: 117 MiB", "mimetypes/zip",
+        self.fileList.files[2].setTransferProgress(24)
+        self.fileList.files[2].setTransferTime("5 minutes left (50 KiB/s)")
+        self.fileList.addFile("TestArchive.zip", "Size: 117 MiB", "mimetypes/zip",
                    "actions/go-home", None, None)
-        sl.addSpace()
-        self.setCentralWidget(sl)
+        self.fileList.addSpace()
+        self.connect(self.fileList, SIGNAL("selectionChanged"), self.updateSelectedFile)
+        self.scrollArea = QScrollArea()
+        self.scrollArea.setFrameStyle(QFrame.NoFrame)
+        self.scrollArea.setWidgetResizable(True)
+        self.scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scrollArea.setMinimumWidth(540)
+        self.scrollArea.setWidget(self.fileList)
+        self.setCentralWidget(self.scrollArea)
+        self.fileList.setFocus()
+    
+    def updateSelectedFile(self, index):
+        keys = ["remove", "start", "pause", "stop", "open"]
+        if index < 0:
+            values = [False, False, False, False, False]
+        elif index == 0:
+            values = [True, True, False, False, False]
+        elif (index == 1) or (index == 3):
+            values = [True, False, False, False, True]
+        elif index == 2:
+            values = [False, False, True, True, False]
+        for key, value in zip(keys, values):
+            self.actions[key].setEnabled(value)
+        if index >= 0:
+            w = self.fileList.files[index]
+            self.scrollArea.ensureWidgetVisible(w, 0, 0)
 
-class SharedFileList(QFrame):
-    # TODO: itemSelected signal
+# TODO: rename to CustomFileList
+#       class SharedFileList wraps it + scroll area
+class SharedFileList(QWidget):
     def __init__(self, parent=None):
         super(SharedFileList, self).__init__(parent)
-        self.setFrameStyle(QFrame.StyledPanel | QFrame.Plain)
-        self.oddColor = QColor(255, 255, 255)
-        self.evenColor = QColor(236, 236, 236)
+        self.setFocusPolicy(Qt.StrongFocus)
+        pal = self.palette()
+        self.oddColor = pal.color(QPalette.Base)
+        self.evenColor = pal.color(QPalette.AlternateBase)
+        pal.setColor(QPalette.Window, self.oddColor)
         self.setAutoFillBackground(True)
-        self.palette().setColor(QPalette.Window, self.oddColor)
         self.files = []
         self.selectedIndex = -1
         layout = QVBoxLayout()
@@ -171,11 +199,30 @@ class SharedFileList(QFrame):
         widget = self.childAt(e.x(), e.y())
         while widget and not (widget.parentWidget() is self):
             widget = widget.parentWidget()
-        if widget is None:
-            self.selectedIndex = -1
+        if (widget is None) or not (widget in self.files):
+            selected = -1
         else:
-            self.selectedIndex = self.files.index(widget)
-        self.updateItems()
+            selected = self.files.index(widget)
+        self.updateSelectedIndex(selected)
+    
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key_Up:
+            selected = max(0, self.selectedIndex - 1)
+        elif e.key() == Qt.Key_Down:
+            selected = min(self.selectedIndex + 1, len(self.files) - 1)
+        elif e.key() == Qt.Key_Home:
+            selected = 0
+        elif e.key() == Qt.Key_End:
+            selected = len(self.files) - 1
+        else:
+            return
+        self.updateSelectedIndex(selected)
+    
+    def updateSelectedIndex(self, newIndex):
+        if newIndex != self.selectedIndex:
+            self.selectedIndex = newIndex
+            self.emit(SIGNAL("selectionChanged"), newIndex)
+            self.updateItems()
 
 class SharedFileWidget(QWidget):
     def __init__(self, parent=None):
