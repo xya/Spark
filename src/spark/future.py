@@ -24,11 +24,15 @@ import threading
 class Future(object):
     """
     Represents a task whose result will be known in the future.
-    bindSelf determines whether "self" should be passed to the callback or not.
+    passSelf determines whether "self" should be passed to the callback or not.
     """
-    def __init__(self, callback=None, bindSelf=True):
-        if bindSelf and (callback is not None):
-            self._callback = types.MethodType(callback, self)
+    def __init__(self, callback=None, passSelf=True):
+        if passSelf and (callback is not None):
+            # is the callback a bound function?
+            if hasattr(callback, "__self__"):
+                self._callback = types.MethodType(lambda f: callback(f), self)
+            else:
+                self._callback = types.MethodType(callback, self)
         else:
             self._callback = callback
         self._result = None

@@ -624,6 +624,17 @@ blocking until a message is received from the socket
  
 \end_layout
 
+\begin_layout Standard
+\begin_inset Graphics
+	filename Threading.eps
+	display false
+	scale 45
+
+\end_inset
+
+
+\end_layout
+
 \begin_layout Subsection
 Observers and events
 \end_layout
