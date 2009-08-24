@@ -1,5 +1,5 @@
 TARGET = Specs.pdf
-DIAGRAMS = Transfer.eps View.eps FileDB.eps MessagingOverview.eps MessagingClasses.eps UI-prototype.png
+DIAGRAMS = Transfer.eps View.eps FileDB.eps ArchOverview.eps MessagingClasses.eps UI-prototype.png
 
 all: $(TARGET)
 

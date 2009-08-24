@@ -367,7 +367,7 @@ status collapsed
 \begin_inset Graphics
 	filename FileDB.eps
 	lyxscale 50
-	scale 50
+	scale 45
 
 \end_inset
 
@@ -402,7 +402,42 @@ name "Flo:SharedFileDBSchema"
 \end_layout
 
 \begin_layout Subsection
-Network architecture
+Architecture
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status collapsed
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename ArchOverview.dia
+	lyxscale 50
+	scale 45
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+Architecture overview
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Subsubsection
@@ -438,75 +473,21 @@ reference "sec:AppProtocol"
 ) is responsible for doing the translation between the two.
  The messaging module abstracts away the use of these protocols, to let
  the rest of the application deal with messages directly.
- This is shown in figure 
-\begin_inset CommandInset ref
-LatexCommand vref
-reference "Flo:MessagingOverview"
-
-\end_inset
-
-.
-\end_layout
-
-\begin_layout Standard
-\begin_inset Float figure
-wide false
-sideways false
-status collapsed
-
-\begin_layout Plain Layout
-\align center
-\begin_inset Graphics
-	filename MessagingOverview.eps
-	lyxscale 50
-	scale 37
-
-\end_inset
-
-
-\end_layout
-
-\begin_layout Plain Layout
-\begin_inset Caption
-
-\begin_layout Plain Layout
-Overview of the messaging module
-\end_layout
-
-\end_inset
-
-
-\end_layout
-
-\begin_layout Plain Layout
-\begin_inset CommandInset label
-LatexCommand label
-name "Flo:MessagingOverview"
-
-\end_inset
-
-
-\end_layout
-
-\end_inset
-
-
 \end_layout
 
 \begin_layout Standard
 \align block
 \begin_inset Float figure
-placement h
 wide false
 sideways false
-status collapsed
+status open
 
 \begin_layout Plain Layout
 \align center
 \begin_inset Graphics
 	filename MessagingClasses.eps
 	lyxscale 50
-	scale 40
+	scale 45
 
 \end_inset
 
@@ -517,7 +498,7 @@ status collapsed
 \begin_inset Caption
 
 \begin_layout Plain Layout
-Messaging classes
+Main messaging classes
 \end_layout
 
 \end_inset
