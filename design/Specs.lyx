@@ -682,9 +682,16 @@ A protocol is needed to communicate between both peers.
 \end_layout
 
 \begin_layout Standard
+It should be noted that this protocol is stateful.
+ This means the application's state (mostly transfer-related) is tied to
+ the connection; when it is closed --- whether gracefully or not --- this
+ state is lost.
+\end_layout
+
+\begin_layout Standard
 This section assumes a stream-based transport protocol (e.g.
  TCP) is used.
- This is why all messages end with a newline.
+ This is why messages are separated by newlines.
  This protocol could be used with message-based protocols (e.g.
  UDP, SCTP) without newline delimiters.
 \end_layout
@@ -1203,6 +1210,224 @@ end{verbatim}
 \end_layout
 
 \begin_layout Subsection
+List of requests and responses
+\end_layout
+
+\begin_layout Paragraph
+list-files
+\end_layout
+
+\begin_layout Standard
+Requests information about the files in the shared list.
+ If the 
+\begin_inset Quotes eld
+\end_inset
+
+register
+\begin_inset Quotes erd
+\end_inset
+
+ parameter is present in the request, notifications will be sent when the
+ contents of the list change.
+ The response contains a dict mapping permanent file IDs to file information.
+\end_layout
+
+\begin_layout Paragraph
+create-transfer
+\end_layout
+
+\begin_layout Standard
+Requests the creation of a transfer of file blocks.
+ The request must specify the size of the blocks and the file's permanent
+ ID; the list of block IDs is optional (if absent every block in the file
+ will be transfered).
+ A successful response contains the transfer's ID and the current state
+ of the transfer (
+\begin_inset Quotes eld
+\end_inset
+
+inactive
+\begin_inset Quotes erd
+\end_inset
+
+).
+ Any further change of state of the transfer will be followed by a 
+\begin_inset Quotes eld
+\end_inset
+
+transfer-state
+\begin_inset Quotes erd
+\end_inset
+
+ notification, with the exception of changes notified in responses.
+\end_layout
+
+\begin_layout Paragraph
+start-transfer
+\end_layout
+
+\begin_layout Standard
+Requests the start of an existant, inactive transfer (specified by its ID
+ in the request).
+ The response contains the new state of the transfer: 
+\begin_inset Quotes eld
+\end_inset
+
+starting
+\begin_inset Quotes erd
+\end_inset
+
+ if the file's blocks will start being transfered, or 
+\begin_inset Quotes eld
+\end_inset
+
+error
+\begin_inset Quotes erd
+\end_inset
+
+ if the operation failed.
+\end_layout
+
+\begin_layout Paragraph
+close-transfer
+\end_layout
+
+\begin_layout Standard
+Requests the termination of an existant transfer (specified by its ID in
+ the request).
+ An active transfer will be stopped without waiting for its completion.
+ After the response is sent the transfer's ID becomes invalid.
+ This lets the sending peer free any resource tied to the transfer.
+\end_layout
+
+\begin_layout Paragraph
+shutdown
+\end_layout
+
+\begin_layout Standard
+Requests the orderly shutdown of the remote peer's file share.
+ This might include persisting the current state of the application (e.g.
+ the shared file list and transfer state, maybe to efficiently permit resuming
+ transfers later).
+ All active transfers will be stopped without waiting for completion.
+ After the response is sent, further requests will fail and the remote peer
+ isn't obligated to respond.
+ Similarly no further notification will be sent.
+ Unless the requesting peer's file share has already been shut down, it
+ is unaffected by this request.
+ The connection should be closed as soon as both peers' file shares have
+ been shut down, but not before.
+\end_layout
+
+\begin_layout Standard
+The requesting peer may implement a timeout to avoid waiting for a response
+ forever; if it does the request must contain a 
+\begin_inset Quotes eld
+\end_inset
+
+timeout
+\begin_inset Quotes erd
+\end_inset
+
+ parameter.
+ This parameter indicates the time in seconds the peer will wait before
+ closing the connection (in the absence of a response).
+\end_layout
+
+\begin_layout Subsection
+List of notifications
+\end_layout
+
+\begin_layout Paragraph
+file-added
+\end_layout
+
+\begin_layout Standard
+Indicates that a file has been added to the shared file list.
+ It contains basic information about the file (its name, size and last modified
+ date) and more importantly its permanent ID.
+ This notification is only sent after a 
+\begin_inset Quotes eld
+\end_inset
+
+list-files
+\begin_inset Quotes erd
+\end_inset
+
+ request has been sent with the 
+\begin_inset Quotes eld
+\end_inset
+
+register
+\begin_inset Quotes erd
+\end_inset
+
+ parameter.
+\end_layout
+
+\begin_layout Paragraph
+file-removed
+\end_layout
+
+\begin_layout Standard
+Indicates that a file has been removed from the shared file list.
+ It contains the file's permanent ID.
+ This notification is only sent after a 
+\begin_inset Quotes eld
+\end_inset
+
+list-files
+\begin_inset Quotes erd
+\end_inset
+
+ request has been sent with the 
+\begin_inset Quotes eld
+\end_inset
+
+register
+\begin_inset Quotes erd
+\end_inset
+
+ parameter.
+\end_layout
+
+\begin_layout Paragraph
+transfer-state-changed
+\end_layout
+
+\begin_layout Standard
+Indicates that the state of a transfer has changed.
+ It contains both the transfer's ID and new state.
+ Changes that are the consequence of a transfer-related request (like 
+\begin_inset Quotes eld
+\end_inset
+
+start-transfer
+\begin_inset Quotes erd
+\end_inset
+
+ and 
+\begin_inset Quotes eld
+\end_inset
+
+close-transfer
+\begin_inset Quotes erd
+\end_inset
+
+) aren't tracked.
+ For example this notification is sent before the first block of a transfer
+ is sent, or when transfers are terminated as a side-effect of the 
+\begin_inset Quotes eld
+\end_inset
+
+shutdown
+\begin_inset Quotes erd
+\end_inset
+
+ request.
+\end_layout
+
+\begin_layout Subsection
 Example of an exchange between two peers
 \end_layout
 
@@ -1283,7 +1508,8 @@ n
 
 \begin_layout Plain Layout
 
-A: > create-transfer 26 58 {"blocksize": 1024, "ranges": 
+A: > create-transfer 26 79 {"file-id": "<guid>", "blocksize": 1024, "ranges":
+ 
 \end_layout
 
 \begin_layout Plain Layout
@@ -1297,7 +1523,7 @@ n
 
 \begin_layout Plain Layout
 
-B: < create-transfer 26 31 {"id": 2, "state": "unstarted"}
+B: < create-transfer 26 30 {"id": 2, "state": "inactive"}
 \backslash
 r
 \backslash
@@ -1329,7 +1555,7 @@ n
 
 \begin_layout Plain Layout
 
-B: ! transfer-state 56 28 {"id": 2, "state": "active"}
+B: ! transfer-state-changed 56 28 {"id": 2, "state": "active"}
 \backslash
 r
 \backslash
@@ -1389,6 +1615,24 @@ xFF<raw block data>
 r
 \backslash
 n
+\end_layout
+
+\begin_layout Plain Layout
+
+A: > close-transfer 28 9 {"id": 2}
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+B: < close-transfer 28 9 {"id": 2}
+\backslash
+r
+\backslash
+n
 \backslash
 end{verbatim}
 \end_layout
@@ -1396,14 +1640,6 @@ end{verbatim}
 \end_inset
 
 
-\end_layout
-
-\begin_layout Subsection
-List of requests and responses
-\end_layout
-
-\begin_layout Subsection
-List of notifications
 \end_layout
 
 \begin_layout Section

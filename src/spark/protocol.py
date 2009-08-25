@@ -340,7 +340,7 @@ class TextParser(object):
             text = self.buffer[:length]
         if isinstance(pred, basestring):
             return text == pred
-        elif callable(pred):
+        elif hasattr(pred, '__call__'):
             return bool(pred(text))
         elif hasattr(pred, 'match'):
             return bool(pred.match(text)) # e.g compiled regexp

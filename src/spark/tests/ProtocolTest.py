@@ -30,13 +30,16 @@ protocol SPARKv1
 > list-files 0 18 {"register": true}
 < list-files 0 108 {"<guid>": {"id": "<guid>", "name": "Report.pdf", "size": 3145728, "last-modified": "20090619T173529.000Z"}}
 ! file-added 55 106 {"id": "<guid>", "name": "SeisRoX-2.0.9660.exe", "size": 3145728, "last-modified": "20090619T173529.000Z"}
-> create-transfer 26 58 {"blocksize": 1024, "ranges": [{"start": 0, "end": 3071}]}
-< create-transfer 26 31 {"id": 1, "state": "unstarted"}
-> start-transfer 27 9 {"id": 1}
-< start-transfer 27 30 {"id": 1, "state": "starting"}
-! transfer-state 56 28 {"id": 1, "state": "active"}
+> create-transfer 26 79 {"file-id": "<guid>", "blocksize": 1024, "ranges": [{"start": 0, "end": 3071}]}
+< create-transfer 26 30 {"id": 2, "state": "inactive"}
+> start-transfer 27 9 {"id": 2}
+< start-transfer 27 30 {"id": 2, "state": "starting"}
+! transfer-state-changed 56 28 {"id": 2, "state": "active"}
 0x0014\x00\x01\x00\x02\x00\x00\x00\x00Hello, world
-0x0408\x00\x01\x00\x02\x00\x00\x0B\xFF""" + ("!" * 1024)
+0x0408\x00\x01\x00\x02\x00\x00\x0B\xFF""" + ("!" * 1024) + """
+> close-transfer 28 9 {"id": 2}
+< close-transfer 28 9 {"id": 2}
+"""
 
 TestItems = [
     SupportedProtocolNames(["SPARKv1"]),
@@ -45,59 +48,51 @@ TestItems = [
     TextMessage(TextMessage.REQUEST, "list-files", 0, {"register": True}),
     TextMessage(TextMessage.RESPONSE, "list-files", 0, {"<guid>": {"id": "<guid>", "name": "Report.pdf", "size": 3145728, "last-modified": "20090619T173529.000Z"}}),
     TextMessage(TextMessage.NOTIFICATION, "file-added", 55, {"id": "<guid>", "name": "SeisRoX-2.0.9660.exe", "size": 3145728, "last-modified": "20090619T173529.000Z"}),
-    TextMessage(TextMessage.REQUEST, "create-transfer", 26, {"blocksize": 1024, "ranges": [{"start": 0, "end": 3071}]}),
-    TextMessage(TextMessage.RESPONSE, "create-transfer", 26, {"id": 1, "state": "unstarted"}),
-    TextMessage(TextMessage.REQUEST, "start-transfer", 27, {"id": 1}),
-    TextMessage(TextMessage.RESPONSE, "start-transfer", 27, {"id": 1, "state": "starting"}),
-    TextMessage(TextMessage.NOTIFICATION, "transfer-state", 56, {"id": 1, "state": "active"}),
+    TextMessage(TextMessage.REQUEST, "create-transfer", 26, {"file-id": "<guid>", "blocksize": 1024, "ranges": [{"start": 0, "end": 3071}]}),
+    TextMessage(TextMessage.RESPONSE, "create-transfer", 26, {"id": 2, "state": "inactive"}),
+    TextMessage(TextMessage.REQUEST, "start-transfer", 27, {"id": 2}),
+    TextMessage(TextMessage.RESPONSE, "start-transfer", 27, {"id": 2, "state": "starting"}),
+    TextMessage(TextMessage.NOTIFICATION, "transfer-state-changed", 56, {"id": 2, "state": "active"}),
     Block(2, 0, "Hello, world"),
     Block(2, 3071, "!" * 1024),
+    TextMessage(TextMessage.REQUEST, "close-transfer", 28, {"id": 2}),
+    TextMessage(TextMessage.RESPONSE, "close-transfer", 28, {"id": 2}),
 ]
 
 class ProtocolTest(unittest.TestCase):
-    def getTestItems(self):
-        return TestItems
-    
     def assertMessagesEqual(self, expected, actual):
         if expected is None:
             self.assertEqual(expected, actual)
         else:
             self.assertEqual(str(expected), str(actual))
     
-    def __neq__(self, other):
-        return not (self == other)
-        
-    def testParseProtocol(self):
-        f = StringIO(TestText)
-        p = parser(f)
-        items = list(p.readAll())
-        self.assertEqual(13, len(items))
+    def assertSeqsEqual(self, expectedSeq, actualSeq):
+        self.assertEqual(len(expectedSeq), len(actualSeq))
+        for expected, actual in zip(expectedSeq, actualSeq):
+            self.assertMessagesEqual(expected, actual)
+    
+    def testParseText(self):
+        """ Ensure that parser() can read messages from a text file """
+        p = parser(StringIO(TestText))
+        actualItems = list(p.readAll())
+        self.assertSeqsEqual(TestItems, actualItems)
     
     def testReadWriteSync(self):
         """ Ensure that messages written by writer() can be read by parser() """
         # first individual messages
-        testItems = self.getTestItems()
-        for item in testItems:
-            self.readWriteSync(item)
+        for item in TestItems:
+            f = StringIO()
+            writer(f).write(item)
+            f.seek(0)
+            actual = parser(f).read()
+            self.assertMessagesEqual(item, actual)
         
         # then a stream of messages
         f = StringIO()
-        w = writer(f)
-        w.writeAll(testItems)
+        writer(f).writeAll(TestItems)
         f.seek(0)
-        p = parser(f)
-        actualItems = list(p.readAll())
-        self.assertEqual(len(testItems), len(actualItems))
-        for expected, actual in zip(testItems, actualItems):
-            self.assertMessagesEqual(expected, actual)
-    
-    def readWriteSync(self, item):
-        f = StringIO()
-        w = writer(f)
-        w.write(item)
-        f.seek(0)
-        p = parser(f)
-        self.assertMessagesEqual(item, p.read())
+        actualItems = list(parser(f).readAll())
+        self.assertSeqsEqual(TestItems, actualItems)
 
 if __name__ == '__main__':
     unittest.main()
