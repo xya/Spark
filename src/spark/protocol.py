@@ -19,7 +19,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 import json
-import struct
+from struct import Struct
 
 __all__ = ["parser", "writer"]
 
@@ -82,6 +82,7 @@ class TextMessage(Message):
 
 class Blob(Message):
     HEX_DIGITS = 4
+    Type = Struct("!H")
     
     def __init__(self):
         super(Blob, self).__init__()
@@ -93,11 +94,12 @@ class Blob(Message):
     def canonical(self):
         data = self.data
         size = 2 + len(data)
+        cls = self.__class__
         return "".join(["0x", hex(size)[2:].zfill(Blob.HEX_DIGITS),
-            struct.pack("!H", self.__class__.ID), data])
+            cls.Type.pack(cls.ID), data])
 
 class Block(Blob):
-    FORMAT = "!HI"
+    Header = Struct("!HI")
     ID = 1
     
     def __init__(self, transferID, blockID, blockData):
@@ -108,7 +110,7 @@ class Block(Blob):
     
     @property
     def data(self):
-        return struct.pack(Block.FORMAT, self.transferID, self.blockID) + self.blockData
+        return Block.Header.pack(self.transferID, self.blockID) + self.blockData
 
 class SparkProtocolWriter(object):
     def __init__(self, file):
@@ -194,10 +196,10 @@ class SparkProtocolReader(object):
                 self.parser.error('Expected string of length %i' % length)
             return self.parser.remove(length)
     
-    def readStruct(self, size, format):
-        data = self.parser.read(size)
+    def readStruct(self, format):
+        data = self.parser.read(format.size)
         try:
-            return struct.unpack(format, data)
+            return format.unpack(data)
         except Exception, e:
             self.parser.error(str(e))
     
@@ -230,18 +232,16 @@ class SparkProtocolReader(object):
     
     def parseBlob(self):
         size = self.readSize()
-        typeSize = struct.calcsize("!H")
-        typeID = self.readStruct(typeSize, "!H")[0]
+        typeID = self.readStruct(Blob.Type)[0]
         try:
             parseFun = self.blobParsers[typeID]
-            return parseFun(size - typeSize)
+            return parseFun(size - Blob.Type.size)
         except KeyError:
             self.parser.error("Unknown blob type '%i'" % typeID)
     
     def parseBlock(self, size):
-        headerSize = struct.calcsize(Block.FORMAT)
-        transferID, blockID = self.readStruct(headerSize, Block.FORMAT)
-        blockData = self.parser.read(size - headerSize)
+        transferID, blockID = self.readStruct(Block.Header)
+        blockData = self.parser.read(size - Block.Header.size)
         return Block(transferID, blockID, blockData)
 
 class TextParser(object):

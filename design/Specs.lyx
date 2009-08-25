@@ -1102,6 +1102,106 @@ The following is specific to blocks:
  bytes containing the block's data
 \end_layout
 
+\begin_layout Subsubsection
+Grammar
+\end_layout
+
+\begin_layout Standard
+Below is a BNF-like grammar for a stream of messages.
+\end_layout
+
+\begin_layout Standard
+\begin_inset ERT
+status open
+
+\begin_layout Plain Layout
+
+
+\backslash
+begin{verbatim}message-stream = message | message newline message-stream
+\end_layout
+
+\begin_layout Plain Layout
+
+message = supported-protocol-names | protocol-name | text-message | blob
+\end_layout
+
+\begin_layout Plain Layout
+
+supported-protocol-names = 'supports' delimiter protocol-list
+\end_layout
+
+\begin_layout Plain Layout
+
+protocol-name = 'protocol' delimiter tag
+\end_layout
+
+\begin_layout Plain Layout
+
+text-message = text-type delimiter transID delimiter text-data
+\end_layout
+
+\begin_layout Plain Layout
+
+blob = hex-size blob-data
+\end_layout
+
+\begin_layout Plain Layout
+
+protocol-list = tag | tag delimiter protocol-list
+\end_layout
+
+\begin_layout Plain Layout
+
+text-data = '0' | text-size delimiter <JSON object>
+\end_layout
+
+\begin_layout Plain Layout
+
+blob-data = '
+\backslash
+x00
+\backslash
+x01' block
+\end_layout
+
+\begin_layout Plain Layout
+
+block = transferID blockID <binary data>
+\end_layout
+
+\begin_layout Plain Layout
+
+delimiter = [ ]+
+\end_layout
+
+\begin_layout Plain Layout
+
+tag = [^ ]+
+\end_layout
+
+\begin_layout Plain Layout
+
+text-type = '>' | '<' | '!'
+\end_layout
+
+\begin_layout Plain Layout
+
+hex-size = '0x' [0-9A-F]{4}
+\end_layout
+
+\begin_layout Plain Layout
+
+text-size = [0-9]+
+\backslash
+end{verbatim}
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
 \begin_layout Subsection
 Example of an exchange between two peers
 \end_layout
