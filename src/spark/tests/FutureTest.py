@@ -25,12 +25,16 @@ from spark.future import Future
 class FutureTest(unittest.TestCase):
     def testCompleted(self):
         f = Future()
+        self.assertTrue(f.pending)
         f.completed("spam", "eggs")
+        self.assertFalse(f.pending)
         self.assertEqual(("spam", "eggs"), f.result)
     
     def testFailedSimple(self):
         f = Future()
+        self.assertTrue(f.pending)
         f.failed()
+        self.assertFalse(f.pending)
         try:
             r = f.result
             self.fail("result didn't raise an exception")

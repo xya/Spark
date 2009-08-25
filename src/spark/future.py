@@ -40,6 +40,12 @@ class Future(object):
         self._wait = threading.Condition(self._lock)
     
     @property
+    def pending(self):
+        """ Indicate whether the task is still active or if it is complete. """
+        with self._lock:
+            return self._result is None
+    
+    @property
     def result(self):
         """
         Access the result of the task. If it is not available yet, block until it is.

@@ -1118,7 +1118,7 @@ n
 
 \begin_layout Plain Layout
 
-A: > list-files 0 {'register' : true}
+A: > list-files 0 {"register" : true}
 \backslash
 r
 \backslash
@@ -1127,72 +1127,12 @@ n
 
 \begin_layout Plain Layout
 
-B: < list-files 0 {'<guid>' : {'id' : '<guid>', 'name' : 'Report.pdf', 
+B: < list-files 0 {"<guid>" : {"id" : "<guid>", "name" : "Report.pdf", 
 \end_layout
 
 \begin_layout Plain Layout
 
-    'size' : 3145728, 'last-modified' : '20090619T173529.000Z'}}
-\backslash
-r
-\backslash
-n
-\end_layout
-
-\begin_layout Plain Layout
-
-...
-\end_layout
-
-\begin_layout Plain Layout
-
-B: ! file-added 55 {'id' : '<guid>', 'name' : 'SeisRoX-2.0.9660.exe',
-\end_layout
-
-\begin_layout Plain Layout
-
-    'size' : 3145728, 'last-modified' : '20090619T173529.000Z'}
-\backslash
-r
-\backslash
-n
-\end_layout
-
-\begin_layout Plain Layout
-
-A: > create-transfer 26 {'blocksize' : 1024, 'ranges' : 
-\end_layout
-
-\begin_layout Plain Layout
-
-    [{'start' : 0, 'end' : 3071}]}
-\backslash
-r
-\backslash
-n
-\end_layout
-
-\begin_layout Plain Layout
-
-B: < create-transfer 26 {'id' : 1, 'state' : 'unstarted'}
-\backslash
-r
-\backslash
-n
-\end_layout
-
-\begin_layout Plain Layout
-
-A: > start-transfer 27 {'id' : 1}
-\backslash
-r
-\backslash
-n
-\end_layout
-
-\begin_layout Plain Layout
-
-B: < start-transfer 27 {'id' : 1, 'state' : 'starting'}
+    "size" : 3145728, "last-modified" : "20090619T173529.000Z"}}
 \backslash
 r
 \backslash
@@ -1206,7 +1146,67 @@ n
 
 \begin_layout Plain Layout
 
-B: ! transfer-state 56 {'id' : 1, 'state' : 'active'}
+B: ! file-added 55 {"id" : "<guid>", "name" : "SeisRoX-2.0.9660.exe",
+\end_layout
+
+\begin_layout Plain Layout
+
+    "size" : 3145728, "last-modified" : "20090619T173529.000Z"}
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+A: > create-transfer 26 {"blocksize" : 1024, "ranges" : 
+\end_layout
+
+\begin_layout Plain Layout
+
+    [{"start" : 0, "end" : 3071}]}
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+B: < create-transfer 26 {"id" : 1, "state" : "unstarted"}
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+A: > start-transfer 27 {"id" : 1}
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+B: < start-transfer 27 {"id" : 1, "state" : "starting"}
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+...
+\end_layout
+
+\begin_layout Plain Layout
+
+B: ! transfer-state 56 {"id" : 1, "state" : "active"}
 \backslash
 r
 \backslash
@@ -1236,6 +1236,8 @@ r
 n
 \backslash
 end{verbatim}
+\backslash
+begin{verbatim}
 \end_layout
 
 \end_inset
