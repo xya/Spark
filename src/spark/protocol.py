@@ -19,6 +19,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 import json
+import struct
 
 __all__ = ["parser", "writer"]
 
@@ -84,10 +85,28 @@ class Blob(Message):
         if not isinstance(data, basestring):
             raise TypeError("data must be a string")
         self.data = data
-        self.size = len(data)
     
     def canonical(self):
-        return "".join(["0x", hex(self.size)[2:].zfill(6), self.data])
+        return Blob.format(self.data)
+    
+    @classmethod
+    def format(cls, data):
+        size = len(data)
+        return "".join(["0x", hex(size)[2:].zfill(6), data])
+
+class Block(Blob):
+    FORMAT = "!HHIH"
+    ID = 1
+    
+    def __init__(self, transferID, blockID, blockData):
+        self.transferID = transferID
+        self.blockID = blockID
+        self.blockData = blockData
+    
+    @property
+    def data(self):
+        return struct.pack(Block.FORMAT, Block.ID,
+            self.transferID, self.blockID, len(self.blockData)) + self.blockData
 
 class SparkProtocolWriter(object):
     def __init__(self, file):
@@ -153,8 +172,9 @@ class SparkProtocolReader(object):
         return self.parser.parse(self._tag, error='Tag expected')
     
     def readSize(self):
+        data = self.parser.read(8)
         try:
-            return int(self.parser.read(length=8), 16)
+            return int(data, 16)
         except Exception, e:
             self.parser.error(str(e))
     
@@ -166,17 +186,24 @@ class SparkProtocolReader(object):
         if length == 0:
             return ''
         else:
-            self.parser.read(self._whitespace, 1, 'Whitespace expected')
+            self.parser.read(1, self._whitespace, 'Whitespace expected')
             if not self.parser.fill(length):
                 self.parser.error('Expected string of length %i' % length)
             return self.parser.remove(length)
+    
+    def readStruct(self, size, format):
+        data = self.parser.read(size)
+        try:
+            return struct.unpack(format, data)
+        except Exception, e:
+            self.parser.error(str(e))
     
     def parseSupportedProtocolNames(self):
         names = []
         self.parser.read("supports")
         self.readDelimiter()
         names.append(self.readTag())
-        while self.parser.match(self._whitespace, 1):
+        while self.parser.match(1, self._whitespace):
             self.readDelimiter()
             names.append(self.readTag())
         return SupportedProtocolNames(names)
@@ -203,8 +230,13 @@ class SparkProtocolReader(object):
     
     def parseBlob(self):
         size = self.readSize()
-        data = self.parser.read(length=size)
-        return Blob(data)
+        if self.parser.fill(2) and self.parser.match("\x00\x01"):
+            bloblID, transferID, blockID, blockSize = self.readStruct(10, Block.FORMAT)
+            blockData = self.parser.read(blockSize)
+            return Block(transferID, blockID, blockData)
+        else:
+            data = self.parser.read(size)
+            return Blob(data)
 
 class TextParser(object):
     """ Helper class for implementing a recursive descent text parser
@@ -290,10 +322,12 @@ class TextParser(object):
         else:
             self.col += len(text)
     
-    def match(self, pred, length=None):
-        ''' match(predicate, [length]) -> bool
-        Determines whether lookup matches the string predicate. '''
-        length = length or len(pred)
+    def match(self, s, pred=None):
+        ''' Determines whether lookup matches the string s, or a predicate of length s. '''
+        if isinstance(s, basestring):
+            length, pred = len(s), s
+        else:
+            length = s
         if self.size < length:
             return False
         else:
@@ -307,13 +341,13 @@ class TextParser(object):
         else:
             raise TypeError('Invalid character predicate')
 
-    def read(self, pred=None, length=None, error=None):
-        ''' Reads a fixed length string matching the string predicate. '''
-        if length == 0:
-            return ''
-        length = length or len(pred)
-        self.fill(length)
-        if pred and not self.match(pred, length):
+    def read(self, s, pred=None, error=None):
+        ''' Reads the string s, or a predicate of length s. '''
+        if isinstance(s, basestring):
+            length, pred = len(s), s
+        else:
+            length = s
+        if not self.fill(length) or (pred and not self.match(length, pred)):
             self.error(error)
         return self.remove(length)
     

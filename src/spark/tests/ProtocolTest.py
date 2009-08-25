@@ -21,7 +21,7 @@
 
 import unittest
 from spark.protocol import parser, writer
-from spark.protocol import SupportedProtocolNames, ProtocolName, TextMessage, Blob
+from spark.protocol import SupportedProtocolNames, ProtocolName, TextMessage, Blob, Block
 from StringIO import StringIO
 
 TestText = """supports SPARKv1
@@ -36,7 +36,7 @@ protocol SPARKv1
 < start-transfer 27 30 {"id": 1, "state": "starting"}
 ! transfer-state 56 28 {"id": 1, "state": "active"}
 0x00000bhello world
-0x00000bhello world"""
+0x00000d\x00\x01\x00\x02\x00\x00\x00\x00\x00\x0bhello world"""
 
 TestItems = [
     SupportedProtocolNames(["SPARKv1"]),
@@ -51,7 +51,7 @@ TestItems = [
     TextMessage(TextMessage.RESPONSE, "start-transfer", 27, {"id": 1, "state": "starting"}),
     TextMessage(TextMessage.NOTIFICATION, "transfer-state", 56, {"id": 1, "state": "active"}),
     Blob("hello world"),
-    Blob("hello world"),
+    Block(2, 0, "hello world"),
 ]
 
 class ProtocolTest(unittest.TestCase):
