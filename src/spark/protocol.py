@@ -71,7 +71,12 @@ class TextMessage(Message):
     def canonical(self):
         chunks = [self.type, " ", self.tag, " ", str(self.transID), " "]
         if not self.data is None:
-            chunks.append(json.dumps(self.data))
+            jsonData = json.dumps(self.data, sort_keys=True)
+            chunks.append(str(len(jsonData)))
+            chunks.append(" ")
+            chunks.append(jsonData)
+        else:
+            chunks.append("0")
         return "".join(chunks)
 
 class Blob(Message):
@@ -82,7 +87,7 @@ class Blob(Message):
         self.size = len(data)
     
     def canonical(self):
-        return "".join(["0x", hex(self.size)[2:].zfill(8), self.data])
+        return "".join(["0x", hex(self.size)[2:].zfill(6), self.data])
 
 class SparkProtocolWriter(object):
     def __init__(self, file):
@@ -91,6 +96,10 @@ class SparkProtocolWriter(object):
     def write(self, m):
         self.file.write(str(m))
         self.file.write("\r\n")
+    
+    def writeAll(self, it):
+        for m in it:
+            self.write(m)
 
 class SparkProtocolReader(object):
     def __init__(self, file, buffer):
@@ -98,8 +107,10 @@ class SparkProtocolReader(object):
     
     def readAll(self):
         """ Return a sequence containing every message in the file """
-        while not self.parser.eof():
-            yield self.read()
+        m = self.read()
+        while not m is None:
+            yield m
+            m = self.read()
     
     def read(self):
         if self.moveNext():
@@ -147,6 +158,19 @@ class SparkProtocolReader(object):
         except Exception, e:
             self.parser.error(str(e))
     
+    def readInteger(self):
+        return int(self.parser.parse(self._digit, error='Number expected'))
+    
+    def readString(self):
+        length = self.readInteger()
+        if length == 0:
+            return ''
+        else:
+            self.parser.read(self._whitespace, 1, 'Whitespace expected')
+            if not self.parser.fill(length):
+                self.parser.error('Expected string of length %i' % length)
+            return self.parser.remove(length)
+    
     def parseSupportedProtocolNames(self):
         names = []
         self.parser.read("supports")
@@ -168,15 +192,13 @@ class SparkProtocolReader(object):
         self.readDelimiter()
         tag = self.readTag()
         self.readDelimiter()
-        transID = int(self.parser.parse(self._digit, error='Transaction ID expected'))
-        data = None
-        if self.parser.fill(1) and self.parser.match(self._whitespace, 1):
-            self.readDelimiter()
-            jsonData = self.parser.readUntilNewline()
-            if len(jsonData) == 0:
-                self.parser.error('JSON object expected')
-            else:
-                data = json.loads(jsonData)
+        transID = self.readInteger()
+        self.readDelimiter()
+        jsonData = self.readString()
+        if jsonData:
+            data = json.loads(jsonData)
+        else:
+            data = None
         return TextMessage(type, tag, transID, data)
     
     def parseBlob(self):
@@ -287,6 +309,8 @@ class TextParser(object):
 
     def read(self, pred=None, length=None, error=None):
         ''' Reads a fixed length string matching the string predicate. '''
+        if length == 0:
+            return ''
         length = length or len(pred)
         self.fill(length)
         if pred and not self.match(pred, length):
@@ -321,16 +345,6 @@ class TextParser(object):
                 self.error('Expected newline')
         else:
             return self.read(self.linesep, error='Expected newline')
-    
-    def _notNewLineChar(self, c, pos=0):
-        return c not in ('\n', '\r')
-    
-    def readUntilNewline(self):
-        ''' Reads until a newline character is found. '''
-        if self.fill(1) and self._notNewLineChar(self.buffer[0], 0):
-            return self.parse(self._notNewLineChar)
-        else:
-            return ''
         
 class TextParsingError(Exception):
     ''' Exception raised when parsing a text log file fails. '''

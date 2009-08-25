@@ -12,7 +12,7 @@ diagrams: $(DIAGRAMS)
 	lyx -e pdflatex $<
 
 %.eps: %.dia
-	dia -t eps-pango -e $@ $<
+	dia -t eps -e $@ $<
 
 UI-prototype.png: UI-prototype.svg
 	inkscape --export-png=$@ --export-dpi=150 $<

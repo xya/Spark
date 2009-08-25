@@ -415,7 +415,7 @@ status collapsed
 \begin_layout Plain Layout
 \align center
 \begin_inset Graphics
-	filename ArchOverview.dia
+	filename ArchOverview.eps
 	lyxscale 50
 	display false
 	scale 45
@@ -952,7 +952,8 @@ a transaction identifier.
 \end_layout
 
 \begin_layout Itemize
-optional data, which is formatted in JSON
+optional data, which is formatted in JSON and prefixed by its length in
+ bytes
 \end_layout
 
 \begin_layout Itemize
@@ -983,7 +984,7 @@ n
 
 \begin_layout Standard
 Elements are separated with spaces.
- As an exception no space is needed before the trailing newline.
+ As an exception no space is supported before the trailing newline.
  The following is an example of a text message: 
 \begin_inset ERT
 status open
@@ -992,7 +993,7 @@ status open
 
 
 \backslash
-begin{verbatim}> start-transfer 27 {'id' : 1}
+begin{verbatim}> start-transfer 27 10 {'id' : 1}
 \backslash
 r
 \backslash
@@ -1011,9 +1012,15 @@ Binary messages
 \end_layout
 
 \begin_layout Standard
-In the current version of the protocol, binary messages are only used to
- send blocks.
- The syntax for such messages is very simple.
+The syntax for binary messages (
+\begin_inset Quotes eld
+\end_inset
+
+blobs
+\begin_inset Quotes erd
+\end_inset
+
+) is very simple.
  Before the binary data is added a text prefix indicating its size.
  This prefix consists of the text 
 \begin_inset Quotes eld
@@ -1028,23 +1035,7 @@ In the current version of the protocol, binary messages are only used to
 \end_layout
 
 \begin_layout Standard
-The following is an example of a binary message: (
-\begin_inset Quotes eld
-\end_inset
-
-<
-\begin_inset Quotes erd
-\end_inset
-
- and 
-\begin_inset Quotes eld
-\end_inset
-
->
-\begin_inset Quotes erd
-\end_inset
-
- denote binary data)
+The following is an example of a binary message:
 \end_layout
 
 \begin_layout Standard
@@ -1055,7 +1046,27 @@ status open
 
 
 \backslash
-begin{verbatim}0x000408<0x0001><0x0001><0x00000000><0x0400><block data>
+begin{verbatim}0x000408
+\backslash
+x00
+\backslash
+x01
+\backslash
+x00
+\backslash
+x02
+\backslash
+x00
+\backslash
+x00
+\backslash
+x00
+\backslash
+x00
+\backslash
+x04
+\backslash
+x00<block data>
 \backslash
 r
 \backslash
@@ -1067,6 +1078,36 @@ end{verbatim}
 \end_inset
 
 
+\end_layout
+
+\begin_layout Standard
+The first two bytes indicate the type of the blob.
+ 1 is the identifier for blocks (the only type of blob in the current version
+ of the protocol).
+ Integer fields are in network order (big-endian order).
+\end_layout
+
+\begin_layout Standard
+The following is specific to blocks:
+\end_layout
+
+\begin_layout Itemize
+2 bytes indicating the transfer ID --- 2 in this example
+\end_layout
+
+\begin_layout Itemize
+4 bytes indicating the block ID --- 0 in this example
+\end_layout
+
+\begin_layout Itemize
+2 bytes indicating the size of the block in bytes --- 1024 in this example
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $n$
+\end_inset
+
+ bytes containing the block's data
 \end_layout
 
 \begin_layout Subsection
@@ -1081,17 +1122,7 @@ status open
 
 
 \backslash
-begin{verbatim}Peer A initiates the connection.
-\end_layout
-
-\begin_layout Plain Layout
-
-Peer B accepts the connection.
-\end_layout
-
-\begin_layout Plain Layout
-
-A: supports SPARKv1
+begin{verbatim}A: supports SPARKv1
 \backslash
 r
 \backslash
@@ -1118,7 +1149,7 @@ n
 
 \begin_layout Plain Layout
 
-A: > list-files 0 {"register" : true}
+A: > list-files 0 18 {"register": true}
 \backslash
 r
 \backslash
@@ -1127,72 +1158,12 @@ n
 
 \begin_layout Plain Layout
 
-B: < list-files 0 {"<guid>" : {"id" : "<guid>", "name" : "Report.pdf", 
+B: < list-files 0 108 {"<guid>": {"id": "<guid>", "name": "Report.pdf", 
 \end_layout
 
 \begin_layout Plain Layout
 
-    "size" : 3145728, "last-modified" : "20090619T173529.000Z"}}
-\backslash
-r
-\backslash
-n
-\end_layout
-
-\begin_layout Plain Layout
-
-...
-\end_layout
-
-\begin_layout Plain Layout
-
-B: ! file-added 55 {"id" : "<guid>", "name" : "SeisRoX-2.0.9660.exe",
-\end_layout
-
-\begin_layout Plain Layout
-
-    "size" : 3145728, "last-modified" : "20090619T173529.000Z"}
-\backslash
-r
-\backslash
-n
-\end_layout
-
-\begin_layout Plain Layout
-
-A: > create-transfer 26 {"blocksize" : 1024, "ranges" : 
-\end_layout
-
-\begin_layout Plain Layout
-
-    [{"start" : 0, "end" : 3071}]}
-\backslash
-r
-\backslash
-n
-\end_layout
-
-\begin_layout Plain Layout
-
-B: < create-transfer 26 {"id" : 1, "state" : "unstarted"}
-\backslash
-r
-\backslash
-n
-\end_layout
-
-\begin_layout Plain Layout
-
-A: > start-transfer 27 {"id" : 1}
-\backslash
-r
-\backslash
-n
-\end_layout
-
-\begin_layout Plain Layout
-
-B: < start-transfer 27 {"id" : 1, "state" : "starting"}
+   "size": 3145728, "last-modified": "20090619T173529.000Z"}}
 \backslash
 r
 \backslash
@@ -1206,7 +1177,12 @@ n
 
 \begin_layout Plain Layout
 
-B: ! transfer-state 56 {"id" : 1, "state" : "active"}
+B: ! file-added 55 106 {"id": "<guid>", "name": "SeisRoX-2.0.9660.exe", 
+\end_layout
+
+\begin_layout Plain Layout
+
+   "size": 3145728, "last-modified": "20090619T173529.000Z"}
 \backslash
 r
 \backslash
@@ -1215,7 +1191,39 @@ n
 
 \begin_layout Plain Layout
 
-B: 0x000408<0x0001><0x0001><0x00000000><0x0400><raw block data>
+A: > create-transfer 26 58 {"blocksize": 1024, "ranges": 
+\end_layout
+
+\begin_layout Plain Layout
+
+   [{"start": 0, "end": 3071}]}
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+B: < create-transfer 26 31 {"id": 2, "state": "unstarted"}
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+A: > start-transfer 27 9 {"id": 2}
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+B: < start-transfer 27 30 {"id": 2, "state": "starting"}
 \backslash
 r
 \backslash
@@ -1229,15 +1237,76 @@ n
 
 \begin_layout Plain Layout
 
-B: 0x000408<0x0001><0x0001><0x00000BFF><0x0400><raw block data>
+B: ! transfer-state 56 28 {"id": 2, "state": "active"}
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+B: 0x000408
+\backslash
+x00
+\backslash
+x01
+\backslash
+x00
+\backslash
+x02
+\backslash
+x00
+\backslash
+x00
+\backslash
+x00
+\backslash
+x00
+\backslash
+x04
+\backslash
+x00<raw block data>
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+...
+\end_layout
+
+\begin_layout Plain Layout
+
+B: 0x000408
+\backslash
+x00
+\backslash
+x01
+\backslash
+x00
+\backslash
+x02
+\backslash
+x00
+\backslash
+x00
+\backslash
+x0B
+\backslash
+xFF
+\backslash
+x04
+\backslash
+x00<raw block data>
 \backslash
 r
 \backslash
 n
 \backslash
 end{verbatim}
-\backslash
-begin{verbatim}
 \end_layout
 
 \end_inset
