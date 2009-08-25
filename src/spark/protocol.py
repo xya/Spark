@@ -81,32 +81,34 @@ class TextMessage(Message):
         return "".join(chunks)
 
 class Blob(Message):
-    def __init__(self, data):
-        if not isinstance(data, basestring):
-            raise TypeError("data must be a string")
-        self.data = data
+    HEX_DIGITS = 4
+    
+    def __init__(self):
+        super(Blob, self).__init__()
+    
+    @property
+    def data(self):
+        raise NotImplementedError()
     
     def canonical(self):
-        return Blob.format(self.data)
-    
-    @classmethod
-    def format(cls, data):
-        size = len(data)
-        return "".join(["0x", hex(size)[2:].zfill(6), data])
+        data = self.data
+        size = 2 + len(data)
+        return "".join(["0x", hex(size)[2:].zfill(Blob.HEX_DIGITS),
+            struct.pack("!H", self.__class__.ID), data])
 
 class Block(Blob):
-    FORMAT = "!HHIH"
+    FORMAT = "!HI"
     ID = 1
     
     def __init__(self, transferID, blockID, blockData):
+        super(Block, self).__init__()
         self.transferID = transferID
         self.blockID = blockID
         self.blockData = blockData
     
     @property
     def data(self):
-        return struct.pack(Block.FORMAT, Block.ID,
-            self.transferID, self.blockID, len(self.blockData)) + self.blockData
+        return struct.pack(Block.FORMAT, self.transferID, self.blockID) + self.blockData
 
 class SparkProtocolWriter(object):
     def __init__(self, file):
@@ -123,6 +125,7 @@ class SparkProtocolWriter(object):
 class SparkProtocolReader(object):
     def __init__(self, file, buffer):
         self.parser = TextParser(file, buffer, lineinfo=True)
+        self.blobParsers = { Block.ID : self.parseBlock }
     
     def readAll(self):
         """ Return a sequence containing every message in the file """
@@ -172,7 +175,7 @@ class SparkProtocolReader(object):
         return self.parser.parse(self._tag, error='Tag expected')
     
     def readSize(self):
-        data = self.parser.read(8)
+        data = self.parser.read(2 + Blob.HEX_DIGITS)
         try:
             return int(data, 16)
         except Exception, e:
@@ -222,21 +225,24 @@ class SparkProtocolReader(object):
         transID = self.readInteger()
         self.readDelimiter()
         jsonData = self.readString()
-        if jsonData:
-            data = json.loads(jsonData)
-        else:
-            data = None
+        data = jsonData and json.loads(jsonData) or None
         return TextMessage(type, tag, transID, data)
     
     def parseBlob(self):
         size = self.readSize()
-        if self.parser.fill(2) and self.parser.match("\x00\x01"):
-            bloblID, transferID, blockID, blockSize = self.readStruct(10, Block.FORMAT)
-            blockData = self.parser.read(blockSize)
-            return Block(transferID, blockID, blockData)
-        else:
-            data = self.parser.read(size)
-            return Blob(data)
+        typeSize = struct.calcsize("!H")
+        typeID = self.readStruct(typeSize, "!H")[0]
+        try:
+            parseFun = self.blobParsers[typeID]
+            return parseFun(size - typeSize)
+        except KeyError:
+            self.parser.error("Unknown blob type '%i'" % typeID)
+    
+    def parseBlock(self, size):
+        headerSize = struct.calcsize(Block.FORMAT)
+        transferID, blockID = self.readStruct(headerSize, Block.FORMAT)
+        blockData = self.parser.read(size - headerSize)
+        return Block(transferID, blockID, blockData)
 
 class TextParser(object):
     """ Helper class for implementing a recursive descent text parser

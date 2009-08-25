@@ -1046,7 +1046,7 @@ status open
 
 
 \backslash
-begin{verbatim}0x000408
+begin{verbatim}0x0408
 \backslash
 x00
 \backslash
@@ -1060,13 +1060,9 @@ x00
 \backslash
 x00
 \backslash
-x00
+x0B
 \backslash
-x00
-\backslash
-x04
-\backslash
-x00<block data>
+xFF<block data>
 \backslash
 r
 \backslash
@@ -1096,11 +1092,7 @@ The following is specific to blocks:
 \end_layout
 
 \begin_layout Itemize
-4 bytes indicating the block ID --- 0 in this example
-\end_layout
-
-\begin_layout Itemize
-2 bytes indicating the size of the block in bytes --- 1024 in this example
+4 bytes indicating the block ID --- 3071 in this example
 \end_layout
 
 \begin_layout Itemize
@@ -1246,7 +1238,7 @@ n
 
 \begin_layout Plain Layout
 
-B: 0x000408
+B: 0x0408
 \backslash
 x00
 \backslash
@@ -1261,10 +1253,6 @@ x00
 x00
 \backslash
 x00
-\backslash
-x00
-\backslash
-x04
 \backslash
 x00<raw block data>
 \backslash
@@ -1280,7 +1268,7 @@ n
 
 \begin_layout Plain Layout
 
-B: 0x000408
+B: 0x0408
 \backslash
 x00
 \backslash
@@ -1296,11 +1284,7 @@ x00
 \backslash
 x0B
 \backslash
-xFF
-\backslash
-x04
-\backslash
-x00<raw block data>
+xFF<raw block data>
 \backslash
 r
 \backslash

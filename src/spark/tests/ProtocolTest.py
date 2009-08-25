@@ -35,8 +35,8 @@ protocol SPARKv1
 > start-transfer 27 9 {"id": 1}
 < start-transfer 27 30 {"id": 1, "state": "starting"}
 ! transfer-state 56 28 {"id": 1, "state": "active"}
-0x00000bhello world
-0x00000d\x00\x01\x00\x02\x00\x00\x00\x00\x00\x0bhello world"""
+0x0014\x00\x01\x00\x02\x00\x00\x00\x00Hello, world
+0x0408\x00\x01\x00\x02\x00\x00\x0B\xFF""" + ("!" * 1024)
 
 TestItems = [
     SupportedProtocolNames(["SPARKv1"]),
@@ -50,8 +50,8 @@ TestItems = [
     TextMessage(TextMessage.REQUEST, "start-transfer", 27, {"id": 1}),
     TextMessage(TextMessage.RESPONSE, "start-transfer", 27, {"id": 1, "state": "starting"}),
     TextMessage(TextMessage.NOTIFICATION, "transfer-state", 56, {"id": 1, "state": "active"}),
-    Blob("hello world"),
-    Block(2, 0, "hello world"),
+    Block(2, 0, "Hello, world"),
+    Block(2, 3071, "!" * 1024),
 ]
 
 class ProtocolTest(unittest.TestCase):
