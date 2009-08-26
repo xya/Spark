@@ -338,70 +338,6 @@ A transfer is the operation of sending blocks from a peer to the other.
  whole file if it is the first time this file is transfered.
 \end_layout
 
-\begin_layout Subsubsection
-Persistent shared file list
-\end_layout
-
-\begin_layout Standard
-To implement resuming interrupted transfers, a SQLite database is used to
- persist information about shared files and transfers.
- The class diagram describing the information stored in this database is
- shown in figure 
-\begin_inset CommandInset ref
-LatexCommand vref
-reference "Flo:SharedFileDBSchema"
-
-\end_inset
-
-.
-\end_layout
-
-\begin_layout Standard
-\begin_inset Float figure
-wide false
-sideways false
-status collapsed
-
-\begin_layout Plain Layout
-\align center
-\begin_inset Graphics
-	filename FileDB.eps
-	lyxscale 50
-	display false
-	scale 45
-
-\end_inset
-
-
-\end_layout
-
-\begin_layout Plain Layout
-\begin_inset Caption
-
-\begin_layout Plain Layout
-Persisted shared file/transfer information
-\end_layout
-
-\end_inset
-
-
-\end_layout
-
-\begin_layout Plain Layout
-\begin_inset CommandInset label
-LatexCommand label
-name "Flo:SharedFileDBSchema"
-
-\end_inset
-
-
-\end_layout
-
-\end_inset
-
-
-\end_layout
-
 \begin_layout Subsection
 Architecture
 \end_layout
@@ -523,7 +459,7 @@ name "Flo:MessagingClasses"
 \begin_layout Standard
 As can be seen in figure 
 \begin_inset CommandInset ref
-LatexCommand ref
+LatexCommand vref
 reference "Flo:MessagingClasses"
 
 \end_inset
@@ -657,6 +593,45 @@ poll
 \end_inset
 
  ms).
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename View.dia
+	display false
+	scale 45
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+Class diagram of the model
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Section
