@@ -1427,6 +1427,23 @@ shutdown
  request.
 \end_layout
 
+\begin_layout Paragraph
+panic
+\end_layout
+
+\begin_layout Standard
+Indicates the file share's operation has to be immediately aborted without
+ an orderly shutdown.
+ This might happen for example if the machine's battery level is critical
+ or if the process is about to be killed (e.g.
+ received a killing signal or caught an unhandled exception).
+ This effectively says the peer sending the notification is shut down with
+ the normal consequences (requests won't be responded to, no further notificatio
+n).
+ The connection might or might not be closed; either way the peer receiving
+ the notification has to shut down its file share.
+\end_layout
+
 \begin_layout Subsection
 Example of an exchange between two peers
 \end_layout
@@ -1439,7 +1456,12 @@ status open
 
 
 \backslash
-begin{verbatim}A: supports SPARKv1
+begin{verbatim}A initiates the connection.
+\end_layout
+
+\begin_layout Plain Layout
+
+A: supports SPARKv1
 \backslash
 r
 \backslash
@@ -1633,6 +1655,47 @@ B: < close-transfer 28 9 {"id": 2}
 r
 \backslash
 n
+\end_layout
+
+\begin_layout Plain Layout
+
+A: > shutdown 29 0
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+B: < shutdown 29 0
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+B: > shutdown 57 0
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+A: < shutdown 57 0
+\backslash
+r
+\backslash
+n
+\end_layout
+
+\begin_layout Plain Layout
+
+B ends the connection.
 \backslash
 end{verbatim}
 \end_layout
