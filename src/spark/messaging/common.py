@@ -20,7 +20,6 @@
 
 import threading
 from Queue import Queue
-from spark import protocol
 from spark.async import Future, Delegate, asyncMethod
 from spark.messaging.messages import *
 

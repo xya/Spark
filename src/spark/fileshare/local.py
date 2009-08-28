@@ -19,6 +19,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 from spark.async import Future, asyncMethod
+from spark.messaging import Notification
 from spark.fileshare.common import FileShare, toCamelCase
 
 class LocalFileShare(FileShare):
@@ -28,15 +29,13 @@ class LocalFileShare(FileShare):
         self.delivery.requestReceived += self.requestReceived
     
     def requestReceived(self, req):
-        name = toCamelCase(req.tag)
-        if hasattr(self, name):
-            func = getattr(self, name)
-            if hasattr(func, "__call__"):
-                future = Future(self.requestCompleted)
-                future.request = req
-                func(req.data, future)
+        """ Deliver incoming requests by invoking the relevant request handler. """
+        future = Future(self.requestCompleted)
+        future.request = req
+        self.invokeRequest(req.tag, req.data, future)
     
     def requestCompleted(self, future):
+        """ Send a response after the request is completed. """
         try:
             results = future.result
             if len(results) == 0:
@@ -68,6 +67,12 @@ class LocalFileShare(FileShare):
     @asyncMethod
     def shutdown(self, params, future):
         raise NotImplementedError()
+    
+    @asyncMethod
+    def notifyEvent(self, tag, params, future):
+        """ Notify the remote peer and local observers of an event. """
+        self.invokeEvent(tag, params)
+        self.delivery.sendNotification(Notification(tag, params), future)
     
     def addLocalFile(self, path):
         raise NotImplementedError()

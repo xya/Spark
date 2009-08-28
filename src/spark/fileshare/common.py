@@ -18,34 +18,107 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+import types
+from datetime import datetime, timedelta
 from spark.async import Delegate
 
 class FileShare(object):
     """ Base class for interacting with Spark file shares. """
+    
+    Requests = [
+        "create-transfer", "start-transfer", "close-transfer",
+        "list-files", "shutdown"
+    ]
+    
+    Notifications = [
+        "file-added", "file-removed", "transfer-state-chaned", "panic"
+    ]
+    
     def __init__(self):
-        self.fileAdded = Delegate()
-        self.fileRemoved = Delegate()
-        self.transferStateChanged = Delegate()
-        self.panic = Delegate()
+        for tag in FileShare.Requests:
+            self.createRequest(tag)
+            
+        for tag in FileShare.Notifications:
+            self.createEvent(tag)
     
-    def listFiles(self, params, future):
-        """ Return the current list of shared files. """
+    def createRequest(self, tag, handler=None):
+        """ Create a request for the specified tag. """
+        name = toCamelCase(tag)
+        if handler is None:
+            def requestHandler(self, params, future):
+                raise NotImplementedError("The '%s' request handler is not implemented" % tag)
+            handler = types.MethodType(requestHandler, self)
+        setattr(self, name, handler)
+        return name
+    
+    def invokeRequest(self, tag, *args):
+        """ Invoke the request that has the specified tag. """
+        name = toCamelCase(tag)
+        if hasattr(self, name):
+            handler = getattr(self, name)
+            if hasattr(handler, "__call__"):
+                handler(*args)
+        
+    def createEvent(self, tag):
+        """ Create an event for the specified tag. """
+        name = toCamelCase(tag)
+        delegate = Delegate()
+        setattr(self, name, delegate)
+        return name
+        
+    def invokeEvent(self, tag, *args):
+        """ Invoke the event that has the specified tag. """
+        name = toCamelCase(tag)
+        if hasattr(self, name):
+            delegate = getattr(self, name)
+            if hasattr(delegate, "__call__"):
+                delegate(*args)
+
+class TransferLocation(object):
+    LOCAL = 0
+    REMOTE = 1
+    
+class TransferInfo(object):
+    """ Provides information about a file transfer. """
+    def __init__(self, transferID, location):
+        self.transferID = transferID
+        self.location = location
+        self.state = "created"
+        self.completedSize = 0
+        self.transferSpeed = 0
+        self.started = None
+        self.ended = None
+    
+    @property
+    def duration(self):
+        """ Return the duration of the transfer, or None if the transfer has never been started. """
+        if self.started is None:
+            return None
+        elif self.ended is None:
+            return datetime.now - self.started
+        else:
+            return self.ended - self.started
+    
+    @property
+    def averageSpeed(self):
+        """ Return the average transfer speed, in bytes/s. """
+        duration = self.duration
+        if duration is None:
+            return None
+        else:
+            seconds = duration.seconds
+            seconds += (duration.microseconds * 10e-6)
+            seconds += (duration.days * 24 * 3600)
+            return self.completedSize / seconds
+    
+    @property
+    def progress(self):
+        """ Return a number between 0.0 and 1.0 indicating the progress of the transfer. """
         raise NotImplementedError()
     
-    def createTransfer(self, params, future):
-        """ Create a transfer of a file's blocks. """
-        raise NotImplementedError()
-    
-    def startTransfer(self, params, future):
-        """ Start an inactive transfer. """
-        raise NotImplementedError()
-    
-    def closeTransfer(self, params, future):
-        """ Terminate an existing transfer. """
-        raise NotImplementedError()
-    
-    def shutdown(self, params, futue):
-        """ Shut down the file share, terminating all transfers. """
+    @property
+    def eta(self):
+        """ Return an estimation of the time when the transfer will be completed. """
         raise NotImplementedError()
 
 def toCamelCase(tag, capitalizeFirst=False):

@@ -29,11 +29,7 @@ class RemoteFileShare(FileShare):
         delivery.notificationReceived += self.notificationReceived
     
     def notificationReceived(self, n):
-        name = toCamelCase(n.tag)
-        if hasattr(self, name):
-            delegate = getattr(self, name)
-            if hasattr(delegate, "__call__"):
-                delegate(n.data)
+        self.invokeEvent(n.tag, n.data)
     
     @asyncMethod
     def listFiles(self, params, future):

@@ -934,8 +934,8 @@ a transaction identifier.
 \end_layout
 
 \begin_layout Itemize
-optional data, which is formatted in JSON and prefixed by its length in
- bytes
+an optional parameters object, which is formatted in JSON and prefixed by
+ its length in bytes
 \end_layout
 
 \begin_layout Itemize

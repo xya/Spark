@@ -22,7 +22,7 @@ import json
 from struct import Struct
 
 __all__ = ["Message", "SupportedProtocolNames", "ProtocolName",
-           "TextMessage", "Request", "Response", "Blob", "Block"]
+           "TextMessage", "Request", "Response", "Notification", "Blob", "Block"]
 
 class Message(object):
     def __str__(self):
@@ -58,16 +58,16 @@ class TextMessage(Message):
     NOTIFICATION = "!"
     Types = [REQUEST, RESPONSE, NOTIFICATION]
     
-    def __init__(self, type, tag, data=None, transID=None):
+    def __init__(self, type, tag, params=None, transID=None):
         self.type = type
         self.tag = tag
         self.transID = transID
-        self.data = data
+        self.params = params
     
     def canonical(self):
         chunks = [self.type, " ", self.tag, " ", str(self.transID), " "]
-        if not self.data is None:
-            jsonData = json.dumps(self.data, sort_keys=True)
+        if not self.params is None:
+            jsonData = json.dumps(self.params, sort_keys=True)
             chunks.append(str(len(jsonData)))
             chunks.append(" ")
             chunks.append(jsonData)
@@ -76,12 +76,16 @@ class TextMessage(Message):
         return "".join(chunks)
 
 class Request(TextMessage):
-    def __init__(self, tag, data=None, transID=None):
-        super(Request, self).__init__(TextMessage.REQUEST, tag, data, transID)
+    def __init__(self, tag, params=None, transID=None):
+        super(Request, self).__init__(TextMessage.REQUEST, tag, params, transID)
 
 class Response(TextMessage):
-    def __init__(self, tag, data=None, transID=None):
-        super(Request, self).__init__(TextMessage.RESPONSE, tag, data, transID)
+    def __init__(self, tag, params=None, transID=None):
+        super(Request, self).__init__(TextMessage.RESPONSE, tag, params, transID)
+
+class Notification(TextMessage):
+    def __init__(self, tag, params=None, transID=None):
+        super(Request, self).__init__(TextMessage.NOTIFICATION, tag, params, transID)
 
 class Blob(Message):
     HEX_DIGITS = 4
