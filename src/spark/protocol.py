@@ -80,6 +80,14 @@ class TextMessage(Message):
             chunks.append("0")
         return "".join(chunks)
 
+class Request(TextMessage):
+    def __init__(self, tag, data=None, transID=None):
+        super(Request, self).__init__(TextMessage.REQUEST, tag, data, transID)
+
+class Response(TextMessage):
+    def __init__(self, tag, data=None, transID=None):
+        super(Request, self).__init__(TextMessage.RESPONSE, tag, data, transID)
+
 class Blob(Message):
     HEX_DIGITS = 4
     Type = Struct("!H")

@@ -22,7 +22,7 @@ import threading
 from Queue import Queue
 from spark import protocol
 from spark.async import Future, Delegate, asyncMethod
-from spark.protocol import TextMessage, Block
+from spark.protocol import TextMessage, Response, Block
 
 class Messenger(object):
     """ Base class for sending and receiving messages asynchronously. """
@@ -55,6 +55,14 @@ class MessageDelivery(object):
             self.nextID += 1
             self.pendingRequests[req.transID] = future
         self.sender.sendMessage(req, Future())
+    
+    @asyncMethod
+    def sendResponse(self, req, params, future):
+        """ Respond to a request. """
+        if not isinstance(req, TextMessage) or (req.type != TextMessage.REQUEST):
+            raise TypeError("req should be a text request.")
+        response = Response(req.tag, params, req.transID)
+        self.sender.sendMessage(response, future)
     
     @asyncMethod
     def sendNotification(self, n, future):
