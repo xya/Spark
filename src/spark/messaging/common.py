@@ -21,6 +21,7 @@
 import threading
 from Queue import Queue
 from spark.async import Future, Delegate, asyncMethod
+from spark.messaging.protocol import messageReader, messageWriter
 from spark.messaging.messages import *
 
 __all__ = ["Messenger", "MessageDelivery"]
@@ -96,7 +97,7 @@ class MessageDelivery(object):
 
 class ThreadedMessenger(Messenger):
     def __init__(self, file):
-        super(ThreadedMessenger, self).__init__(file)
+        super(ThreadedMessenger, self).__init__()
         self.file = file
         self.sendQueue = Queue(32)
         self.receiveQueue = Queue(32)
@@ -116,7 +117,7 @@ class ThreadedMessenger(Messenger):
         self.receiveQueue.put(future)
     
     def sendLoop(self):
-        writer = protocol.writer(self.file)
+        writer = messageWriter(self.file)
         while True:
             request = self.sendQueue.get()
             if request is None:
@@ -129,7 +130,7 @@ class ThreadedMessenger(Messenger):
                 future.failed(e)
     
     def receiveLoop(self):
-        parser = protocol.parser(self.file)
+        parser = messageReader(self.file)
         while True:
             request = self.receiveQueue.get()
             if request is None:

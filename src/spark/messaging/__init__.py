@@ -23,13 +23,8 @@ import parser
 import common
 from messages import *
 from common import *
+from protocol import *
 
-__all__ = ["reader", "writer"]
-__all__.extend(messages.__all__)
-__all__.extend(common.__all__)
-
-def reader(file, buffer=4096):
-    return parser.MessageReader(file, buffer)
-
-def writer(file):
-    return messages.MessageWriter(file)
+__all__ = []
+for module in (messages, common, protocol):
+    __all__.extend(module.__all__)

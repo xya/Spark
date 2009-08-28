@@ -83,7 +83,7 @@ class ProtocolTest(unittest.TestCase):
     
     def testParseText(self):
         """ Ensure that parser() can read messages from a text file """
-        p = reader(StringIO(TestText))
+        p = messageReader(StringIO(TestText))
         actualItems = list(p.readAll())
         self.assertSeqsEqual(TestItems, actualItems)
     
@@ -92,16 +92,16 @@ class ProtocolTest(unittest.TestCase):
         # first individual messages
         for item in TestItems:
             f = StringIO()
-            writer(f).write(item)
+            messageWriter(f).write(item)
             f.seek(0)
-            actual = reader(f).read()
+            actual = messageReader(f).read()
             self.assertMessagesEqual(item, actual)
         
         # then a stream of messages
         f = StringIO()
-        writer(f).writeAll(TestItems)
+        messageWriter(f).writeAll(TestItems)
         f.seek(0)
-        actualItems = list(reader(f).readAll())
+        actualItems = list(messageReader(f).readAll())
         self.assertSeqsEqual(TestItems, actualItems)
 
 if __name__ == '__main__':

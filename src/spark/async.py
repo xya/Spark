@@ -21,6 +21,13 @@
 import types
 import threading
 
+# Support for poor man's exception chaining with Python 2.x
+import sys
+import traceback
+from cStringIO import StringIO
+
+__all__ = ["asyncMethod", "Future", "TaskError", "Delegate"]
+
 def asyncMethod(func):
     """
     Mark the function asynchronous. The last argument must be a future.
@@ -85,10 +92,10 @@ class Future(object):
             r = self.__result
             if isinstance(r, tuple):
                 return r
-            elif r == False:
-                raise StandardError("The task failed for an unknown reason")
-            else:
+            elif isinstance(r, BaseException):
                 raise r
+            else:
+                raise StandardError("The task failed for an unknown reason")
     
     def wait(self):
         """
@@ -115,16 +122,21 @@ class Future(object):
     
     def failed(self, e=None):
         """ Indicate that the task failed, maybe because of an exception. """
-        if (e is not None) and (not isinstance(e, BaseException)):
-            raise TypeError("e should be either None or an exception")
-            
+        type, val, tb = sys.exc_info()
+        if not e is None:
+            if (not isinstance(e, BaseException)):
+                raise TypeError("e should be either None or an exception")
+            elif e is val:
+                error = TaskError(type, val, tb)
+            else:
+                error = TaskError(e.__class__, val, None)
+        else:
+            error = TaskError(type, val, tb)
+        
         callback = None
         with self.__lock:
             if self.__result is None:
-                if e is None:
-                    self.__result = False
-                else:
-                    self.__result = e
+                self.__result = error
                 self.__wait.notifyAll()
                 callback = self.__callback
             else:
@@ -133,6 +145,27 @@ class Future(object):
         # don't call the callback with the lock held
         if callback:
             callback()
+
+class TaskError(StandardError):
+    """ Holds information about an error that occured during the execution of a task."""
+    def __init__(self, type, value, tb):
+        self.type = type
+        self.value = value
+        self.tb = tb
+    
+    def __str__(self):
+        # hack until Python 3 which supports chained exceptions        
+        if not self.tb is None:
+            buffer = StringIO()
+            buffer.write("\n")
+            traceback.print_exception(self.type, self.value, self.tb, file=buffer)
+            buffer.seek(0)
+            lines = buffer.readlines()
+            lines[-1] = lines[-1].rstrip("\n")
+            desc = "|    ".join(lines)
+        else:
+            desc = str(r.value)
+        return "The task failed: %s" % desc
 
 class Delegate(object):
     ''' Handles a list of methods and functions

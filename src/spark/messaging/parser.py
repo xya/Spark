@@ -301,4 +301,4 @@ class TextParsingError(Exception):
         elif self.pos >= 0:
             return "%s (at char %i)" % (self.msg, self.pos)
         else:
-            return self.message
+            return self.msg

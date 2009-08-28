@@ -20,7 +20,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 import unittest
-from spark.async import Future, asyncMethod
+from spark.async import Future, TaskError, asyncMethod
 
 class FutureTest(unittest.TestCase):
     def testCompleted(self):
@@ -51,10 +51,8 @@ class FutureTest(unittest.TestCase):
         try:
             r = f.result
             self.fail("result didn't raise an exception")
-        except KeyError:
+        except TaskError:
             pass
-        except:
-            self.fail("result didn't raise the right type of exception")
     
     def testCompletedTwice(self):
         f = Future()
