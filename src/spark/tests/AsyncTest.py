@@ -20,7 +20,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 import unittest
-from spark.async import Future
+from spark.async import Future, asyncMethod
 
 class FutureTest(unittest.TestCase):
     def testCompleted(self):
@@ -101,6 +101,35 @@ class FutureTest(unittest.TestCase):
         f.completed("spam", "eggs")
         self.assertEqual(1, len(foo.result))
         self.assertEqual(("spam", "eggs"), foo.result[0])
+
+@asyncMethod
+def foo(arg, future):
+    future.completed("foo", arg)
+
+class AsyncMethodTest(unittest.TestCase):
+    def setUp(self):
+        self.result = None
+        
+    def testSyncCall(self):
+        """ Passing no future should invoke the method synchronously """
+        result = foo("bar", None)
+        self.assertEqual(("foo", "bar"), result)
+    
+    def testAsyncCall(self):
+        """ Passing a future should invoke the method asynchronously """
+        future = Future()
+        foo("bar", future)
+        future.wait()
+        self.assertFalse(future.pending)
+        self.assertEqual(("foo", "bar"), future.result)
+    
+    def testAsyncCallback(self):
+        """ Passing a callable instead of a future should work as expected """
+        foo("bar", self.futureCompleted)
+        self.assertEqual(("foo", "bar"), self.result)
+    
+    def futureCompleted(self, future):
+        self.result = future.result
 
 if __name__ == '__main__':
     unittest.main()

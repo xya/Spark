@@ -91,7 +91,7 @@ class MessageDeliveryTest(unittest.TestCase):
     def testDeliverResponse(self):
         """ Receiving a response matching a previous request should deliver it to the sender. """
         req = testRequest()
-        self.delivery.sendRequest(req, Future(self.responseReceived))
+        self.delivery.sendRequest(req, self.responseReceived)
         self.assertMessageCount(0, 0, 0, 0)
         resp = testResponse()
         resp.transID = req.transID + 1  # response not matching the request

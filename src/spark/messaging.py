@@ -21,62 +21,61 @@
 import threading
 from Queue import Queue
 from spark import protocol
-from spark.async import Future, Delegate
+from spark.async import Future, Delegate, asyncMethod
 from spark.protocol import TextMessage, Block
 
 class Messenger(object):
-    """ Base class for sending and receiving messages (synchronously or not). """
+    """ Base class for sending and receiving messages asynchronously. """
     
-    def sendMessage(self, message, future=None):
-        """
-        Send a message.
-        Blocks until the message is sent, unless future is not None.
-        """
+    def sendMessage(self, message, future):
+        """ Send a message. """
         raise NotImplementedError()
     
-    def receiveMessage(self, future=None):
-        """
-        Receive a message.
-        Blocks until a message is received, unless future is not None.
-        """
+    def receiveMessage(self, future):
+        """ Receive a message. """
         raise NotImplementedError()
 
 class MessageDelivery(object):
     def __init__(self, sender):
         self.sender = sender
-        self.requestReceived = Delegate()
-        self.notificationReceived = Delegate()
-        self.blockReceived = Delegate()
-        self._lock = threading.RLock()
-        self._nextID = 0
-        self._pendingRequests = {}
+        self.__lock = threading.Lock()
+        self.requestReceived = Delegate(self.__lock)
+        self.notificationReceived = Delegate(self.__lock)
+        self.blockReceived = Delegate(self.__lock)
+        self.nextID = 0
+        self.pendingRequests = {}
     
-    #TODO: asyncMethod decorator?
-    def sendRequest(self, req, future=None):
-        """
-        Send a request and return the response.
-        Blocks until the response is receive, unless future is not None.
-        """
+    @asyncMethod
+    def sendRequest(self, req, future):
+        """ Send a request and return the response through the future. """
         if not isinstance(req, TextMessage) or (req.type != TextMessage.REQUEST):
             raise TypeError("req should be a text request.")
-        elif future is None:
-            future = Future()
-            self.sendRequest(req, future)
-            return future.result
-        with self._lock:
-            req.transID = self._nextID
-            self._nextID += 1
-            self._pendingRequests[req.transID] = future
+        with self.__lock:
+            req.transID = self.nextID
+            self.nextID += 1
+            self.pendingRequests[req.transID] = future
         self.sender.sendMessage(req, Future())
+    
+    @asyncMethod
+    def sendNotification(self, n, future):
+        """ Send a notification. """
+        if not isinstance(req, TextMessage) or (req.type != TextMessage.NOTIFICATION):
+            raise TypeError("n should be a text notification.")
+        with self.__lock:
+            n.transID = self.nextID
+            self.nextID += 1
+        self.sender.sendMessage(n, future)
     
     def deliver(self, m):
         """
         Deliver a message. It could be a response to return to the request's sender.
-        Or it could be a request, notification or block to publish through events. """
+        Or it could be a request, notification or block to publish through events.
+        """
         if isinstance(m, TextMessage):
             if m.type == TextMessage.RESPONSE:
-                with self._lock:
-                    future = self._pendingRequests.pop(m.transID, None)
+                # notifies the request's sender that the response arrived
+                with self.__lock:
+                    future = self.pendingRequests.pop(m.transID, None)
                 if future:
                     future.completed(m)
             elif m.type == TextMessage.REQUEST:
@@ -99,22 +98,12 @@ class ThreadedMessenger(Messenger):
         self.receiveThread.daemon = True
         self.receiveThread.start()
     
-    def sendMessage(self, message, future=None):
-        if future is None:
-            future = Future()
-            self.sendMessage(message, future)
-            return future.result
-        elif not future.pending:
-            raise ValueError("The future object has been used already")
+    @asyncMethod
+    def sendMessage(self, message, future):
         self.sendQueue.put((message, future))
     
-    def receiveMessage(self, future=None):
-        if future is None:
-            future = Future()
-            self.receiveMessage(future)
-            return future.result
-        elif not future.pending:
-            raise ValueError("The future object has been used already")
+    @asyncMethod
+    def receiveMessage(self, future):
         self.receiveQueue.put(future)
     
     def sendLoop(self):

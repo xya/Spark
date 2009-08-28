@@ -21,6 +21,34 @@
 import types
 import threading
 
+def asyncMethod(func):
+    """
+    Mark the function asynchronous. The last argument must be a future.
+    
+    An asynchronous function does not block. When the operation is completed,
+    the caller is notified through the future object.
+    
+    The decoration makes the function synchronous if the future object is None,
+    and also allows passing a callable instead of a future.
+    """
+    def wrapper(*args, **kw):
+        if len(args) == 0:
+            return func(*args, **kw)
+        arg = args[-1]
+        if arg is None:
+            future = Future()
+            newArgs = args[:-1] + (future, )
+            func(*newArgs, **kw)
+            return future.result
+        elif hasattr(arg, "__call__"):
+            newArgs = args[:-1] + (Future(arg), )
+            return func(*newArgs, **kw)
+        else:
+            if not arg.pending:
+                raise ValueError("The future object has been used already")
+            return func(*args, **kw)
+    return wrapper
+
 class Future(object):
     """
     Represents a task whose result will be known in the future.
@@ -30,20 +58,20 @@ class Future(object):
         if passSelf and (callback is not None):
             # is the callback a bound function?
             if hasattr(callback, "__self__"):
-                self._callback = types.MethodType(lambda f: callback(f), self)
+                self.__callback = types.MethodType(lambda f: callback(f), self)
             else:
-                self._callback = types.MethodType(callback, self)
+                self.__callback = types.MethodType(callback, self)
         else:
-            self._callback = callback
-        self._result = None
-        self._lock = threading.RLock()
-        self._wait = threading.Condition(self._lock)
+            self.__callback = callback
+        self.__result = None
+        self.__lock = threading.RLock()
+        self.__wait = threading.Condition(self.__lock)
     
     @property
     def pending(self):
         """ Indicate whether the task is still active or if it is complete. """
-        with self._lock:
-            return self._result is None
+        with self.__lock:
+            return self.__result is None
     
     @property
     def result(self):
@@ -51,25 +79,33 @@ class Future(object):
         Access the result of the task. If it is not available yet, block until it is.
         May raise an exception if the task failed.
         """
-        with self._lock:
-            while self._result is None:
-                self._wait.wait()
-            r = self._result
+        with self.__lock:
+            while self.__result is None:
+                self.__wait.wait()
+            r = self.__result
             if isinstance(r, tuple):
                 return r
-            elif isinstance(r, bool):
+            elif r == False:
                 raise StandardError("The task failed for an unknown reason")
             else:
                 raise r
     
+    def wait(self):
+        """
+        Wait for the task to be completed. Does not raise an exception if the task fails.
+        """
+        with self.__lock:
+            while self.__result is None:
+                self.__wait.wait()
+    
     def completed(self, *args):
         """ Provide the result of the task. """
         callback = None
-        with self._lock:
-            if self._result is None:
-                self._result = args
-                self._wait.notifyAll()
-                callback = self._callback
+        with self.__lock:
+            if self.__result is None:
+                self.__result = args
+                self.__wait.notifyAll()
+                callback = self.__callback
             else:
                 raise StandardError("The result of the task has already been set")
         
@@ -83,14 +119,14 @@ class Future(object):
             raise TypeError("e should be either None or an exception")
             
         callback = None
-        with self._lock:
-            if self._result is None:
+        with self.__lock:
+            if self.__result is None:
                 if e is None:
-                    self._result = False
+                    self.__result = False
                 else:
-                    self._result = e
-                self._wait.notifyAll()
-                callback = self._callback
+                    self.__result = e
+                self.__wait.notifyAll()
+                callback = self.__callback
             else:
                 raise StandardError("The result of the task has already been set")
         
@@ -98,39 +134,34 @@ class Future(object):
         if callback:
             callback()
 
-# TODO: synchronize this
 class Delegate(object):
-    '''Handles a list of methods and functions
+    ''' Handles a list of methods and functions
     Usage:
-        d = Delegate()
+        d = Delegate([lock])
         d += function    # Add function to end of delegate list
         d(*args, **kw)   # Call all functions, returns a list of results
         d -= function    # Removes last matching function from list
-        d -= object      # Removes all methods of object from list
     '''
-    def __init__(self):
+    def __init__(self, lock=None):
+        self.__lock = lock or threading.Lock()
         self.__delegates = []
     
     def __iadd__(self, callback):
-        self.__delegates.append(callback)
+        with self.__lock:
+            self.__delegates.append(callback)
         return self
     
     def __isub__(self, callback):
-        # If callback is a class instance,
-        # remove all callbacks for that instance
-        self.__delegates = [ cb
-            for cb in self.__delegates
-                if getattr(cb, 'im_self', None) != callback]
-        
-        # If callback is callable, remove the last
-        # matching callback
         if callable(callback):
-            for i in range(len(self.__delegates)-1, -1, -1):
-                if self.__delegates[i] == callback:
-                    del self.__delegates[i]
-                    return self
+            with self.__lock:
+                for i in range(len(self.__delegates) - 1, -1, -1):
+                    if self.__delegates[i] == callback:
+                        del self.__delegates[i]
+                        return self
         return self
     
     def __call__(self, *args, **kw):
-        return [ callback(*args, **kw)
-            for callback in self.__delegates]
+        # don't call the callbacks with the lock held, so need to copy them
+        with self.__lock:
+            callbacks = self.__delegates[:]
+        return [callback(*args, **kw) for callback in callbacks]
