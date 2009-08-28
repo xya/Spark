@@ -19,8 +19,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 import unittest
-from spark.messaging import MessageDelivery, Messenger
-from spark.protocol import TextMessage
+from spark.messaging import *
 from spark.async import Future
 from spark.tests.ProtocolTest import testRequest, testResponse, testNotification, testBlock
 

@@ -22,7 +22,9 @@ import threading
 from Queue import Queue
 from spark import protocol
 from spark.async import Future, Delegate, asyncMethod
-from spark.protocol import TextMessage, Response, Block
+from spark.messaging.messages import *
+
+__all__ = ["Messenger", "MessageDelivery"]
 
 class Messenger(object):
     """ Base class for sending and receiving messages asynchronously. """

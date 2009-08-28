@@ -21,8 +21,7 @@
 
 import unittest
 import copy
-from spark.protocol import parser, writer
-from spark.protocol import SupportedProtocolNames, ProtocolName, TextMessage, Blob, Block
+from spark.messaging import *
 from StringIO import StringIO
 
 TestText = """supports SPARKv1
@@ -84,7 +83,7 @@ class ProtocolTest(unittest.TestCase):
     
     def testParseText(self):
         """ Ensure that parser() can read messages from a text file """
-        p = parser(StringIO(TestText))
+        p = reader(StringIO(TestText))
         actualItems = list(p.readAll())
         self.assertSeqsEqual(TestItems, actualItems)
     
@@ -95,14 +94,14 @@ class ProtocolTest(unittest.TestCase):
             f = StringIO()
             writer(f).write(item)
             f.seek(0)
-            actual = parser(f).read()
+            actual = reader(f).read()
             self.assertMessagesEqual(item, actual)
         
         # then a stream of messages
         f = StringIO()
         writer(f).writeAll(TestItems)
         f.seek(0)
-        actualItems = list(parser(f).readAll())
+        actualItems = list(reader(f).readAll())
         self.assertSeqsEqual(TestItems, actualItems)
 
 if __name__ == '__main__':
