@@ -21,7 +21,7 @@
 import json
 from struct import Struct
 
-__all__ = ["parser", "writer"]
+__all__ = ["parser", "writer", "TextMessage", "Block"]
 
 def parser(file, buffer=4096):
     return SparkProtocolReader(file, buffer)
@@ -63,7 +63,7 @@ class TextMessage(Message):
     NOTIFICATION = "!"
     Types = [REQUEST, RESPONSE, NOTIFICATION]
     
-    def __init__(self, type, tag, transID, data=None):
+    def __init__(self, type, tag, data=None, transID=None):
         self.type = type
         self.tag = tag
         self.transID = transID
@@ -228,7 +228,7 @@ class SparkProtocolReader(object):
         self.readDelimiter()
         jsonData = self.readString()
         data = jsonData and json.loads(jsonData) or None
-        return TextMessage(type, tag, transID, data)
+        return TextMessage(type, tag, data, transID)
     
     def parseBlob(self):
         size = self.readSize()

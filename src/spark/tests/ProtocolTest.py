@@ -20,6 +20,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 import unittest
+import copy
 from spark.protocol import parser, writer
 from spark.protocol import SupportedProtocolNames, ProtocolName, TextMessage, Blob, Block
 from StringIO import StringIO
@@ -45,19 +46,29 @@ TestItems = [
     SupportedProtocolNames(["SPARKv1"]),
     ProtocolName("SPARKv1"),
     ProtocolName("SPARKv1"),
-    TextMessage(TextMessage.REQUEST, "list-files", 0, {"register": True}),
-    TextMessage(TextMessage.RESPONSE, "list-files", 0, {"<guid>": {"id": "<guid>", "name": "Report.pdf", "size": 3145728, "last-modified": "20090619T173529.000Z"}}),
-    TextMessage(TextMessage.NOTIFICATION, "file-added", 55, {"id": "<guid>", "name": "SeisRoX-2.0.9660.exe", "size": 3145728, "last-modified": "20090619T173529.000Z"}),
-    TextMessage(TextMessage.REQUEST, "create-transfer", 26, {"file-id": "<guid>", "blocksize": 1024, "ranges": [{"start": 0, "end": 3071}]}),
-    TextMessage(TextMessage.RESPONSE, "create-transfer", 26, {"id": 2, "state": "inactive"}),
-    TextMessage(TextMessage.REQUEST, "start-transfer", 27, {"id": 2}),
-    TextMessage(TextMessage.RESPONSE, "start-transfer", 27, {"id": 2, "state": "starting"}),
-    TextMessage(TextMessage.NOTIFICATION, "transfer-state-changed", 56, {"id": 2, "state": "active"}),
+    TextMessage(TextMessage.REQUEST, "list-files", {"register": True}, 0),
+    TextMessage(TextMessage.RESPONSE, "list-files", {"<guid>": {"id": "<guid>", "name": "Report.pdf", "size": 3145728, "last-modified": "20090619T173529.000Z"}}, 0),
+    TextMessage(TextMessage.NOTIFICATION, "file-added", {"id": "<guid>", "name": "SeisRoX-2.0.9660.exe", "size": 3145728, "last-modified": "20090619T173529.000Z"}, 55),
+    TextMessage(TextMessage.REQUEST, "create-transfer", {"file-id": "<guid>", "blocksize": 1024, "ranges": [{"start": 0, "end": 3071}]}, 26),
+    TextMessage(TextMessage.RESPONSE, "create-transfer", {"id": 2, "state": "inactive"}, 26),
+    TextMessage(TextMessage.REQUEST, "start-transfer", {"id": 2}, 27),
+    TextMessage(TextMessage.RESPONSE, "start-transfer", {"id": 2, "state": "starting"}, 27),
+    TextMessage(TextMessage.NOTIFICATION, "transfer-state-changed", {"id": 2, "state": "active"}, 56),
     Block(2, 0, "Hello, world"),
     Block(2, 3071, "!" * 1024),
-    TextMessage(TextMessage.REQUEST, "close-transfer", 28, {"id": 2}),
-    TextMessage(TextMessage.RESPONSE, "close-transfer", 28, {"id": 2}),
+    TextMessage(TextMessage.REQUEST, "close-transfer", {"id": 2}, 28),
+    TextMessage(TextMessage.RESPONSE, "close-transfer", {"id": 2}, 28),
 ]
+
+# some tests might change attributes in the messages (e.g. the transaction ID)
+# so we have to return copies of them to be safe
+def TestItemProperty(itemIndex):
+    return lambda: copy.copy(TestItems[itemIndex])
+    
+testRequest = TestItemProperty(3)
+testResponse = TestItemProperty(4)
+testNotification = TestItemProperty(5)
+testBlock = TestItemProperty(11)
 
 class ProtocolTest(unittest.TestCase):
     def assertMessagesEqual(self, expected, actual):

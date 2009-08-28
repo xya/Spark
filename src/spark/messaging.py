@@ -21,15 +21,12 @@
 import threading
 from Queue import Queue
 from spark import protocol
-from spark.future import Future
+from spark.async import Future, Delegate
+from spark.protocol import TextMessage, Block
 
 class Messenger(object):
     """ Base class for sending and receiving messages (synchronously or not). """
     
-    def __init__(self, file):
-        """ Create a new messenger wrapping the file-like object. """
-        self.file = file
-        
     def sendMessage(self, message, future=None):
         """
         Send a message.
@@ -43,6 +40,51 @@ class Messenger(object):
         Blocks until a message is received, unless future is not None.
         """
         raise NotImplementedError()
+
+class MessageDelivery(object):
+    def __init__(self, sender):
+        self.sender = sender
+        self.requestReceived = Delegate()
+        self.notificationReceived = Delegate()
+        self.blockReceived = Delegate()
+        self._lock = threading.RLock()
+        self._nextID = 0
+        self._pendingRequests = {}
+    
+    #TODO: asyncMethod decorator?
+    def sendRequest(self, req, future=None):
+        """
+        Send a request and return the response.
+        Blocks until the response is receive, unless future is not None.
+        """
+        if not isinstance(req, TextMessage) or (req.type != TextMessage.REQUEST):
+            raise TypeError("req should be a text request.")
+        elif future is None:
+            future = Future()
+            self.sendRequest(req, future)
+            return future.result
+        with self._lock:
+            req.transID = self._nextID
+            self._nextID += 1
+            self._pendingRequests[req.transID] = future
+        self.sender.sendMessage(req, Future())
+    
+    def deliver(self, m):
+        """
+        Deliver a message. It could be a response to return to the request's sender.
+        Or it could be a request, notification or block to publish through events. """
+        if isinstance(m, TextMessage):
+            if m.type == TextMessage.RESPONSE:
+                with self._lock:
+                    future = self._pendingRequests.pop(m.transID, None)
+                if future:
+                    future.completed(m)
+            elif m.type == TextMessage.REQUEST:
+                self.requestReceived(m)
+            elif m.type == TextMessage.NOTIFICATION:
+                self.notificationReceived(m)
+        elif isinstance(m, Block):
+            self.blockReceived(m)
 
 class ThreadedMessenger(Messenger):
     def __init__(self, file):
