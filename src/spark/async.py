@@ -233,33 +233,40 @@ class BlockingQueue(object):
             self.__list = []
         else:
             self.__list = None
+        self.__closing = False
     
     def put(self, item):
-        """ Block until the queue is not full, and put the item at the end. """
+        """ Wait until the queue is not full, and put the item at the end. """
         with self.__lock:
-            if self.__list is None:
-                raise QueueClosedError()
+            self.__assertWrite()
             while self.__count == self.__size:
                 self.__wait.wait()
-                if self.__list is None:
-                    raise QueueClosedError()
+                self.__assertWrite()
             self.__list.append(item)
             self.__count += 1
             self.__wait.notifyAll()
     
     def get(self):
-        """ Block until the queue is not empty, and return the first item. """
+        """ Wait until the queue is not empty, and return the first item. """
         with self.__lock:
-            if self.__list is None:
-                raise QueueClosedError()
+            self.__assertRead()
             while self.__count == 0:
                 self.__wait.wait()
-                if self.__list is None:
-                    raise QueueClosedError()
+                self.__assertRead()
             item = self.__list.pop(0)
             self.__count -= 1
             self.__wait.notifyAll()
         return item
+    
+    def __assertWrite(self):
+        """ Ensure that is it allowed to insert items into the queue. """
+        if (self.__list is None) or self.__closing:
+            raise QueueClosedError()
+    
+    def __assertRead(self):
+        """ Ensure that is it allowed to read items from the queue. """
+        if (self.__list is None) or (self.__closing and (self.__count == 0)):
+            raise QueueClosedError()
     
     def open(self):
         """ Create (or re-create) a closed queue, which will be empty. """
@@ -269,9 +276,15 @@ class BlockingQueue(object):
                 self.__list = []
     
     def close(self, waitEmpty=False):
-        """ Close the queue, raising an exception on threads waiting for put or get to complete. """
+        """
+        Close the queue, raising an exception on threads waiting for put or get to complete.
+        
+        If waitEmpty is true, then calling get() doesn't raise an exception as long
+        as there are still items in the queue. In either case put() raises an exception.
+        """
         with self.__lock:
             if waitEmpty:
+                self.__closing = True
                 while self.__count > 0:
                     self.__wait.wait()
                     if self.__list is None:
@@ -279,4 +292,5 @@ class BlockingQueue(object):
             if self.__list is not None:
                 self.__count = 0
                 self.__list = None
+                self.__closing = False
                 self.__wait.notifyAll()
