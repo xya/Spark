@@ -18,6 +18,9 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+from parser import MessageReader
+from messages import MessageWriter
+
 __all__ = ["messageReader", "messageWriter", "negociateProtocol", "Supported"]
 
 Supported = frozenset(["SPARKv1"])
@@ -40,31 +43,24 @@ class Negociator(object):
     def __init__(self, file, newline):
         self.file = file
         self.newline = newline
-        self.buffer = ""
     
     def negociate(self, initiating):
         if initiating:
-            print "Writing supported protocols"
             self.writeSupportedProtocols()
-            print "Reading the remote choice"
             remoteChoice = self.readProtocol()
             if remoteChoice not in Supported:
                 raise ValueError("Protocol '%s' is not supported" % remoteChoice)
-            print "Writing the local choice"
             self.writeProtocol(remoteChoice)
             return remoteChoice
         else:
-            print "Reading the proposed protocols"
             proposed = self.readSupportedProtocols()
             choice = self.chooseProtocol(proposed)
-            print "Writing the local choice"
             self.writeProtocol(choice)
-            print "Reading the remote choice"
             remoteChoice = self.readProtocol()
             if remoteChoice != choice:
                 raise ValueError("The remote peer chose another protocol: '%s' (was '%s')" % (remoteChoice, choice))
             return remoteChoice
-        
+    
     def chooseProtocol(self, proposedNames):
         for name in proposedNames:
             if name in Supported:
@@ -78,49 +74,37 @@ class Negociator(object):
         self.file.write("protocol %s%s" % (name, self.newline))
     
     def readSupportedProtocols(self):
-        names = []
-        self.match("supports ")
-        names.append(self.readTag())
-        c = self.read(1)
-        while c == " ":
-            names.append(self.readTag())
-            c = self.read(1)
-        self.buffer = c + self.buffer
-        self.match(self.newline)
-        return names
+        chunks = self.readLine().split(" ")
+        if chunks[0] != "supports":
+            raise ValueError("Exepected '%s', read '%s'" % ("supports", chunks[0]))
+        elif len(chunks) < 2:
+            raise ValueError("Expected at least one protocol name")
+        else:
+            return chunks[1:]
     
     def readProtocol(self):
-        self.match("protocol ")
-        name = self.readTag()
-        self.match(self.newline)
-        return name
+        chunks = self.readLine().split(" ")
+        if chunks[0] != "protocol":
+            raise ValueError("Exepected '%s', read '%s'" % ("protocol", chunks[0]))
+        elif len(chunks) < 2:
+            raise ValueError("Expected a protocol name")
+        else:
+            return chunks[1]
     
-    def readTag(self):
-        tag = []
-        c = self.read(1)
-        while not c.isspace():
-            tag.append(c)
-            c = self.read(1)
-        self.buffer = c + self.buffer
-        return "".join(tag)
-    
-    def read(self, size):
+    def readLine(self):
         data = []
-        left = size
-        while left > 0:
-            if len(self.buffer) > 0:
-                count = max(len(self.buffer), left)
-                read, self.buffer = self.buffer[:count], self.buffer[count:]
+        matched = 0
+        total = len(self.newline)
+        c = self.file.read(1)
+        while len(c) == 1:
+            if c == self.newline[matched]:
+                matched += 1
+                if matched == total:
+                    break
             else:
-                read = self.file.read(left)
-                count = len(read)
-            if count == 0:
-                raise EOFError()
-            data.append(read)
-            left -= count
-        return "".join(data)
-    
-    def match(self, expected):
-        actual = self.read(len(expected))
-        if actual != expected:
-            raise ValueError("Expected: '%s', read: '%s'" % (repr(expected), repr(actual)))
+                data.append(c)
+            c = self.file.read(1)
+        if len(c) == 0:
+            raise EOFError()
+        else:
+            return "".join(data)

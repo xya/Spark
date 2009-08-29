@@ -141,9 +141,7 @@ class ThreadedMessenger(Messenger):
         while True:
             future = self.receiveQueue.get()
             if future is None:
-                print("Received None, stopping to read")
                 return
-            print("Received a read request")
             try:
                 future.run(parser.read)
             except:
