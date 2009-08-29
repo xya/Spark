@@ -21,8 +21,7 @@
 import json
 from struct import Struct
 
-__all__ = ["Message", "SupportedProtocolNames", "ProtocolName",
-           "TextMessage", "Request", "Response", "Notification", "Blob", "Block"]
+__all__ = ["Message", "TextMessage", "Request", "Response", "Notification", "Blob", "Block"]
 
 class Message(object):
     def __str__(self):
@@ -37,20 +36,6 @@ class Message(object):
         ''' Returns the canonical text representation of the message.
         The return value can be a str or unicode object. '''
         raise NotImplementedError()
-
-class SupportedProtocolNames(Message):
-    def __init__(self, names):
-        self.names = names
-    
-    def canonical(self):
-        return "supports %s" % " ".join(self.names)
-
-class ProtocolName(Message):
-    def __init__(self, name):
-        self.name = name
-    
-    def canonical(self):
-        return "protocol %s" % self.name
 
 class TextMessage(Message):
     REQUEST = ">"

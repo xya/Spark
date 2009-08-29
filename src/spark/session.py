@@ -80,7 +80,8 @@ class Session(object):
         except:
             self.sessionCleanup(True)
             future.failed()
-            
+            return
+        
         future.completed()
         with self.__lock:
             self.messenger = ThreadedMessenger(f)
@@ -106,7 +107,8 @@ class Session(object):
         except:
             self.sessionCleanup(True)
             future.failed()
-            
+            return
+
         future.completed(remoteAddress)
         with self.__lock:
             self.messenger = ThreadedMessenger(f)
@@ -117,6 +119,8 @@ class Session(object):
             message = future.result[0]
         except:
             self.sessionCleanup(True)
+            return
+        
         if message is None:
             self.sessionCleanup(False)
         else:
@@ -131,11 +135,13 @@ class Session(object):
         futures = []
         with self.__lock:
             if self.sessionSocket:
-                self.sessionSocket.shutdown(socket.SHUT_RDWR)
                 self.sessionSocket.close()
                 self.sessionSocket = None
                 futures.extend(self.joinList)
-                
+            if self.messenger:
+                self.messenger.close()
+                self.messenger = None
+        
         for future in futures:
             if fail:
                 future.failed()

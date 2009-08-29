@@ -196,7 +196,7 @@ class TextParser(object):
         diff = count - self.size
         if diff > 0:
             chars = self.file.read(max(diff, self.lookahead))
-            read = len(chars)            
+            read = len(chars)
             self.buffer += chars
             self.size += read
             return (read - diff) >= 0

@@ -131,30 +131,21 @@ class ThreadedMessenger(Messenger):
                 return
             message, future = request
             try:
-                writer.write(message)
+                future.run(writer.write, message)
             except:
-                future.failed()
-            else:
-                try:
-                    future.completed(message)
-                except:
-                    print("A future's callback raised an exception", file=sys.stderr)
-                    traceback.print_exc(file=sys.stderr)
+                print("A future's callback raised an exception", file=sys.stderr)
+                traceback.print_exc(file=sys.stderr)
     
     def receiveLoop(self):
         parser = messageReader(self.file)
         while True:
-            request = self.receiveQueue.get()
-            if request is None:
+            future = self.receiveQueue.get()
+            if future is None:
+                print("Received None, stopping to read")
                 return
-            future = request
+            print("Received a read request")
             try:
-                message = parser.read()
+                future.run(parser.read)
             except:
-                future.failed()
-            else:
-                try:
-                    future.completed(message)
-                except:
-                    print("A future's callback raised an exception", file=sys.stderr)
-                    traceback.print_exc(file=sys.stderr)
+                print("A future's callback raised an exception", file=sys.stderr)
+                traceback.print_exc(file=sys.stderr)

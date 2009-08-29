@@ -105,6 +105,18 @@ class Future(object):
             while self.__result is None:
                 self.__wait.wait()
     
+    def run(self, func, *args):
+        """
+        Invoke a function, the return value will be the result of the task.
+        completed() is called on success, or failed() if an exception is raised.
+        """
+        try:
+            result = func(*args)
+        except:
+            self.failed()
+        else:
+            self.completed(result)
+    
     def completed(self, *args):
         """ Provide the result of the task. """
         callback = None
