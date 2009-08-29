@@ -18,8 +18,12 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+from __future__ import print_function
+import sys
+import traceback
 import types
 import threading
+from Queue import Queue
 import socket
 from spark.async import Future, Delegate, asyncMethod
 from spark.messaging.common import ThreadedMessenger
@@ -27,17 +31,15 @@ from spark.messaging import *
 
 class Session(object):
     def __init__(self):
-        self.__lock = threading.RLock()
-        self.joinList = []
-        self.sessionSocket = None
-        self.messenger = None
+        self.lock = threading.RLock()
+        self.conn = None
     
     @asyncMethod
     def connect(self, address, future):
         """ Try to establish a connection with remote peer with the specified address. """
-        with self.__lock:
-            if self.sessionSocket is None:
-                sessionThread = threading.Thread(name="Session",
+        with self.lock:
+            if self.conn is None:
+                sessionThread = threading.Thread(name="Session/Connect",
                     target=self.doConnect, args=(address, future))
                 sessionThread.daemon = True
                 sessionThread.start()
@@ -47,23 +49,14 @@ class Session(object):
     @asyncMethod
     def listen(self, address, future):
         """ Listen on the interface with the specified addres for a connection. """
-        with self.__lock:
-            if self.sessionSocket is None:
-                sessionThread = threading.Thread(name="Session",
+        with self.lock:
+            if self.conn is None:
+                sessionThread = threading.Thread(name="Session/Listen",
                     target=self.doListen, args=(address, future))
                 sessionThread.daemon = True
                 sessionThread.start()
             else:
                 raise Exception("The current session is still active")
-    
-    @asyncMethod
-    def join(self, future):
-        """ Wait for the session to be finished. """
-        with self.__lock:
-            if self.sessionSocket:
-                self.joinList.append(future)
-            else:
-                future.completed()
     
     def doConnect(self, address, future):
         """ Thread entry point for 'connect'. """
@@ -71,21 +64,19 @@ class Session(object):
             # establish the connection
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
             sock.connect(address)
-            with self.__lock:
-                self.sessionSocket = sock
+            with self.lock:
+                self.conn = sock
             
             # negotiate the protocol
             f = SocketFile(sock)
             negociateProtocol(f, True)
         except:
-            self.sessionCleanup(True)
+            self.sessionCleanup()
             future.failed()
             return
         
-        future.completed()
-        with self.__lock:
-            self.messenger = ThreadedMessenger(f)
-            self.messenger.receiveMessage(Future(self.messageReceived))
+        future.completed(address)
+        self.sessionStarted()
     
     def doListen(self, localAddress, future):
         """ Thread entry point for 'listen'. """
@@ -96,8 +87,8 @@ class Session(object):
                 listenSock.bind(localAddress)
                 listenSock.listen(1)
                 sock, remoteAddress = listenSock.accept()
-                with self.__lock:
-                    self.sessionSocket = sock
+                with self.lock:
+                    self.conn = sock
             finally:
                 listenSock.close()
             
@@ -105,52 +96,82 @@ class Session(object):
             f = SocketFile(sock)
             negociateProtocol(f, False)
         except:
-            self.sessionCleanup(True)
+            self.sessionCleanup()
             future.failed()
             return
 
         future.completed(remoteAddress)
-        with self.__lock:
-            self.messenger = ThreadedMessenger(f)
+        self.sessionStarted()
+    
+    def sessionCleanup(self):
+        """ Close the connection and free all session-related resoources. """
+        with self.lock:
+            if self.conn:
+                self.conn.close()
+                self.conn = None
+    
+    def sessionStarted(self):
+        """ Called when a session has been established. """
+        raise NotImplementedError()
+
+class SparkSession(Session):
+    def __init__(self):
+        super(SparkSession, self).__init__()
+        self.thread = None
+        self.queue = Queue(32)
+    
+    def sessionStarted(self):
+        """ Called when a session has been established. """
+        with self.lock:
+            self.messenger = ThreadedMessenger(SocketFile(self.conn))
             self.messenger.receiveMessage(Future(self.messageReceived))
+            self.thread = threading.Thread(target=self.sessionLoop, name="Session/Loop")
+            self.thread.daemon = True
+            self.thread.start()
+    
+    def sessionCleanup(self):
+        """ Close the connection and free all session-related resoources. """
+        with self.lock:
+            self.thread = None
+            self.queue = Queue(32)
+            super(SparkSession, self).sessionCleanup()
     
     def messageReceived(self, future):
         try:
             message = future.result[0]
         except:
-            self.sessionCleanup(True)
+            type, val, tb = sys.exc_info()
+            self.queue.put((type, val, tb, True))
             return
         
-        if message is None:
-            self.sessionCleanup(False)
-        else:
-            self.handleMessage(message)
-            with self.__lock:
+        self.queue.put(message)
+        if message is not None:
+            with self.lock:
                 self.messenger.receiveMessage(Future(self.messageReceived))
     
-    def handleMessage(self, message):
-        print "Received message '%s'" % str(message)
-    
-    def sessionCleanup(self, fail):
-        futures = []
-        with self.__lock:
-            if self.sessionSocket:
-                self.sessionSocket.close()
-                self.sessionSocket = None
-                futures.extend(self.joinList)
-            if self.messenger:
-                self.messenger.close()
-                self.messenger = None
-        
-        for future in futures:
-            if fail:
-                future.failed()
-            else:
-                future.completed()
+    def sessionLoop(self):
+        try:
+            task = self.queue.get()
+            while task is not None:
+                if isinstance(task, tuple):
+                    type, val, tb, fatal = task
+                    print("Unhandled exception in thread %s" % self.thread.name, file=sys.stderr)
+                    traceback.print_exception(type, val, tb, file=sys.stderr)
+                    if fatal:
+                        break
+                else:
+                    print("Received '%s'" % str(task))
+                task = self.queue.get()
+        finally:
+            self.sessionCleanup()
 
-class SparkSession(Session):
-    def __init__(self):
-        super(SparkSession, self).__init__()
+    def join(self):
+        """ Wait for the session to be finished. """
+        with self.lock:
+            thread = self.thread
+        # don't call join while holding the lock, or risk deadlocking everything
+        if thread:
+            thread.join()
 
 class SocketFile(object):
     def __init__(self, socket):

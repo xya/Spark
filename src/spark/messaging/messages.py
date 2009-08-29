@@ -66,11 +66,11 @@ class Request(TextMessage):
 
 class Response(TextMessage):
     def __init__(self, tag, params=None, transID=None):
-        super(Request, self).__init__(TextMessage.RESPONSE, tag, params, transID)
+        super(Response, self).__init__(TextMessage.RESPONSE, tag, params, transID)
 
 class Notification(TextMessage):
     def __init__(self, tag, params=None, transID=None):
-        super(Request, self).__init__(TextMessage.NOTIFICATION, tag, params, transID)
+        super(Notification, self).__init__(TextMessage.NOTIFICATION, tag, params, transID)
 
 class Blob(Message):
     HEX_DIGITS = 4

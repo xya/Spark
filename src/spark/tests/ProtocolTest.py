@@ -39,18 +39,18 @@ TestText = """> list-files 0 18 {"register": true}
 """
 
 TestItems = [
-    TextMessage(TextMessage.REQUEST, "list-files", {"register": True}, 0),
-    TextMessage(TextMessage.RESPONSE, "list-files", {"<guid>": {"id": "<guid>", "name": "Report.pdf", "size": 3145728, "last-modified": "20090619T173529.000Z"}}, 0),
-    TextMessage(TextMessage.NOTIFICATION, "file-added", {"id": "<guid>", "name": "SeisRoX-2.0.9660.exe", "size": 3145728, "last-modified": "20090619T173529.000Z"}, 55),
-    TextMessage(TextMessage.REQUEST, "create-transfer", {"file-id": "<guid>", "blocksize": 1024, "ranges": [{"start": 0, "end": 3071}]}, 26),
-    TextMessage(TextMessage.RESPONSE, "create-transfer", {"id": 2, "state": "inactive"}, 26),
-    TextMessage(TextMessage.REQUEST, "start-transfer", {"id": 2}, 27),
-    TextMessage(TextMessage.RESPONSE, "start-transfer", {"id": 2, "state": "starting"}, 27),
-    TextMessage(TextMessage.NOTIFICATION, "transfer-state-changed", {"id": 2, "state": "active"}, 56),
+    Request("list-files", {"register": True}, 0),
+    Response("list-files", {"<guid>": {"id": "<guid>", "name": "Report.pdf", "size": 3145728, "last-modified": "20090619T173529.000Z"}}, 0),
+    Notification("file-added", {"id": "<guid>", "name": "SeisRoX-2.0.9660.exe", "size": 3145728, "last-modified": "20090619T173529.000Z"}, 55),
+    Request("create-transfer", {"file-id": "<guid>", "blocksize": 1024, "ranges": [{"start": 0, "end": 3071}]}, 26),
+    Response("create-transfer", {"id": 2, "state": "inactive"}, 26),
+    Request("start-transfer", {"id": 2}, 27),
+    Response("start-transfer", {"id": 2, "state": "starting"}, 27),
+    Notification("transfer-state-changed", {"id": 2, "state": "active"}, 56),
     Block(2, 0, "Hello, world"),
     Block(2, 3071, "!" * 1024),
-    TextMessage(TextMessage.REQUEST, "close-transfer", {"id": 2}, 28),
-    TextMessage(TextMessage.RESPONSE, "close-transfer", {"id": 2}, 28),
+    Request("close-transfer", {"id": 2}, 28),
+    Response("close-transfer", {"id": 2}, 28),
 ]
 
 # some tests might change attributes in the messages (e.g. the transaction ID)
