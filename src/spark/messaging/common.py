@@ -112,8 +112,11 @@ class ThreadedMessenger(Messenger):
         self.receiveThread.start()
     
     def close(self):
+        # TODO: closable Queue class
         self.sendQueue.put(None)
         self.receiveQueue.put(None)
+        self.sendThread.join()
+        self.receiveThread.join()
     
     @asyncMethod
     def sendMessage(self, message, future):
