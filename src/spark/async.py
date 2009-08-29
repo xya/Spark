@@ -26,7 +26,7 @@ import sys
 import traceback
 from cStringIO import StringIO
 
-__all__ = ["asyncMethod", "Future", "TaskError", "Delegate"]
+__all__ = ["asyncMethod", "Future", "FutureFrozenError", "TaskError", "Delegate"]
 
 def asyncMethod(func):
     """
@@ -114,7 +114,7 @@ class Future(object):
                 self.__wait.notifyAll()
                 callback = self.__callback
             else:
-                raise StandardError("The result of the task has already been set")
+                raise FutureFrozenError("The result of the task has already been set")
         
         # don't call the callback with the lock held
         if callback:
@@ -140,11 +140,15 @@ class Future(object):
                 self.__wait.notifyAll()
                 callback = self.__callback
             else:
-                raise StandardError("The result of the task has already been set")
+                raise FutureFrozenError("The result of the task has already been set")
         
         # don't call the callback with the lock held
         if callback:
             callback()
+
+class FutureFrozenError(StandardError):
+    """ Exception raised when one tries to call completed() or failed() twice on a future. """
+    pass
 
 class TaskError(StandardError):
     """ Holds information about an error that occured during the execution of a task."""

@@ -18,6 +18,9 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+from __future__ import print_function
+import traceback
+import sys
 import threading
 from Queue import Queue
 from spark.async import Future, Delegate, asyncMethod
@@ -101,12 +104,16 @@ class ThreadedMessenger(Messenger):
         self.file = file
         self.sendQueue = Queue(32)
         self.receiveQueue = Queue(32)
-        self.sendThread = threading.Thread(target=self.sendLoop)
+        self.sendThread = threading.Thread(target=self.sendLoop, name="MessageSender")
         self.sendThread.daemon = True
         self.sendThread.start()
-        self.receiveThread = threading.Thread(target=self.receiveLoop)
+        self.receiveThread = threading.Thread(target=self.receiveLoop, name="MessageReceiver")
         self.receiveThread.daemon = True
         self.receiveThread.start()
+    
+    def close(self):
+        self.sendQueue.put(None)
+        self.receiveQueue.put(None)
     
     @asyncMethod
     def sendMessage(self, message, future):
@@ -125,9 +132,14 @@ class ThreadedMessenger(Messenger):
             message, future = request
             try:
                 writer.write(message)
-                future.completed(message)
-            except Exception, e:
-                future.failed(e)
+            except:
+                future.failed()
+            else:
+                try:
+                    future.completed(message)
+                except:
+                    print("A future's callback raised an exception", file=sys.stderr)
+                    traceback.print_exc(file=sys.stderr)
     
     def receiveLoop(self):
         parser = messageReader(self.file)
@@ -138,6 +150,11 @@ class ThreadedMessenger(Messenger):
             future = request
             try:
                 message = parser.read()
-                future.completed(message)
-            except Exception, e:
-                future.failed(e)
+            except:
+                future.failed()
+            else:
+                try:
+                    future.completed(message)
+                except:
+                    print("A future's callback raised an exception", file=sys.stderr)
+                    traceback.print_exc(file=sys.stderr)

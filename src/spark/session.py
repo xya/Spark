@@ -28,8 +28,7 @@ from spark.messaging import *
 class Session(object):
     def __init__(self):
         self.__lock = threading.RLock()
-        self.ended = Delegate(self.__lock)
-        self.sessionFinished = threading.Condition(self.__lock)
+        self.joinList = []
         self.sessionSocket = None
         self.messenger = None
     
@@ -57,11 +56,14 @@ class Session(object):
             else:
                 raise Exception("The current session is still active")
     
-    def join(self):
+    @asyncMethod
+    def join(self, future):
         """ Wait for the session to be finished. """
         with self.__lock:
-            while self.sessionSocket:
-                self.sessionFinished.wait()
+            if self.sessionSocket:
+                self.joinList.append(future)
+            else:
+                future.completed()
     
     def doConnect(self, address, future):
         """ Thread entry point for 'connect'. """
@@ -76,7 +78,7 @@ class Session(object):
             f = SocketFile(sock)
             negociateProtocol(f, True)
         except:
-            self.sessionCleanup(False)
+            self.sessionCleanup(True)
             future.failed()
             
         future.completed()
@@ -102,7 +104,7 @@ class Session(object):
             f = SocketFile(sock)
             negociateProtocol(f, False)
         except:
-            self.sessionCleanup(False)
+            self.sessionCleanup(True)
             future.failed()
             
         future.completed(remoteAddress)
@@ -114,10 +116,9 @@ class Session(object):
         try:
             message = future.result[0]
         except:
-            message = None
-        # connection was closed gracefully, or an error happened during recv
-        if message is None:
             self.sessionCleanup(True)
+        if message is None:
+            self.sessionCleanup(False)
         else:
             self.handleMessage(message)
             with self.__lock:
@@ -126,16 +127,20 @@ class Session(object):
     def handleMessage(self, message):
         print "Received message '%s'" % str(message)
     
-    def sessionCleanup(self, wasConnected):
+    def sessionCleanup(self, fail):
+        futures = []
         with self.__lock:
             if self.sessionSocket:
                 self.sessionSocket.shutdown(socket.SHUT_RDWR)
                 self.sessionSocket.close()
                 self.sessionSocket = None
-                self.sessionFinished.notifyAll()
-            
-        if wasConnected:
-            self.ended()
+                futures.extend(self.joinList)
+                
+        for future in futures:
+            if fail:
+                future.failed()
+            else:
+                future.completed()
 
 class SparkSession(Session):
     def __init__(self):
