@@ -24,10 +24,7 @@ import copy
 from spark.messaging import *
 from StringIO import StringIO
 
-TestText = """supports SPARKv1
-protocol SPARKv1
-protocol SPARKv1
-> list-files 0 18 {"register": true}
+TestText = """> list-files 0 18 {"register": true}
 < list-files 0 108 {"<guid>": {"id": "<guid>", "name": "Report.pdf", "size": 3145728, "last-modified": "20090619T173529.000Z"}}
 ! file-added 55 106 {"id": "<guid>", "name": "SeisRoX-2.0.9660.exe", "size": 3145728, "last-modified": "20090619T173529.000Z"}
 > create-transfer 26 79 {"file-id": "<guid>", "blocksize": 1024, "ranges": [{"start": 0, "end": 3071}]}
@@ -42,9 +39,6 @@ protocol SPARKv1
 """
 
 TestItems = [
-    SupportedProtocolNames(["SPARKv1"]),
-    ProtocolName("SPARKv1"),
-    ProtocolName("SPARKv1"),
     TextMessage(TextMessage.REQUEST, "list-files", {"register": True}, 0),
     TextMessage(TextMessage.RESPONSE, "list-files", {"<guid>": {"id": "<guid>", "name": "Report.pdf", "size": 3145728, "last-modified": "20090619T173529.000Z"}}, 0),
     TextMessage(TextMessage.NOTIFICATION, "file-added", {"id": "<guid>", "name": "SeisRoX-2.0.9660.exe", "size": 3145728, "last-modified": "20090619T173529.000Z"}, 55),
@@ -64,10 +58,10 @@ TestItems = [
 def TestItemProperty(itemIndex):
     return lambda: copy.copy(TestItems[itemIndex])
     
-testRequest = TestItemProperty(3)
-testResponse = TestItemProperty(4)
-testNotification = TestItemProperty(5)
-testBlock = TestItemProperty(11)
+testRequest = TestItemProperty(0)
+testResponse = TestItemProperty(1)
+testNotification = TestItemProperty(2)
+testBlock = TestItemProperty(8)
 
 class ProtocolTest(unittest.TestCase):
     def assertMessagesEqual(self, expected, actual):
@@ -82,13 +76,13 @@ class ProtocolTest(unittest.TestCase):
             self.assertMessagesEqual(expected, actual)
     
     def testParseText(self):
-        """ Ensure that parser() can read messages from a text file """
+        """ Ensure that messageReader() can read messages from a text file """
         p = messageReader(StringIO(TestText))
         actualItems = list(p.readAll())
         self.assertSeqsEqual(TestItems, actualItems)
     
     def testReadWriteSync(self):
-        """ Ensure that messages written by writer() can be read by parser() """
+        """ Ensure that messages written by messageWriter() can be read by messageReader() """
         # first individual messages
         for item in TestItems:
             f = StringIO()
@@ -103,6 +97,106 @@ class ProtocolTest(unittest.TestCase):
         f.seek(0)
         actualItems = list(messageReader(f).readAll())
         self.assertSeqsEqual(TestItems, actualItems)
+
+class ClientSocket(object):
+    def __init__(self, supportedList):
+        self.supported = supportedList
+        self.readBuffer = "supports %s\r\n" % " ".join(supportedList)
+        self.writeBuffer = ""
+        self.state = 0
+    
+    def read(self, count):
+        if count <= len(self.readBuffer):
+            data, self.readBuffer = self.readBuffer[:count], self.readBuffer[count:]
+            return data
+        else:
+            raise EOFError("Read would have blocked forever")
+    
+    def write(self, data):
+        self.writeBuffer += data
+        end = self.writeBuffer.find("\r\n")
+        if end >= 0:
+            if self.state == 0:
+                line, self.writeBuffer = self.writeBuffer[:end], self.writeBuffer[end:]
+                w = line.split(" ")
+                if (w[0] != "protocol") or (len(w) != 2) or (w[1] not in self.supported):
+                    self.readBuffer += "not-supported\r\n"
+                else:
+                    self.readBuffer += "protocol %s\r\n" % w[1]
+                    self.state += 1
+
+class ServerSocket(object):
+    def __init__(self, supportedList):
+        self.supported = supportedList
+        self.readBuffer = ""
+        self.writeBuffer = ""
+        self.state = 0
+        self.choice = None
+    
+    def read(self, count):
+        if count <= len(self.readBuffer):
+            data, self.readBuffer = self.readBuffer[:count], self.readBuffer[count:]
+            return data
+        else:
+            raise EOFError("Read would have blocked forever")
+    
+    def write(self, data):
+        self.writeBuffer += data
+        end = self.writeBuffer.find("\r\n")
+        if end >= 0:
+            if self.state == 0:    
+                line, self.writeBuffer = self.writeBuffer[:end], self.writeBuffer[end:]
+                w = line.split(" ")
+                matches = [name for name in w[1:] if name in self.supported]
+                if (w[0] != "supports") or (len(w) < 2) or (len(matches) == 0):
+                    self.readBuffer += "not-supported\r\n"
+                else:
+                    self.choice = matches[0]
+                    self.readBuffer += "protocol %s\r\n" % self.choice
+                    self.state += 1
+            elif self.state == 1:
+                line, self.writeBuffer = self.writeBuffer[:end], self.writeBuffer[end:]
+                w = line.split(" ")
+                if (w[0] != "protocol") or (len(w) != 2) or (w[1] != self.choice):
+                    self.readBuffer += "not-supported\r\n"
+                else:
+                    self.readBuffer += "protocol %s\r\n" % w[1]
+                    self.state += 1
+
+class ProtocolNegociationTest(unittest.TestCase):
+    def testServerNegociationSupported(self):
+        """ Negociation should work out if there is at last one supported protocol. """
+        supported = ["SPARKv2", "SPARKv1"]
+        f = ClientSocket(supported)
+        name = negociateProtocol(f, False)
+        self.assertTrue(name in supported)
+    
+    def testServerNegociationNotSupported(self):
+        """ Negociation should not work out if there is no supported protocol. """
+        supported = ["SPARKv2"]
+        f = ClientSocket(supported)
+        try:
+            name = negociateProtocol(f, False)
+            self.fail("Protocol negociation should have failed, no supported protocol")
+        except:
+            pass
+
+    def testClientNegociationSupported(self):
+        """ Negociation should work out if there is at last one supported protocol. """
+        supported = ["SPARKv2", "SPARKv1"]
+        f = ServerSocket(supported)
+        name = negociateProtocol(f, True)
+        self.assertTrue(name in supported)
+    
+    def testClientNegociationNotSupported(self):
+        """ Negociation should not work out if there is no supported protocol. """
+        supported = ["SPARKv2"]
+        f = ServerSocket(supported)
+        try:
+            name = negociateProtocol(f, True)
+            self.fail("Protocol negociation should have failed, no supported protocol")
+        except:
+            pass
 
 if __name__ == '__main__':
     unittest.main()
