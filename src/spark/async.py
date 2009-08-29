@@ -26,7 +26,8 @@ import sys
 import traceback
 from cStringIO import StringIO
 
-__all__ = ["asyncMethod", "Future", "FutureFrozenError", "TaskError", "Delegate"]
+__all__ = ["asyncMethod", "Future", "FutureFrozenError", "TaskError", "Delegate"
+           "BlockingQueue", "QueueClosedError"]
 
 def asyncMethod(func):
     """
@@ -214,3 +215,68 @@ class Delegate(object):
         with self.__lock:
             callbacks = self.__delegates[:]
         return [callback(*args, **kw) for callback in callbacks]
+
+class QueueClosedError(Exception):
+    pass
+
+class BlockingQueue(object):
+    """ Blocking queue which can be used to pass objects between threads. """
+    def __init__(self, size, open=True, lock=None):
+        if lock is None:
+            self.__lock = threading.Lock()
+        else:
+            self.__lock = lock
+        self.__wait = threading.Condition(self.__lock)
+        self.__size = size
+        self.__count = 0
+        if open:
+            self.__list = []
+        else:
+            self.__list = None
+    
+    def put(self, item):
+        """ Block until the queue is not full, and put the item at the end. """
+        with self.__lock:
+            if self.__list is None:
+                raise QueueClosedError()
+            while self.__count == self.__size:
+                self.__wait.wait()
+                if self.__list is None:
+                    raise QueueClosedError()
+            self.__list.append(item)
+            self.__count += 1
+            self.__wait.notifyAll()
+    
+    def get(self):
+        """ Block until the queue is not empty, and return the first item. """
+        with self.__lock:
+            if self.__list is None:
+                raise QueueClosedError()
+            while self.__count == 0:
+                self.__wait.wait()
+                if self.__list is None:
+                    raise QueueClosedError()
+            item = self.__list.pop(0)
+            self.__count -= 1
+            self.__wait.notifyAll()
+        return item
+    
+    def open(self):
+        """ Create (or re-create) a closed queue, which will be empty. """
+        with self.__lock:
+            if self.__list is None:
+                self.__count = 0
+                self.__list = []
+    
+    def close(self, waitEmpty=False):
+        """ Close the queue, raising an exception on threads waiting for put or get to complete. """
+        with self.__lock:
+            if waitEmpty:
+                while self.__count > 0:
+                    self.__wait.wait()
+                    if self.__list is None:
+                        return
+            if self.__list is not None:
+                self.__count = 0
+                self.__list = None
+                self.__wait.notifyAll()

@@ -22,8 +22,7 @@ from __future__ import print_function
 import traceback
 import sys
 import threading
-from Queue import Queue
-from spark.async import Future, Delegate, asyncMethod
+from spark.async import Future, Delegate, BlockingQueue, QueueClosedError, asyncMethod
 from spark.messaging.protocol import messageReader, messageWriter
 from spark.messaging.messages import *
 
@@ -102,8 +101,8 @@ class ThreadedMessenger(Messenger):
     def __init__(self, file):
         super(ThreadedMessenger, self).__init__()
         self.file = file
-        self.sendQueue = Queue(32)
-        self.receiveQueue = Queue(32)
+        self.sendQueue = BlockingQueue(32)
+        self.receiveQueue = BlockingQueue(32)
         self.sendThread = threading.Thread(target=self.sendLoop, name="MessageSender")
         self.sendThread.daemon = True
         self.sendThread.start()
@@ -112,9 +111,8 @@ class ThreadedMessenger(Messenger):
         self.receiveThread.start()
     
     def close(self):
-        # TODO: closable Queue class
-        self.sendQueue.put(None)
-        self.receiveQueue.put(None)
+        self.sendQueue.close()
+        self.receiveQueue.close()
         self.sendThread.join()
         self.receiveThread.join()
     
@@ -128,25 +126,26 @@ class ThreadedMessenger(Messenger):
     
     def sendLoop(self):
         writer = messageWriter(self.file)
-        while True:
-            request = self.sendQueue.get()
-            if request is None:
-                return
-            message, future = request
-            try:
-                future.run(writer.write, message)
-            except:
-                print("A future's callback raised an exception", file=sys.stderr)
-                traceback.print_exc(file=sys.stderr)
+        try:
+            while True:
+                message, future = self.sendQueue.get()
+                try:
+                    future.run(writer.write, message)
+                except:
+                    print("A future's callback raised an exception", file=sys.stderr)
+                    traceback.print_exc(file=sys.stderr)
+        except QueueClosedError:
+            pass
     
     def receiveLoop(self):
         parser = messageReader(self.file)
-        while True:
-            future = self.receiveQueue.get()
-            if future is None:
-                return
-            try:
-                future.run(parser.read)
-            except:
-                print("A future's callback raised an exception", file=sys.stderr)
-                traceback.print_exc(file=sys.stderr)
+        try:
+            while True:
+                future = self.receiveQueue.get()
+                try:
+                    future.run(parser.read)
+                except:
+                    print("A future's callback raised an exception", file=sys.stderr)
+                    traceback.print_exc(file=sys.stderr)
+        except QueueClosedError:
+            pass

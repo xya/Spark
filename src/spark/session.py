@@ -23,9 +23,8 @@ import sys
 import traceback
 import types
 import threading
-from Queue import Queue
 import socket
-from spark.async import Future, Delegate, asyncMethod
+from spark.async import Future, Delegate, BlockingQueue, QueueClosedError, asyncMethod
 from spark.messaging.common import ThreadedMessenger
 from spark.messaging import *
 
@@ -41,7 +40,7 @@ class Session(object):
         self.thread = None
         self.joinList = None
         # Using the queue is only allowed if (2) is true
-        self.queue = Queue(32)
+        self.queue = BlockingQueue(32, False, self.lock)
     
     @asyncMethod
     def connect(self, address, future):
@@ -69,21 +68,22 @@ class Session(object):
     
     @asyncMethod
     def disconnect(self, future):
-        """ Terminate the session. """
-        inactive = True
+        """ Terminate the session if it is active. """
         with self.lock:
-            if self.messenger is not None:
-                # TODO: close the queue instead of enqueuing
-                self.queue.put(None)
-            if self.joinList is not None:
-                self.joinList.append(future)
-                inactive = False
-        if inactive:
-            raise Exception("The current session is inactive")
+            if self.thread is not None:
+                if self.joinList is None:
+                    starting = True
+                else:
+                    starting = False
+                    self.joinList.append(future)
+                    if self.messenger is not None:
+                        self.queue.close()
+        if starting:
+            raise NotImplementedError("Can't close a session which is still starting")
     
     @asyncMethod
     def join(self, future):
-        """ Wait for the session to be finished if it is still active. """
+        """ Wait for the session to be finished if it is active. """
         inactive = True
         with self.lock:
             if self.joinList is not None:
@@ -128,16 +128,18 @@ class Session(object):
         with self.lock:
             self.conn = conn
             self.joinList = []
+            self.queue.open()
             self.messenger = ThreadedMessenger(SocketFile(self.conn))
             self.messenger.receiveMessage(Future(self.messageReceived))
             
         try:
             future.completed(*args)
             task = self.queue.get()
-            # TODO: use a closable queue
-            while task is not None:
-                print("Received '%s'" % str(task))
+            while True:
+                print("Handling '%s'" % str(task))
                 task = self.queue.get()
+        except QueueClosedError:
+            pass
         finally:
             self.sessionCleanup()
 
@@ -145,18 +147,16 @@ class Session(object):
         try:
             message = future.result[0]
         except:
-            traceback.print_exc(file=sys.stderr)
             message = None
-            # TODO: close the queue instead of enqueuing
-            # with self.lock:
-            #     if self.joinList is not None:
-            #         pass
-        else:
-            with self.lock:
-                if self.messenger is not None:
+            traceback.print_exc(file=sys.stderr)
+        print("Received '%s'" % str(message))
+        with self.lock:
+            if self.messenger is not None:
+                if message is None:
+                    self.queue.close(True)
+                else:
                     self.queue.put(message)
-                    if message is not None:
-                        self.messenger.receiveMessage(Future(self.messageReceived))
+                    self.messenger.receiveMessage(Future(self.messageReceived))
 
     def sessionCleanup(self):
         """ Close the connection and free all session-related resoources. """
@@ -164,11 +164,11 @@ class Session(object):
         with self.lock:
             conn, self.conn = self.conn, None
             messenger, self.messenger = self.messenger, None
+            self.queue.close()
         if conn:
             conn.close()
         if messenger:
             messenger.close()
-        # TODO: clear the queue
         
         # stop the session and call futures queued by join and disconnect
         with self.lock:
