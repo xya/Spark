@@ -30,7 +30,9 @@ __all__ = ["Messenger", "MessageDelivery"]
 
 class Messenger(object):
     """ Base class for sending and receiving messages asynchronously. """
-    
+    def __init__(self):
+        super(Messenger, self).__init__()
+        
     def sendMessage(self, message, future):
         """ Send a message. """
         raise NotImplementedError()
@@ -39,22 +41,22 @@ class Messenger(object):
         """ Receive a message. """
         raise NotImplementedError()
 
-#TODO: mixin?
 class MessageDelivery(object):
     """
-    Higher-level messenger which can be used for handling specialized messages
+    Higher-level mixin for Messenger, which can be used for handling specialized messages
     like requests, responses and notifications.
     
-    Note that sendMessage() is not implemented, and received message should be passed to deliver().
+    Received message should be passed to deliverMessage().
     """
     def __init__(self):
+        super(MessageDelivery, self).__init__()
         self.__lock = threading.Lock()
-        self.reset()
+        self.resetDelivery()
     
     @asyncMethod
     def sendRequest(self, req, future):
         """ Send a request and return the response through the future. """
-        if not isinstance(req, TextMessage) or (req.type != TextMessage.REQUEST):
+        if not hasattr(req, "type") or (req.type != TextMessage.REQUEST):
             raise TypeError("req should be a text request.")
         with self.__lock:
             req.transID = self.nextID
@@ -65,7 +67,7 @@ class MessageDelivery(object):
     @asyncMethod
     def sendResponse(self, req, params, future):
         """ Respond to a request. """
-        if not isinstance(req, TextMessage) or (req.type != TextMessage.REQUEST):
+        if not hasattr(req, "type") or (req.type != TextMessage.REQUEST):
             raise TypeError("req should be a text request.")
         response = Response(req.tag, params, req.transID)
         self.sendMessage(response, future)
@@ -73,19 +75,14 @@ class MessageDelivery(object):
     @asyncMethod
     def sendNotification(self, n, future):
         """ Send a notification. """
-        if not isinstance(req, TextMessage) or (req.type != TextMessage.NOTIFICATION):
+        if not hasattr(n, "type") or (n.type != TextMessage.NOTIFICATION):
             raise TypeError("n should be a text notification.")
         with self.__lock:
             n.transID = self.nextID
             self.nextID += 1
         self.sendMessage(n, future)
     
-    @asyncMethod
-    def sendMessage(self, m, futre):
-        """ Send a message. """
-        raise NotImplementedError()
-    
-    def reset(self):
+    def resetDelivery(self):
         """ Reset the state of message delivery."""
         with self.__lock:
             self.requestReceived = Delegate(self.__lock)
@@ -94,12 +91,12 @@ class MessageDelivery(object):
             self.nextID = 0
             self.pendingRequests = {}
     
-    def deliver(self, m):
+    def deliverMessage(self, m):
         """
         Deliver a message. It could be a response to return to the request's sender.
         Or it could be a request, notification or block to publish through events.
         """
-        if isinstance(m, TextMessage):
+        if hasattr(m, "type"):
             if m.type == TextMessage.RESPONSE:
                 # notifies the request's sender that the response arrived
                 with self.__lock:
@@ -110,7 +107,7 @@ class MessageDelivery(object):
                 self.requestReceived(m)
             elif m.type == TextMessage.NOTIFICATION:
                 self.notificationReceived(m)
-        elif isinstance(m, Block):
+        elif hasattr(m, "blockID"):
             self.blockReceived(m)
 
 class ThreadedMessenger(Messenger):

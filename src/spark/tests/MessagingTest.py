@@ -23,8 +23,9 @@ from spark.messaging import *
 from spark.async import Future, asyncMethod
 from spark.tests.ProtocolTest import testRequest, testResponse, testNotification, testBlock
 
-class MockSender(Messenger):
+class MockSender(Messenger, MessageDelivery):
     def __init__(self):
+        super(MockSender, self).__init__()
         self.sent = []
     
     @asyncMethod
@@ -38,9 +39,7 @@ class MessageDeliveryTest(unittest.TestCase):
         self.notifications = []
         self.blocks = []
         self.responses = []
-        self.sender = MockSender()
-        self.delivery = MessageDelivery()
-        self.delivery.sendMessage = self.sender.sendMessage
+        self.delivery = MockSender()
         self.delivery.requestReceived += self.requests.append
         self.delivery.notificationReceived += self.notifications.append
         self.delivery.blockReceived += self.blocks.append
@@ -72,21 +71,21 @@ class MessageDeliveryTest(unittest.TestCase):
     def testDeliverRequest(self):
         """ Receiving a request should emit the requestReceived event. """
         req = testRequest()
-        self.delivery.deliver(req)
+        self.delivery.deliverMessage(req)
         self.assertMessageCount(1, 0, 0, 0)
         self.assertMessagesEqual(req, self.requests[0])
     
     def testDeliverNotification(self):
         """ Receiving a notification should emit the notificationReceived event. """
         notif = testNotification()
-        self.delivery.deliver(notif)
+        self.delivery.deliverMessage(notif)
         self.assertMessageCount(0, 0, 1, 0)
         self.assertMessagesEqual(notif, self.notifications[0])
     
     def testDeliverBlock(self):
         """ Receiving a block should emit the blockReceived event. """
         block = testBlock()
-        self.delivery.deliver(block)
+        self.delivery.deliverMessage(block)
         self.assertMessageCount(0, 0, 0, 1)
         self.assertMessagesEqual(block, self.blocks[0])
     
@@ -99,9 +98,9 @@ class MessageDeliveryTest(unittest.TestCase):
         resp.transID = req.transID + 1  # response not matching the request
         resp2 = testResponse()
         resp2.transID = req.transID     # response matching the request
-        self.delivery.deliver(resp)
+        self.delivery.deliverMessage(resp)
         self.assertMessageCount(0, 0, 0, 0)
-        self.delivery.deliver(resp2)
+        self.delivery.deliverMessage(resp2)
         self.assertMessageCount(0, 1, 0, 0)
         self.assertMessagesEqual(resp2, self.responses[0])
     

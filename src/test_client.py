@@ -9,7 +9,7 @@ remoteAddr = ("127.0.0.1", 4550)
 s = FileShareSession()
 s.connect(remoteAddr, None)
 print "Connected to %s" % repr(remoteAddr)
-response = s.delivery.sendRequest(Request("list-files"), None)
+response = s.remoteShare.listFiles({}, None)
 if len(response) == 1:
     print str(response[0])
 s.disconnect(None)

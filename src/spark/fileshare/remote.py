@@ -18,40 +18,28 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+from types import MethodType
 from spark.async import Future, asyncMethod
 from spark.messaging import Request
 from spark.fileshare.common import FileShare, toCamelCase
+
+__all__ = ["RemoteFileShare"]
 
 class RemoteFileShare(FileShare):
     def __init__(self, delivery):
         super(RemoteFileShare, self).__init__()
         self.delivery = delivery
         delivery.notificationReceived += self.notificationReceived
+        for tag in FileShare.Notifications:
+            self.createEvent(tag)
+        for tag in FileShare.Requests:
+            self.createRequest(tag, self.requestHandler(tag))
+    
+    def requestHandler(self, tag):
+        """ Create a function to handle sending requests with the given tag """
+        def handler(self, params, future):
+            self.delivery.sendRequest(Request(tag, params), future)
+        return asyncMethod(MethodType(handler, self))
     
     def notificationReceived(self, n):
         self.invokeEvent(n.tag, n.params)
-    
-    @asyncMethod
-    def listFiles(self, params, future):
-        r = Request("list-files", params)
-        self.delivery.sendRequest(r, future)
-    
-    @asyncMethod
-    def createTransfer(self, params, future):
-        r = Request("create-transfer", params)
-        self.delivery.sendRequest(r, future)
-    
-    @asyncMethod
-    def startTransfer(self, params, future):
-        r = Request("start-transfer", params)
-        self.delivery.sendRequest(r, future)
-    
-    @asyncMethod
-    def closeTransfer(self, params, future):
-        r = Request("close-transfer", params)
-        self.delivery.sendRequest(r, future)
-    
-    @asyncMethod
-    def shutdown(self, params, future):
-        r = Request("shutdown", params)
-        self.delivery.sendRequest(r, future)

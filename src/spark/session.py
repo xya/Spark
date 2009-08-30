@@ -30,6 +30,7 @@ from spark.messaging import *
 
 class Session(object):
     def __init__(self):
+        super(Session, self).__init__()
         # all attributes except queue are protected by the lock
         # invariants:
         # (1)   'thread != None' means the session has started

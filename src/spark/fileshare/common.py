@@ -34,26 +34,18 @@ class FileShare(object):
         "file-added", "file-removed", "transfer-state-chaned", "panic"
     ]
     
-    def __init__(self):
-        for tag in FileShare.Requests:
-            self.createRequest(tag)
-            
-        for tag in FileShare.Notifications:
-            self.createEvent(tag)
-    
     def close(self):
         """ Close the file share, terminating it and freeing resources. """
         pass
     
     def createRequest(self, tag, handler=None):
-        """ Create a request for the specified tag, if it doesn't already exists. """
+        """ Create a request for the specified tag. """
         name = toCamelCase(tag)
-        if not hasattr(self, name):
-            if handler is None:
-                def requestHandler(self, params, future):
-                    raise NotImplementedError("The '%s' request handler is not implemented" % tag)
-                handler = types.MethodType(requestHandler, self)
-            setattr(self, name, handler)
+        if handler is None:
+            def requestHandler(self, params, future):
+                raise NotImplementedError("The '%s' request handler is not implemented" % tag)
+            handler = types.MethodType(requestHandler, self)
+        setattr(self, name, handler)
         return name
     
     def invokeRequest(self, tag, *args):
@@ -65,11 +57,9 @@ class FileShare(object):
                 handler(*args)
         
     def createEvent(self, tag):
-        """ Create an event for the specified tag, if it doesn't already exists. """
+        """ Create an event for the specified tag. """
         name = toCamelCase(tag)
-        if not hasattr(self, name):
-            delegate = Delegate()
-            setattr(self, name, delegate)
+        setattr(self, name, Delegate())
         return name
         
     def invokeEvent(self, tag, *args):

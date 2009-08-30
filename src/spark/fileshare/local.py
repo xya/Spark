@@ -29,6 +29,8 @@ class LocalFileShare(FileShare):
         super(LocalFileShare, self).__init__()
         self.delivery = delivery
         self.delivery.requestReceived += self.requestReceived
+        for tag in FileShare.Notifications:
+            self.createEvent(tag)
     
     def requestReceived(self, req):
         """ Deliver incoming requests by invoking the relevant request handler. """

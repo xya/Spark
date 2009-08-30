@@ -26,22 +26,19 @@ from remote import RemoteFileShare
 
 __all__ = ["FileShareSession"]
 
-class FileShareSession(Session):
+class FileShareSession(Session, MessageDelivery):
     def __init__(self):
         super(FileShareSession, self).__init__()
-        #TODO: mixin?
-        self.delivery = MessageDelivery()
-        self.delivery.sendMessage = self.sendMessage
         self.localShare = None
         self.remoteShare = None
     
     def handleMessage(self, message):
         #print("Received '%s'" % str(message))
-        self.delivery.deliver(message)
+        self.deliverMessage(message)
     
     def sessionStarted(self):
-        self.localShare = LocalFileShare(self.delivery)
-        self.remoteShare = RemoteFileShare(self.delivery)
+        self.localShare = LocalFileShare(self)
+        self.remoteShare = RemoteFileShare(self)
     
     def sessionCleanup(self):
         try:
@@ -49,6 +46,6 @@ class FileShareSession(Session):
                 self.remoteShare.close()
             if self.localShare:
                 self.localShare.close()
-            self.delivery.reset()
+            self.resetDelivery()
         finally:
             super(FileShareSession, self).sessionCleanup()
