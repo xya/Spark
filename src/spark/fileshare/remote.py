@@ -19,7 +19,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 from spark.async import Future, asyncMethod
-from spark.protocol import Request
+from spark.messaging import Request
 from spark.fileshare.common import FileShare, toCamelCase
 
 class RemoteFileShare(FileShare):
@@ -29,7 +29,7 @@ class RemoteFileShare(FileShare):
         delivery.notificationReceived += self.notificationReceived
     
     def notificationReceived(self, n):
-        self.invokeEvent(n.tag, n.data)
+        self.invokeEvent(n.tag, n.params)
     
     @asyncMethod
     def listFiles(self, params, future):

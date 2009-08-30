@@ -1,18 +1,16 @@
 #!/usr/bin/env python
-import time
-import socket
+import os
 from spark.async import Future
-from spark.messaging.messages import *
-from spark.messaging.protocol import *
-from spark.session import SocketFile
+from spark.messaging.messages import Request
+from spark.fileshare import FileShareSession
 
-conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
-conn.connect(("127.0.0.1", 4550))
-f = SocketFile(conn)
-negociateProtocol(f, True)
-reader = messageReader(f)
-writer = messageWriter(f)
-writer.write(Request("list-files", {"register": True}, 0))
-time.sleep(5)
-writer.write(Notification("file-added", {"id": "<guid>", "name": "SeisRoX-2.0.9660.exe", "size": 3145728, "last-modified": "20090619T173529.000Z"}, 55))
-conn.close()
+print "PID: %i" % os.getpid()
+remoteAddr = ("127.0.0.1", 4550)
+s = FileShareSession()
+s.connect(remoteAddr, None)
+print "Connected to %s" % repr(remoteAddr)
+response = s.delivery.sendRequest(Request("list-files"), None)
+if len(response) == 1:
+    print str(response[0])
+s.disconnect(None)
+print "Disconnected"

@@ -20,15 +20,17 @@
 
 import unittest
 from spark.messaging import *
-from spark.async import Future
+from spark.async import Future, asyncMethod
 from spark.tests.ProtocolTest import testRequest, testResponse, testNotification, testBlock
 
 class MockSender(Messenger):
     def __init__(self):
         self.sent = []
-        
-    def sendMessage(self, message, future=None):
+    
+    @asyncMethod
+    def sendMessage(self, message, future):
         self.sent.append(message)
+        future.completed(message)
 
 class MessageDeliveryTest(unittest.TestCase):
     def setUp(self):
@@ -37,7 +39,8 @@ class MessageDeliveryTest(unittest.TestCase):
         self.blocks = []
         self.responses = []
         self.sender = MockSender()
-        self.delivery = MessageDelivery(self.sender)
+        self.delivery = MessageDelivery()
+        self.delivery.sendMessage = self.sender.sendMessage
         self.delivery.requestReceived += self.requests.append
         self.delivery.notificationReceived += self.notifications.append
         self.delivery.blockReceived += self.blocks.append

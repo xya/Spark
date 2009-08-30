@@ -22,9 +22,11 @@ from spark.async import Future, asyncMethod
 from spark.messaging import Notification
 from spark.fileshare.common import FileShare, toCamelCase
 
+# TODO: ThreadSafeProxy
+
 class LocalFileShare(FileShare):
     def __init__(self, delivery):
-        super(RemoteFileShare, self).__init__()
+        super(LocalFileShare, self).__init__()
         self.delivery = delivery
         self.delivery.requestReceived += self.requestReceived
     
@@ -32,7 +34,7 @@ class LocalFileShare(FileShare):
         """ Deliver incoming requests by invoking the relevant request handler. """
         future = Future(self.requestCompleted)
         future.request = req
-        self.invokeRequest(req.tag, req.data, future)
+        self.invokeRequest(req.tag, req.params, future)
     
     def requestCompleted(self, future):
         """ Send a response after the request is completed. """
@@ -50,7 +52,8 @@ class LocalFileShare(FileShare):
     
     @asyncMethod
     def listFiles(self, params, future):
-        raise NotImplementedError()
+        files = {"123abc" : {"id": "123abc", "name": "Report.pdf", "size": 3145728, "last-modified": "20090619T173529.000Z"}}
+        future.completed(files)
     
     @asyncMethod
     def createTransfer(self, params, future):

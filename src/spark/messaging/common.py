@@ -39,15 +39,17 @@ class Messenger(object):
         """ Receive a message. """
         raise NotImplementedError()
 
+#TODO: mixin?
 class MessageDelivery(object):
-    def __init__(self, sender):
-        self.sender = sender
+    """
+    Higher-level messenger which can be used for handling specialized messages
+    like requests, responses and notifications.
+    
+    Note that sendMessage() is not implemented, and received message should be passed to deliver().
+    """
+    def __init__(self):
         self.__lock = threading.Lock()
-        self.requestReceived = Delegate(self.__lock)
-        self.notificationReceived = Delegate(self.__lock)
-        self.blockReceived = Delegate(self.__lock)
-        self.nextID = 0
-        self.pendingRequests = {}
+        self.reset()
     
     @asyncMethod
     def sendRequest(self, req, future):
@@ -58,7 +60,7 @@ class MessageDelivery(object):
             req.transID = self.nextID
             self.nextID += 1
             self.pendingRequests[req.transID] = future
-        self.sender.sendMessage(req, Future())
+        self.sendMessage(req, Future())
     
     @asyncMethod
     def sendResponse(self, req, params, future):
@@ -66,7 +68,7 @@ class MessageDelivery(object):
         if not isinstance(req, TextMessage) or (req.type != TextMessage.REQUEST):
             raise TypeError("req should be a text request.")
         response = Response(req.tag, params, req.transID)
-        self.sender.sendMessage(response, future)
+        self.sendMessage(response, future)
     
     @asyncMethod
     def sendNotification(self, n, future):
@@ -76,7 +78,21 @@ class MessageDelivery(object):
         with self.__lock:
             n.transID = self.nextID
             self.nextID += 1
-        self.sender.sendMessage(n, future)
+        self.sendMessage(n, future)
+    
+    @asyncMethod
+    def sendMessage(self, m, futre):
+        """ Send a message. """
+        raise NotImplementedError()
+    
+    def reset(self):
+        """ Reset the state of message delivery."""
+        with self.__lock:
+            self.requestReceived = Delegate(self.__lock)
+            self.notificationReceived = Delegate(self.__lock)
+            self.blockReceived = Delegate(self.__lock)
+            self.nextID = 0
+            self.pendingRequests = {}
     
     def deliver(self, m):
         """

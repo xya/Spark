@@ -95,20 +95,17 @@ class Session(object):
     def doConnect(self, address, future):
         """ Thread entry point for 'connect'. """
         try:
-            # establish the connection
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
             sock.connect(address)
-            # negotiate the protocol
             negociateProtocol(SocketFile(sock), True)
         except:
             future.failed()
         else:
-            self.sessionStarted(sock, future, address)
+            self.messageLoop(sock, future, address)
     
     def doListen(self, localAddress, future):
         """ Thread entry point for 'listen'. """
         try:
-            # wait for an incoming connection
             listenSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
             try:
                 listenSock.bind(localAddress)
@@ -116,32 +113,51 @@ class Session(object):
                 conn, remoteAddress = listenSock.accept()
             finally:
                 listenSock.close()
-            # negotiate the protocol
             negociateProtocol(SocketFile(conn), False)
         except:
             future.failed()
         else:
-            self.sessionStarted(conn, future, remoteAddress)
+            self.messageLoop(conn, future, remoteAddress)
     
-    def sessionStarted(self, conn, future, *args):
-        """ Called when a session has been established. """
+    def messageLoop(self, conn, future, *args):
         with self.lock:
             self.conn = conn
             self.joinList = []
             self.queue.open()
             self.messenger = AsyncMessenger(SocketFile(self.conn))
             self.messenger.receiveMessage(Future(self.messageReceived))
-            
+        
         try:
             future.completed(*args)
+            self.sessionStarted()
             task = self.queue.get()
             while True:
-                print("Handling '%s'" % str(task))
+                self.handleMessage(task)
                 task = self.queue.get()
         except QueueClosedError:
             pass
+        except:
+            print("Unhandled exception in the message loop", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
         finally:
             self.sessionCleanup()
+    
+    def sessionStarted(self):
+        """ Called when a session has started, that is messages can be sent and received. """
+        pass
+    
+    @asyncMethod
+    def sendMessage(self, m, future):
+        """ Send a message to the remote peer. """
+        with self.lock:
+            if self.messenger is None:
+                future.failed(Exception("The current session is not active, can't send messages"))
+            else:
+                self.messenger.sendMessage(m, future)
+    
+    def handleMessage(message):
+        """ Do something with a message that was received. """
+        pass
 
     def messageReceived(self, future):
         try:
@@ -149,7 +165,6 @@ class Session(object):
         except:
             message = None
             traceback.print_exc(file=sys.stderr)
-        print("Received '%s'" % str(message))
         with self.lock:
             if self.messenger is not None:
                 if message is None:
@@ -159,7 +174,7 @@ class Session(object):
                     self.messenger.receiveMessage(Future(self.messageReceived))
 
     def sessionCleanup(self):
-        """ Close the connection and free all session-related resoources. """
+        """ Close the connection and free all session-related resources. """
         # close the connection and messenger
         with self.lock:
             conn, self.conn = self.conn, None
@@ -181,5 +196,15 @@ class Session(object):
 class SocketFile(object):
     def __init__(self, socket):
         self.socket = socket
-        self.read = socket.recv
-        self.write = socket.send
+    
+    def read(self, size):
+        try:
+            return self.socket.recv(size)
+        except socket.error as e:
+            if e.errno == 104:      # connection reset by peer
+                return ""
+            else:
+                raise
+    
+    def write(self, data):
+        return self.socket.send(data)

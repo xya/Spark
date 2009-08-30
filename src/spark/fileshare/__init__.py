@@ -21,5 +21,6 @@
 from common import *
 from local import *
 from remote import *
+from session import *
 
-__all__ = ["FileShare", "LocalFileShare", "RemoteFileShare"]
+__all__ = ["FileShare", "LocalFileShare", "RemoteFileShare", "FileShareSession"]

@@ -41,14 +41,19 @@ class FileShare(object):
         for tag in FileShare.Notifications:
             self.createEvent(tag)
     
+    def close(self):
+        """ Close the file share, terminating it and freeing resources. """
+        pass
+    
     def createRequest(self, tag, handler=None):
-        """ Create a request for the specified tag. """
+        """ Create a request for the specified tag, if it doesn't already exists. """
         name = toCamelCase(tag)
-        if handler is None:
-            def requestHandler(self, params, future):
-                raise NotImplementedError("The '%s' request handler is not implemented" % tag)
-            handler = types.MethodType(requestHandler, self)
-        setattr(self, name, handler)
+        if not hasattr(self, name):
+            if handler is None:
+                def requestHandler(self, params, future):
+                    raise NotImplementedError("The '%s' request handler is not implemented" % tag)
+                handler = types.MethodType(requestHandler, self)
+            setattr(self, name, handler)
         return name
     
     def invokeRequest(self, tag, *args):
@@ -60,10 +65,11 @@ class FileShare(object):
                 handler(*args)
         
     def createEvent(self, tag):
-        """ Create an event for the specified tag. """
+        """ Create an event for the specified tag, if it doesn't already exists. """
         name = toCamelCase(tag)
-        delegate = Delegate()
-        setattr(self, name, delegate)
+        if not hasattr(self, name):
+            delegate = Delegate()
+            setattr(self, name, delegate)
         return name
         
     def invokeEvent(self, tag, *args):
@@ -121,7 +127,7 @@ class TransferInfo(object):
         """ Return an estimation of the time when the transfer will be completed. """
         raise NotImplementedError()
 
-def toCamelCase(tag, capitalizeFirst=False):
+def toCamelCase(tag):
     """ Convert the tag to camel case (e.g. "create-transfer" becomes "createTransfer"). """
     words = tag.split("-")
     first = words.pop(0)
