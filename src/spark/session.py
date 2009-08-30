@@ -25,7 +25,7 @@ import types
 import threading
 import socket
 from spark.async import Future, Delegate, BlockingQueue, QueueClosedError, asyncMethod
-from spark.messaging.common import ThreadedMessenger
+from spark.messaging.common import ThreadedMessenger, AsyncMessenger
 from spark.messaging import *
 
 class Session(object):
@@ -129,7 +129,7 @@ class Session(object):
             self.conn = conn
             self.joinList = []
             self.queue.open()
-            self.messenger = ThreadedMessenger(SocketFile(self.conn))
+            self.messenger = AsyncMessenger(SocketFile(self.conn))
             self.messenger.receiveMessage(Future(self.messageReceived))
             
         try:
@@ -167,7 +167,7 @@ class Session(object):
             self.queue.close()
         if conn:
             conn.close()
-        if messenger:
+        if messenger and hasattr(messenger, "close"):
             messenger.close()
         
         # stop the session and call futures queued by join and disconnect

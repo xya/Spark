@@ -9,5 +9,8 @@ print "PID: %i" % os.getpid()
 s = Session()
 remoteAddr = s.listen(("", 4550), None)[0]
 print "Connected to %s" % repr(remoteAddr)
+#time.sleep(2)
+#print "Disconnecting"
+#s.disconnect(None)
 s.join(None)
 print "Disconnected"

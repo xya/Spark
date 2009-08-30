@@ -109,8 +109,7 @@ class MessageWriter(object):
         self.file = file
     
     def write(self, m):
-        self.file.write(str(m))
-        self.file.write("\r\n")
+        self.file.write(str(m) + "\r\n")
     
     def writeAll(self, it):
         for m in it:

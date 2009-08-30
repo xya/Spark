@@ -26,8 +26,8 @@ import sys
 import traceback
 from cStringIO import StringIO
 
-__all__ = ["asyncMethod", "Future", "FutureFrozenError", "TaskError", "Delegate"
-           "BlockingQueue", "QueueClosedError"]
+__all__ = ["Future", "FutureFrozenError", "TaskError", "Delegate",
+           "BlockingQueue", "QueueClosedError", "asyncMethod", "threadedMethod"]
 
 def asyncMethod(func):
     """
@@ -55,6 +55,32 @@ def asyncMethod(func):
             if not arg.pending:
                 raise ValueError("The future object has been used already")
             return func(*args, **kw)
+    return wrapper
+
+def threadedMethod(func):
+    """
+    Mark the function threaded. This adds an argument to the function,
+    to which a callable, a future or None can be passed.
+    
+    If the future object is None, the function is executed synchronously.
+    Otherwise a thread is started, which executes the function and
+    appropriately calls completed() with the result value or failed().
+    """
+    def wrapper(*args, **kw):
+        if (len(args) == 0) or (args[-1] is None):
+            return func(*args, **kw)
+        args, last = args[:-1], args[-1]
+        if last is None:
+            return func(*args, **kw)
+        else:
+            if hasattr(last, "__call__"):
+                last = Future(last)
+            elif not last.pending:
+                raise ValueError("The future object has been used already")
+            args = (func, ) + args
+            t = threading.Thread(target=last.run, args=args, kwargs=kw)
+            t.daemon = True
+            t.start()
     return wrapper
 
 class Future(object):
@@ -106,13 +132,13 @@ class Future(object):
             while self.__result is None:
                 self.__wait.wait()
     
-    def run(self, func, *args):
+    def run(self, func, *args, **kw):
         """
         Invoke a function, the return value will be the result of the task.
         completed() is called on success, or failed() if an exception is raised.
         """
         try:
-            result = func(*args)
+            result = func(*args, **kw)
         except:
             self.failed()
         else:

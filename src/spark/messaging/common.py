@@ -22,7 +22,7 @@ from __future__ import print_function
 import traceback
 import sys
 import threading
-from spark.async import Future, Delegate, BlockingQueue, QueueClosedError, asyncMethod
+from spark.async import *
 from spark.messaging.protocol import messageReader, messageWriter
 from spark.messaging.messages import *
 
@@ -149,3 +149,25 @@ class ThreadedMessenger(Messenger):
                     traceback.print_exc(file=sys.stderr)
         except QueueClosedError:
             pass
+
+class AsyncMessenger(Messenger):
+    def __init__(self, file):
+        super(AsyncMessenger, self).__init__()
+        self.file = file
+        self.reader = messageReader(file)
+        self.readLock = threading.Lock()
+        self.writer = messageWriter(file)
+        self.writeLock = threading.Lock()
+    
+    def close(self):
+        pass
+    
+    @threadedMethod
+    def sendMessage(self, message):
+        with self.writeLock:
+            self.writer.write(message)
+    
+    @threadedMethod
+    def receiveMessage(self):
+        with self.readLock:
+            return self.reader.read()
