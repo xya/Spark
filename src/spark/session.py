@@ -28,6 +28,8 @@ from spark.async import Future, Delegate, BlockingQueue, QueueClosedError, async
 from spark.messaging.common import ThreadedMessenger, AsyncMessenger
 from spark.messaging import *
 
+__all__ = ["Session", "SessionTask"]
+
 class Session(object):
     def __init__(self):
         super(Session, self).__init__()
@@ -102,7 +104,7 @@ class Session(object):
         except:
             future.failed()
         else:
-            self.messageLoop(sock, future, address)
+            self.startSession(sock, future, address)
     
     def doListen(self, localAddress, future):
         """ Thread entry point for 'listen'. """
@@ -118,28 +120,42 @@ class Session(object):
         except:
             future.failed()
         else:
-            self.messageLoop(conn, future, remoteAddress)
+            self.startSession(conn, future, remoteAddress)
     
-    def messageLoop(self, conn, future, *args):
-        with self.lock:
-            self.conn = conn
-            self.joinList = []
-            self.queue.open()
-            self.messenger = AsyncMessenger(SocketFile(self.conn))
-            self.messenger.receiveMessage(Future(self.messageReceived))
-        
+    def startSession(self, conn, future, *args):
+        # initialize the session, including derived classes' sessionStarted()
+        try:
+            with self.lock:
+                self.conn = conn
+                self.joinList = []
+                self.queue.open()
+                self.messenger = AsyncMessenger(SocketFile(conn))
+            self.sessionStarted()
+        except:
+            self.sessionCleanup()
+            future.failed()
+            return
+        # execute the future's callback if any
         try:
             future.completed(*args)
-            self.sessionStarted()
+        except:
+            self.sessionCleanup()
+            return
+        # finally we can enter the main loop
+        self.messageLoop()
+    
+    def messageLoop(self):
+        try:
+            with self.lock:
+                self.messenger.receiveMessage(Future(self.messageReceived))
             task = self.queue.get()
             while True:
-                self.handleMessage(task)
+                self.handleTask(task)
                 task = self.queue.get()
         except QueueClosedError:
             pass
         except:
-            print("Unhandled exception in the message loop", file=sys.stderr)
-            traceback.print_exc(file=sys.stderr)
+            traceback.print_exc()
         finally:
             self.sessionCleanup()
     
@@ -156,8 +172,8 @@ class Session(object):
             else:
                 self.messenger.sendMessage(m, future)
     
-    def handleMessage(message):
-        """ Do something with a message that was received. """
+    def handleTask(task):
+        """ Do something with a task that was submitted. """
         pass
 
     def messageReceived(self, future):
@@ -171,8 +187,16 @@ class Session(object):
                 if message is None:
                     self.queue.close(True)
                 else:
-                    self.queue.put(message)
+                    self.queue.put(HandleMessageTask(message))
                     self.messenger.receiveMessage(Future(self.messageReceived))
+
+    def submitTask(self, task):
+        """ Submit a task for execution during an active session. """
+        with self.lock:
+            if self.messenger is None:
+                raise Exception("The current session is not active")
+            else:
+                self.queue.put(task)
 
     def sessionCleanup(self):
         """ Close the connection and free all session-related resources. """
@@ -193,6 +217,11 @@ class Session(object):
         if joinList is not None:
             for future in joinList:
                 future.completed()
+
+class HandleMessageTask(object):
+    """ Task of handling a message that was received. """
+    def __init__(self, message):
+        self.message = message
 
 class SocketFile(object):
     def __init__(self, socket):

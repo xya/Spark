@@ -10,7 +10,6 @@ s = FileShareSession()
 s.connect(remoteAddr, None)
 print "Connected to %s" % repr(remoteAddr)
 response = s.remoteShare.listFiles({}, None)
-if len(response) == 1:
-    print str(response[0])
+print str(response[0])
 s.disconnect(None)
 print "Disconnected"

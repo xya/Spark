@@ -22,11 +22,10 @@ from spark.async import Future, asyncMethod
 from spark.messaging import Notification
 from spark.fileshare.common import FileShare, toCamelCase
 
-# TODO: ThreadSafeProxy
-
 class LocalFileShare(FileShare):
     def __init__(self, delivery):
         super(LocalFileShare, self).__init__()
+        self.publicRequests = FileShare.Requests
         self.delivery = delivery
         self.delivery.requestReceived += self.requestReceived
         for tag in FileShare.Notifications:
@@ -36,7 +35,12 @@ class LocalFileShare(FileShare):
         """ Deliver incoming requests by invoking the relevant request handler. """
         future = Future(self.requestCompleted)
         future.request = req
-        self.invokeRequest(req.tag, req.params, future)
+        # only allow public requests to be executed remotely
+        if req.tag in self.publicRequests:
+            self.invokeRequest(req.tag, req.params, future)
+        else:
+            future.completed({"error" : "not-authorized"})
+            self.requestCompleted(future)
     
     def requestCompleted(self, future):
         """ Send a response after the request is completed. """
@@ -79,8 +83,10 @@ class LocalFileShare(FileShare):
         self.invokeEvent(tag, params)
         self.delivery.sendNotification(Notification(tag, params), future)
     
-    def addLocalFile(self, path):
+    @asyncMethod
+    def addLocalFile(self, params, future):
         raise NotImplementedError()
     
-    def removeLocalFile(self, fileID):
+    @asyncMethod
+    def removeLocalFile(self, params, future):
         raise NotImplementedError()

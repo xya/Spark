@@ -38,9 +38,13 @@ class FileShare(object):
         """ Close the file share, terminating it and freeing resources. """
         pass
     
+    def attributeName(self, tag):
+        """ Return the name of the attribute used for the specified tag. """
+        return toCamelCase(tag)
+    
     def createRequest(self, tag, handler=None):
         """ Create a request for the specified tag. """
-        name = toCamelCase(tag)
+        name = self.attributeName(tag)
         if handler is None:
             def requestHandler(self, params, future):
                 raise NotImplementedError("The '%s' request handler is not implemented" % tag)
@@ -50,7 +54,7 @@ class FileShare(object):
     
     def invokeRequest(self, tag, *args):
         """ Invoke the request that has the specified tag. """
-        name = toCamelCase(tag)
+        name = self.attributeName(tag)
         if hasattr(self, name):
             handler = getattr(self, name)
             if hasattr(handler, "__call__"):
@@ -58,13 +62,13 @@ class FileShare(object):
         
     def createEvent(self, tag):
         """ Create an event for the specified tag. """
-        name = toCamelCase(tag)
+        name = self.attributeName(tag)
         setattr(self, name, Delegate())
         return name
         
     def invokeEvent(self, tag, *args):
         """ Invoke the event that has the specified tag. """
-        name = toCamelCase(tag)
+        name = self.attributeName(tag)
         if hasattr(self, name):
             delegate = getattr(self, name)
             if hasattr(delegate, "__call__"):

@@ -168,10 +168,10 @@ class Future(object):
             elif e is val:
                 error = TaskError(type, val, tb)
             else:
-                error = TaskError(e.__class__, val, None)
+                tb = traceback.extract_stack()[:-1]
+                error = TaskError(e.__class__, e, tb)
         else:
             error = TaskError(type, val, tb)
-        
         callback = None
         with self.__lock:
             if self.__result is None:
@@ -184,7 +184,7 @@ class Future(object):
         # don't call the callback with the lock held
         if callback:
             callback()
-
+    
 class FutureFrozenError(StandardError):
     """ Exception raised when one tries to call completed() or failed() twice on a future. """
     pass
@@ -197,11 +197,17 @@ class TaskError(StandardError):
         self.tb = tb
     
     def __str__(self):
-        # hack until Python 3 which supports chained exceptions        
+        # hack until Python 3 which supports chained exceptions
         if not self.tb is None:
             buffer = StringIO()
             buffer.write("\n")
-            traceback.print_exception(self.type, self.value, self.tb, file=buffer)
+            if hasattr(self.tb, "tb_frame"):
+                traceback.print_exception(self.type, self.value, self.tb, file=buffer)
+            else:
+                for line in traceback.format_list(self.tb):
+                    buffer.write(line)
+                for line in traceback.format_exception_only(self.type, self.value):
+                    buffer.write(line)
             buffer.seek(0)
             lines = buffer.readlines()
             lines[-1] = lines[-1].rstrip("\n")

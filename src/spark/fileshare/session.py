@@ -18,9 +18,12 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+from types import MethodType
+import threading
 from spark.async import Future, asyncMethod
 from spark.session import Session
 from spark.messaging import MessageDelivery
+from common import FileShare
 from local import LocalFileShare
 from remote import RemoteFileShare
 
@@ -29,23 +32,71 @@ __all__ = ["FileShareSession"]
 class FileShareSession(Session, MessageDelivery):
     def __init__(self):
         super(FileShareSession, self).__init__()
-        self.localShare = None
-        self.remoteShare = None
+        self.__shareLock = threading.RLock()
+        self.__localShare = None
+        self.__remoteShare = None
+        self.__localProxy = None
     
-    def handleMessage(self, message):
-        #print("Received '%s'" % str(message))
-        self.deliverMessage(message)
+    @property
+    def localShare(self):
+        with self.__shareLock:
+            return self.__localProxy
+    
+    @property
+    def remoteShare(self):
+        with self.__shareLock:
+            return self.__remoteShare
+    
+    def handleTask(self, task):
+        if hasattr(task, "message"):
+            #print("Received '%s'" % str(task.message))
+            self.deliverMessage(task.message)
+        elif hasattr(task, "invoke"):
+            task.invoke()
     
     def sessionStarted(self):
-        self.localShare = LocalFileShare(self)
-        self.remoteShare = RemoteFileShare(self)
+        with self.__shareLock:
+            self.__localShare = LocalFileShare(self)
+            self.__remoteShare = RemoteFileShare(self)
+            self.__localProxy = FileShareProxy(self.__localShare, self)
     
     def sessionCleanup(self):
         try:
-            if self.remoteShare:
-                self.remoteShare.close()
-            if self.localShare:
-                self.localShare.close()
+            with self.__shareLock:
+                self.__localProxy = None
+                if self.__remoteShare:
+                    self.__remoteShare.close()
+                if self.__localShare:
+                    self.__localShare.close()
             self.resetDelivery()
         finally:
             super(FileShareSession, self).sessionCleanup()
+
+class InvokeRequestTask(object):
+    """ Task of invoking a request on a file share's thread. """
+    def __init__(self, share, tag, params, future):
+        self.share = share
+        self.tag = tag
+        self.params = params
+        self.future = future
+    
+    def invoke(self):
+        self.share.invokeRequest(self.tag, self.params, self.future)
+
+class FileShareProxy(FileShare):
+    """ Proxy which submits requests to the session's queue, so they are executed on the session's thread. """
+    def __init__(self, share, session):
+        super(FileShareProxy, self).__init__()
+        self.share = share
+        self.session = session
+        for tag in FileShare.Notifications:
+            name = self.attributeName(tag)
+            setattr(self, name, getattr(share, name))
+        for tag in FileShare.Requests:
+            self.createRequest(tag, self.requestHandler(tag))
+    
+    def requestHandler(self, tag):
+        """ Create a function to handle sending requests with the given tag """
+        def handler(self, params, future):
+            self.session.submitTask(InvokeRequestTask(self.share, tag, params, future))
+        return asyncMethod(MethodType(handler, self))

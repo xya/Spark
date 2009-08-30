@@ -19,8 +19,6 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 from common import *
-from local import *
-from remote import *
 from session import *
 
-__all__ = ["FileShare", "LocalFileShare", "RemoteFileShare", "FileShareSession"]
+__all__ = ["FileShare", "FileShareSession"]

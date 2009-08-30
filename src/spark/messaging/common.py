@@ -51,7 +51,11 @@ class MessageDelivery(object):
     def __init__(self):
         super(MessageDelivery, self).__init__()
         self.__lock = threading.Lock()
-        self.resetDelivery()
+        self.requestReceived = Delegate(self.__lock)
+        self.notificationReceived = Delegate(self.__lock)
+        self.blockReceived = Delegate(self.__lock)
+        self.nextID = 0
+        self.pendingRequests = {}
     
     @asyncMethod
     def sendRequest(self, req, future):
@@ -85,9 +89,11 @@ class MessageDelivery(object):
     def resetDelivery(self):
         """ Reset the state of message delivery."""
         with self.__lock:
-            self.requestReceived = Delegate(self.__lock)
-            self.notificationReceived = Delegate(self.__lock)
-            self.blockReceived = Delegate(self.__lock)
+            for transID, future in self.pendingRequests.iteritems():
+                try:
+                    future.failed(Exception("The request was canceled"))
+                except:
+                    traceback.print_exc()
             self.nextID = 0
             self.pendingRequests = {}
     
