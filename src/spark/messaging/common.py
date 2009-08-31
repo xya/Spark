@@ -91,7 +91,7 @@ class MessageDelivery(object):
         with self.__lock:
             for transID, future in self.pendingRequests.iteritems():
                 try:
-                    future.failed(Exception("The request was canceled"))
+                    future.cancel()
                 except:
                     traceback.print_exc()
             self.nextID = 0

@@ -72,12 +72,12 @@ class Session(object):
     @asyncMethod
     def disconnect(self, future):
         """ Terminate the session if it is active. """
+        starting = False
         with self.lock:
             if self.thread is not None:
                 if self.joinList is None:
                     starting = True
                 else:
-                    starting = False
                     self.joinList.append(future)
                     if self.messenger is not None:
                         self.queue.close()

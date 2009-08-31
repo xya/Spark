@@ -26,8 +26,8 @@ import sys
 import traceback
 from cStringIO import StringIO
 
-__all__ = ["Future", "FutureFrozenError", "TaskError", "Delegate",
-           "BlockingQueue", "QueueClosedError", "asyncMethod", "threadedMethod"]
+__all__ = ["Future", "FutureFrozenError", "TaskError", "TaskFailedError", "TaskCanceledError",
+           "Delegate", "BlockingQueue", "QueueClosedError", "asyncMethod", "threadedMethod"]
 
 def asyncMethod(func):
     """
@@ -144,20 +144,26 @@ class Future(object):
         else:
             self.completed(result)
     
-    def completed(self, *args):
-        """ Provide the result of the task. """
+    def _assignResult(self, result):
+        """ Set the result and invoke the callback, if any. """
         callback = None
         with self.__lock:
             if self.__result is None:
-                self.__result = args
+                self.__result = result
                 self.__wait.notifyAll()
                 callback = self.__callback
+            elif isinstance(self.__result, TaskCanceledError):
+                raise TaskCanceledError(self.__result.tb)
             else:
                 raise FutureFrozenError("The result of the task has already been set")
         
         # don't call the callback with the lock held
         if callback:
             callback()
+    
+    def completed(self, *args):
+        """ Provide the result of the task. """
+        self._assignResult(args)
     
     def failed(self, e=None):
         """ Indicate that the task failed, maybe because of an exception. """
@@ -166,30 +172,46 @@ class Future(object):
             if (not isinstance(e, BaseException)):
                 raise TypeError("e should be either None or an exception")
             elif e is val:
-                error = TaskError(type, val, tb)
+                error = TaskFailedError(type, val, tb)
             else:
                 tb = traceback.extract_stack()[:-1]
-                error = TaskError(e.__class__, e, tb)
+                error = TaskFailedError(e.__class__, e, tb)
         else:
-            error = TaskError(type, val, tb)
-        callback = None
-        with self.__lock:
-            if self.__result is None:
-                self.__result = error
-                self.__wait.notifyAll()
-                callback = self.__callback
-            else:
-                raise FutureFrozenError("The result of the task has already been set")
-        
-        # don't call the callback with the lock held
-        if callback:
-            callback()
+            error = TaskFailedError(type, val, tb)
+        self._assignResult(error)
+    
+    def cancel(self):
+        """ Cancel the task, making it impossible to complete. """
+        tb = traceback.extract_stack()[:-1]
+        self._assignResult(TaskCanceledError(tb))
     
 class FutureFrozenError(StandardError):
     """ Exception raised when one tries to call completed() or failed() twice on a future. """
     pass
 
 class TaskError(StandardError):
+    """ Base class for errors related to Future tasks. """
+    pass
+
+def format_exception(type, value, tb):
+    """ Format just exception, just a traceback or both. Return a list of lines. """
+    buffer = StringIO()
+    if hasattr(tb, "tb_frame"):
+        if (type is not None) and (value is not None):
+            traceback.print_exception(type, value, tb, file=buffer)
+        else:
+            traceback.print_tb(tb, file=buffer)
+    else:
+        if tb is not None:
+            for line in traceback.format_list(tb):
+                buffer.write(line)
+        if (type is not None) and (value is not None):
+            for line in traceback.format_exception_only(type, value):
+                buffer.write(line)
+    buffer.seek(0)
+    return buffer.readlines()
+
+class TaskFailedError(TaskError):
     """ Holds information about an error that occured during the execution of a task."""
     def __init__(self, type, value, tb):
         self.type = type
@@ -198,23 +220,24 @@ class TaskError(StandardError):
     
     def __str__(self):
         # hack until Python 3 which supports chained exceptions
-        if not self.tb is None:
-            buffer = StringIO()
-            buffer.write("\n")
-            if hasattr(self.tb, "tb_frame"):
-                traceback.print_exception(self.type, self.value, self.tb, file=buffer)
-            else:
-                for line in traceback.format_list(self.tb):
-                    buffer.write(line)
-                for line in traceback.format_exception_only(self.type, self.value):
-                    buffer.write(line)
-            buffer.seek(0)
-            lines = buffer.readlines()
-            lines[-1] = lines[-1].rstrip("\n")
-            desc = "|    ".join(lines)
-        else:
-            desc = str(r.value)
+        lines = format_exception(self.type, self.value, self.tb)
+        lines[-1] = lines[-1].rstrip("\n")
+        desc = "|  ".join(lines)
+        if len(desc):
+            desc = "\n" + desc
         return "The task failed: %s" % desc
+
+class TaskCanceledError(TaskError):
+    """ The task was canceled before it could be completed. """
+    def __init__(self, tb=None):
+        self.tb = tb
+    
+    def __str__(self):
+        lines = ["Traceback: \n"]
+        lines.extend(format_exception(None, None, self.tb))
+        lines[-1] = lines[-1].rstrip("\n")
+        trace = "|".join(lines)
+        return "The task was canceled before it could be completed. %s" % trace
 
 class Delegate(object):
     ''' Handles a list of methods and functions
