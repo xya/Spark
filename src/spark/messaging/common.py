@@ -145,29 +145,19 @@ class ThreadedMessenger(Messenger):
     
     def sendLoop(self):
         writer = messageWriter(self.file)
-        try:
-            while True:
-                message, future = self.sendQueue.get()
-                try:
-                    future.run(writer.write, message)
-                except:
-                    print("A future's callback raised an exception", file=sys.stderr)
-                    traceback.print_exc(file=sys.stderr)
-        except QueueClosedError:
-            pass
+        for message, future in self.sendQueue:
+            try:
+                future.run(writer.write, message)
+            except:
+                traceback.print_exc()
     
     def receiveLoop(self):
         parser = messageReader(self.file)
-        try:
-            while True:
-                future = self.receiveQueue.get()
-                try:
-                    future.run(parser.read)
-                except:
-                    print("A future's callback raised an exception", file=sys.stderr)
-                    traceback.print_exc(file=sys.stderr)
-        except QueueClosedError:
-            pass
+        for future in self.receiveQueue:
+            try:
+                future.run(parser.read)
+            except:
+                traceback.print_exc()
 
 class AsyncMessenger(Messenger):
     def __init__(self, file):

@@ -123,37 +123,24 @@ class Session(object):
             self.startSession(conn, future, remoteAddress)
     
     def startSession(self, conn, future, *args):
-        # initialize the session, including derived classes' sessionStarted()
         try:
-            with self.lock:
-                self.conn = conn
-                self.joinList = []
-                self.queue.open()
-                self.messenger = AsyncMessenger(SocketFile(conn))
-            self.sessionStarted()
-        except:
-            self.sessionCleanup()
-            future.failed()
-            return
-        # execute the future's callback if any
-        try:
-            future.completed(*args)
-        except:
-            self.sessionCleanup()
-            return
-        # finally we can enter the main loop
-        self.messageLoop()
-    
-    def messageLoop(self):
-        try:
-            with self.lock:
-                self.messenger.receiveMessage(Future(self.messageReceived))
-            task = self.queue.get()
-            while True:
+             # initialize the session, including derived classes' sessionStarted()
+            try:
+                with self.lock:
+                    self.conn = conn
+                    self.joinList = []
+                    self.queue.open()
+                    self.messenger = ThreadedMessenger(SocketFile(conn))
+                    self.messenger.receiveMessage(Future(self.messageReceived))
+                self.sessionStarted()
+            except:
+                future.failed()
+                raise
+            else:
+                future.completed(*args)
+            # enter the main loop
+            for task in self.queue:
                 self.handleTask(task)
-                task = self.queue.get()
-        except QueueClosedError:
-            pass
         except:
             traceback.print_exc()
         finally:
@@ -181,7 +168,7 @@ class Session(object):
             message = future.result[0]
         except:
             message = None
-            traceback.print_exc(file=sys.stderr)
+            traceback.print_exc()
         with self.lock:
             if self.messenger is not None:
                 if message is None:
@@ -206,6 +193,11 @@ class Session(object):
             messenger, self.messenger = self.messenger, None
             self.queue.close()
         if conn:
+            # force threads blocked on recv (and send?) to return
+            try:
+                conn.shutdown(socket.SHUT_RDWR)
+            except:
+                pass
             conn.close()
         if messenger and hasattr(messenger, "close"):
             messenger.close()

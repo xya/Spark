@@ -267,6 +267,17 @@ class BlockingQueue(object):
             self.__list = None
         self.__closing = False
     
+    def __iter__(self):
+        """ Iterate over the items in the queue, calling get() until the queue is closed. """
+        while True:
+            yield self._iter_get()
+    
+    def _iter_get(self):
+        try:
+            return self.get()
+        except QueueClosedError:
+            raise StopIteration()
+    
     def put(self, item):
         """ Wait until the queue is not full, and put the item at the end. """
         with self.__lock:

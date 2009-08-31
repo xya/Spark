@@ -80,7 +80,7 @@ class MessageReader(object):
         data = self.parser.read(2 + Blob.HEX_DIGITS)
         try:
             return int(data, 16)
-        except Exception, e:
+        except Exception as e:
             self.parser.error(str(e))
     
     def readInteger(self):
@@ -100,7 +100,7 @@ class MessageReader(object):
         data = self.parser.read(format.size)
         try:
             return format.unpack(data)
-        except Exception, e:
+        except Exception as e:
             self.parser.error(str(e))
     
     def parseSupportedProtocolNames(self):

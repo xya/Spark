@@ -52,7 +52,7 @@ class LocalFileShare(FileShare):
                 result = results[0]
             else:
                 result = results
-        except Exception, e:
+        except Exception as e:
             result = {"error" : str(e)}
         self.delivery.sendResponse(future.request, result, Future())
     

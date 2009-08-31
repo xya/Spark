@@ -45,8 +45,8 @@ class FutureTest(unittest.TestCase):
         f = Future()
         try:
             raise KeyError("The key was not found")
-        except Exception, e:
-            f.failed(e)
+        except:
+            f.failed()
 
         try:
             r = f.result
