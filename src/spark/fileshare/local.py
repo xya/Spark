@@ -45,7 +45,7 @@ class LocalFileShare(FileShare):
     def requestCompleted(self, future):
         """ Send a response after the request is completed. """
         try:
-            results = future.result
+            results = future.results
             if len(results) == 0:
                 result = None
             elif len(results) == 1:

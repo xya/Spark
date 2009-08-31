@@ -165,7 +165,7 @@ class Session(object):
 
     def messageReceived(self, future):
         try:
-            message = future.result[0]
+            message = future.result
         except:
             message = None
             traceback.print_exc()

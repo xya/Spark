@@ -47,7 +47,7 @@ def asyncMethod(func):
             future = Future()
             newArgs = args[:-1] + (future, )
             func(*newArgs, **kw)
-            return future.result
+            return future.results
         elif hasattr(arg, "__call__"):
             newArgs = args[:-1] + (Future(arg), )
             return func(*newArgs, **kw)
@@ -108,10 +108,10 @@ class Future(object):
             return self.__result is None
     
     @property
-    def result(self):
+    def results(self):
         """
-        Access the result of the task. If it is not available yet, block until it is.
-        May raise an exception if the task failed.
+        Access the results of the task. If no result is available yet, block until there are.
+        May raise an exception if the task failed or was canceled.
         """
         with self.__lock:
             while self.__result is None:
@@ -123,6 +123,15 @@ class Future(object):
                 raise r
             else:
                 raise StandardError("The task failed for an unknown reason")
+    
+    @property
+    def result(self):
+        """ Convenience property for accessing the first element of result. See results. """
+        results = self.results
+        if len(results) >= 1:
+            return results[0]
+        else:
+            return None
     
     def wait(self):
         """

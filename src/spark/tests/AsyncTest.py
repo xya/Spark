@@ -28,7 +28,8 @@ class FutureTest(unittest.TestCase):
         self.assertTrue(f.pending)
         f.completed("spam", "eggs")
         self.assertFalse(f.pending)
-        self.assertEqual(("spam", "eggs"), f.result)
+        self.assertEqual(("spam", "eggs"), f.results)
+        self.assertEqual("spam", f.result)
     
     def testFailedSimple(self):
         f = Future()
@@ -36,8 +37,8 @@ class FutureTest(unittest.TestCase):
         f.failed()
         self.assertFalse(f.pending)
         try:
-            r = f.result
-            self.fail("result didn't raise an exception")
+            r = f.results
+            self.fail("results didn't raise an exception")
         except:
             pass
     
@@ -49,8 +50,8 @@ class FutureTest(unittest.TestCase):
             f.failed()
 
         try:
-            r = f.result
-            self.fail("result didn't raise an exception")
+            r = f.results
+            self.fail("results didn't raise an exception")
         except TaskError:
             pass
     
@@ -93,7 +94,7 @@ class FutureTest(unittest.TestCase):
             def __init__(self):
                 self.result = []
             def bar(self, f):
-                self.result.append(f.result)
+                self.result.append(f.results)
         foo = Foo()
         f = Future(foo.bar)
         f.completed("spam", "eggs")
@@ -119,7 +120,7 @@ class AsyncMethodTest(unittest.TestCase):
         foo("bar", future)
         future.wait()
         self.assertFalse(future.pending)
-        self.assertEqual(("foo", "bar"), future.result)
+        self.assertEqual(("foo", "bar"), future.results)
     
     def testAsyncCallback(self):
         """ Passing a callable instead of a future should work as expected """
@@ -127,7 +128,7 @@ class AsyncMethodTest(unittest.TestCase):
         self.assertEqual(("foo", "bar"), self.result)
     
     def futureCompleted(self, future):
-        self.result = future.result
+        self.result = future.results
 
 if __name__ == '__main__':
     unittest.main()

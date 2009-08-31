@@ -105,4 +105,4 @@ class MessageDeliveryTest(unittest.TestCase):
         self.assertMessagesEqual(resp2, self.responses[0])
     
     def responseReceived(self, future):
-        self.responses.append(future.result[0])
+        self.responses.append(future.result)
