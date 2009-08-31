@@ -4,7 +4,9 @@ import select
 import fcntl
 import threading
 import traceback
-from async import BlockingQueue, QueueClosedError
+from async import Future, BlockingQueue, QueueClosedError
+
+__all__ = ["blocking_mode", "IOReactor"]
 
 def blocking_mode(fd, blocking=None):
     flag = os.O_NONBLOCK
@@ -17,54 +19,115 @@ def blocking_mode(fd, blocking=None):
         fcntl.fcntl(fd, fcntl.F_SETFL, new_mode)
     return (old_mode & flag) == 0
 
+def acceptCallable(func):
+    """ Decorator which converts a callable to a future, when it is the last argument to the function. """
+    def wrapper(*args, **kw):
+        if (len(args) > 0) and hasattr(args[-1], "__call__"):
+            args = args[:-1] + (Future(args[-1]), )
+        return func(*args, **kw)
+    return wrapper
+
 class IOReactor(object):    
     def __init__(self):
+        self.lock = threading.RLock()
+        self.queue = BlockingQueue(64, lock=self.lock)
         self.pending = {}
-        self.queue = BlockingQueue(64)
-        self.lock = threading.Lock()
-        self.thread = None
+        self.active = False
         self.req_r, self.req_w = os.pipe()
         blocking_mode(self.req_r, False)
         blocking_mode(self.req_w, False)
     
+    @acceptCallable
     def begin_read(self, file, size, future):
         op = ReadOperation(file, size, future)
         self.submit(op)
     
+    @acceptCallable
     def begin_write(self, file, data, future):
         op = WriteOperation(file, data, future)
         self.submit(op)
     
+    @acceptCallable
     def begin_connect(self, socket, address, future):
         op = ConnectOperation(socket, address, future)
         self.submit(op)
     
+    @acceptCallable
     def begin_accept(self, socket, future):
         op = AcceptOperation(socket, future)
         self.submit(op)
     
-    def start(self):
-        """ Start the I/O thread if it hasn't started yet. """
+    def launch_thread(self):
+        """ Start a background I/O thread to run the reactor. """
         with self.lock:
-            if self.thread is None:
-                self.thread = threading.Thread(target=self.eventLoop, name="IO thread")
-                self.thread.daemon = True
-                self.thread.start()
+            if self.active is False:
+                self.active = True
+                t = threading.Thread(target=self.eventLoop, name="I/O thread")
+                t.daemon = True
+                t.start()
+                return True
+            else:
+                return False
+    
+    def run(self, future=None):
+        """
+        Run the reactor on the current thread, optionally signaling the future
+        or calling back the callable when the event loop is entered.
+        """
+        with self.lock:
+            if self.active is False:
+                self.active = True
+                if future:
+                    if hasattr(future, "__call__"):
+                        future = Future(future)
+                    self.submit(NoOperation(future, self))
+        self.eventLoop()
     
     def submit(self, op):
-        """ Submit an I/O request to be performed on the I/O thread. """
-        self.start()
+        """
+        Submit an I/O request to be performed asynchronously.
+        Requests are not processed before either run() or launch_thread() is called.
+        """
         self.queue.put(op)
         os.write(self.req_w, '\0')
     
+    def close(self):
+        """ Close the reactor, terminating all pending operations. """
+        with self.lock:
+            if self.req_w is not None:
+                os.close(self.req_w)
+                self.req_w = None
+        self.queue.close()
+    
+    def cleanup(self):
+        with self.lock:
+            os.close(self.req_r)
+            self.req_r = None
+            if self.req_w:
+                os.close(self.req_w)
+                self.req_w = None
+        self.queue.close()
+        for fd, op_queue in self.pending.iteritems():
+            for op in op_queue:
+                op.canceled()
+        self.pending = {}
+        with self.lock:
+            self.active = False
+    
     def eventLoop(self):
         self.poll = select.poll()
-        self.schedule(PipeReadOperation(self.req_r, self))
-        while True:
-            events = self.poll.poll()
-            for fd, event in events:
-                 self.perform_io(fd, event)
-                
+        self.queue.put(PipeReadOperation(self.req_r, self))
+        self.empty_queue()
+        try:
+            while True:
+                events = self.poll.poll()
+                for fd, event in events:
+                     self.perform_io(fd, event)
+        except QueueClosedError:
+            pass
+        finally:
+            self.cleanup()
+    
     def empty_queue(self):
         for op in self.queue.iter_nowait():
             try:
@@ -72,7 +135,9 @@ class IOReactor(object):
             except:
                 op.failed()
             else:
-                if not finished:
+                if finished:
+                    op.completed()
+                else:
                     self.schedule(op)
     
     def schedule(self, op):
@@ -99,6 +164,8 @@ class IOReactor(object):
                     op.canceled()
             self.poll.unregister(fd)
             del self.pending[fd]
+            if fd == self.req_r:
+                raise QueueClosedError()
         else:
             found = None
             for op in self.pending[fd]:
@@ -149,7 +216,7 @@ class IOOperation(object):
     
     def future_canceled(self):
         try:
-            self.future.canceled()
+            self.future.cancel()
         except:
             traceback.print_exc()
     
@@ -163,6 +230,17 @@ class IOOperation(object):
                 return (False, None)
             else:
                 raise
+
+class NoOperation(IOOperation):
+    def __init__(self, future, reactor):
+        self.future = future
+        self.reactor = reactor
+    
+    def complete(self, event=None):
+        return True
+    
+    def completed(self):
+        self.future_completed(self.reactor)
 
 class PipeReadOperation(IOOperation):
     def __init__(self, fd, reactor):
@@ -179,6 +257,9 @@ class PipeReadOperation(IOOperation):
         return False
     
     def canceled(self):
+        pass
+    
+    def failed(self):
         pass
         
     def completed(self):
