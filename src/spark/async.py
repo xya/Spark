@@ -271,6 +271,14 @@ class Delegate(object):
             callbacks = self.__delegates[:]
         return [callback(*args, **kw) for callback in callbacks]
 
+def _iter_wrap(func):
+    def wrapper(*args):
+        try:
+            return func(*args)
+        except QueueClosedError:
+            raise StopIteration()
+    return wrapper
+
 class QueueClosedError(Exception):
     pass
 
@@ -295,11 +303,12 @@ class BlockingQueue(object):
         while True:
             yield self._iter_get()
     
-    def _iter_get(self):
-        try:
-            return self.get()
-        except QueueClosedError:
-            raise StopIteration()
+    def iter_nowait(self):
+        """ Iterate over the items in the queue, calling get() until the queue is empty. """
+        success, item = self._iter_get_nowait()
+        while success:
+            yield item
+            success, item = self._iter_get_nowait()
     
     def put(self, item):
         """ Wait until the queue is not full, and put the item at the end. """
@@ -323,6 +332,25 @@ class BlockingQueue(object):
             self.__count -= 1
             self.__wait.notifyAll()
         return item
+    
+    _iter_get = _iter_wrap(get)
+    
+    def get_nowait(self):
+        """ If the queue is not empty, return (True, <first item>). Otherwise return (False, None). """
+        if self.__lock.acquire(0):
+            try:
+                self.__assertRead()
+                if self.__count > 0:
+                    item = self.__list.pop(0)
+                    self.__count -= 1
+                    self.__wait.notifyAll()
+                    return (True, item)
+                else:
+                    return (False, None)
+            finally:
+                self.__lock.release()
+    
+    _iter_get_nowait = _iter_wrap(get_nowait)
     
     def __assertWrite(self):
         """ Ensure that is it allowed to insert items into the queue. """
