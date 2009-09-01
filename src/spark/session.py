@@ -20,11 +20,12 @@
 
 from __future__ import print_function
 import sys
+import os
 import traceback
 import types
 import threading
 import socket
-from spark.async import Future, Delegate, BlockingQueue, QueueClosedError, asyncMethod
+from spark.async import Future, Delegate, BlockingQueue, QueueClosedError
 from spark.messaging.common import ThreadedMessenger, AsyncMessenger
 from spark.messaging import *
 
@@ -41,131 +42,126 @@ class Session(object):
         self.lock = threading.RLock()
         self.conn = None
         self.thread = None
+        self.messenger = None
         self.joinList = None
         # Using the queue is only allowed if (2) is true
         self.queue = BlockingQueue(32, False, self.lock)
     
-    @asyncMethod
-    def connect(self, address, future):
+    def connect(self, address):
         """ Try to establish a connection with a remote peer with the specified address. """
         with self.lock:
             if self.thread is None:
+                cont = Future()
                 self.thread = threading.Thread(name="Session",
-                    target=self.doConnect, args=(address, future))
+                    target=self.threadEntry, args=(address, True, cont))
                 self.thread.daemon = True
                 self.thread.start()
+                return cont
             else:
                 raise Exception("The current session is still active")
     
-    @asyncMethod
-    def listen(self, address, future):
+    def listen(self, address):
         """ Listen on the interface with the specified addres for a connection. """
         with self.lock:
             if self.thread is None:
+                cont = Future()
                 self.thread = threading.Thread(name="Session",
-                    target=self.doListen, args=(address, future))
+                    target=self.threadEntry, args=(address, False, cont))
                 self.thread.daemon = True
                 self.thread.start()
+                return cont
             else:
                 raise Exception("The current session is still active")
     
-    @asyncMethod
-    def disconnect(self, future):
+    def disconnect(self):
         """ Terminate the session if it is active. """
-        starting = False
         with self.lock:
             if self.thread is not None:
                 if self.joinList is None:
-                    starting = True
+                    raise NotImplementedError("Can't close a session which is still starting")
                 else:
-                    self.joinList.append(future)
+                    cont = Future()
+                    self.joinList.append(cont)
                     if self.messenger is not None:
                         self.queue.close()
-        if starting:
-            raise NotImplementedError("Can't close a session which is still starting")
+                    return cont
+            else:
+                return Future.done()
     
-    @asyncMethod
-    def join(self, future):
+    def join(self):
         """ Wait for the session to be finished if it is active. """
-        inactive = True
         with self.lock:
             if self.joinList is not None:
-                self.joinList.append(future)
-                inactive = False
-        if inactive:
-            future.completed(False)
-    
-    def doConnect(self, address, future):
-        """ Thread entry point for 'connect'. """
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
-            sock.connect(address)
-            negociateProtocol(SocketFile(sock), True)
-        except:
-            future.failed()
-        else:
-            self.startSession(sock, future, address)
-    
-    def doListen(self, localAddress, future):
-        """ Thread entry point for 'listen'. """
-        try:
-            listenSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
-            try:
-                listenSock.bind(localAddress)
-                listenSock.listen(1)
-                conn, remoteAddress = listenSock.accept()
-            finally:
-                listenSock.close()
-            negociateProtocol(SocketFile(conn), False)
-        except:
-            future.failed()
-        else:
-            self.startSession(conn, future, remoteAddress)
-    
-    def startSession(self, conn, future, *args):
-        try:
-             # initialize the session, including derived classes' sessionStarted()
-            try:
-                with self.lock:
-                    self.conn = conn
-                    self.joinList = []
-                    self.queue.open()
-                    self.messenger = ThreadedMessenger(SocketFile(conn))
-                    self.messenger.receiveMessage(Future(self.messageReceived))
-                self.sessionStarted()
-            except:
-                future.failed()
-                raise
+                cont = Future()
+                self.joinList.append(cont)
+                return cont
             else:
-                future.completed(*args)
+                return Future.done(False)
+    
+    def threadEntry(self, address, initiating, cont):
+        """ Thread entry point for 'connect'. """
+        started = False
+        try:
+            # establish a connection and a protocol
+            conn, remoteAddress = self.establishConnection(address, initiating)
+            negociateProtocol(SocketFile(conn), initiating)
+            
+            # initialize the session, including derived classes' sessionStarted()
+            with self.lock:
+                self.conn = conn
+                self.joinList = []
+                self.queue.open()
+                self.messenger = ThreadedMessenger(SocketFile(conn))
+                recvCont = self.messenger.receiveMessage()
+            self.sessionStarted()
+            started = True
+            cont.completed(remoteAddress)
+            
             # enter the main loop
+            recvCont.after(self.messageReceived)
             for task in self.queue:
                 self.handleTask(task)
         except:
-            traceback.print_exc()
+            if started:
+                traceback.print_exc()
+            else:
+                cont.failed()
         finally:
             self.sessionCleanup()
+    
+    def establishConnection(self, address, initiating):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
+        if initiating:
+            sock.connect(address)
+            return sock, address
+        else:
+            try:
+                sock.bind(address)
+                sock.listen(1)
+                return sock.accept()
+            finally:
+                sock.close()
     
     def sessionStarted(self):
         """ Called when a session has started, that is messages can be sent and received. """
         pass
     
-    @asyncMethod
-    def sendMessage(self, m, future):
+    def sendMessage(self, m):
         """ Send a message to the remote peer. """
         with self.lock:
             if self.messenger is None:
-                future.failed(Exception("The current session is not active, can't send messages"))
+                return Future.error(Exception(
+                    "The current session is not active, can't send messages"))
             else:
-                self.messenger.sendMessage(m, future)
+                return self.messenger.sendMessage(m)
     
     def handleTask(task):
         """ Do something with a task that was submitted. """
         pass
 
-    def messageReceived(self, future):
+    def messageReceived(self, prev):
         try:
-            message = future.result
+            message = prev.result
         except:
             message = None
             traceback.print_exc()
@@ -175,7 +171,7 @@ class Session(object):
                     self.queue.close(True)
                 else:
                     self.queue.put(HandleMessageTask(message))
-                    self.messenger.receiveMessage(Future(self.messageReceived))
+                    self.messenger.receiveMessage().after(self.messageReceived)
 
     def submitTask(self, task):
         """ Submit a task for execution during an active session. """
@@ -205,7 +201,7 @@ class Session(object):
         # stop the session and call futures queued by join and disconnect
         with self.lock:
             self.thread = None
-            joinList, self.joinList = self.joinList[:], None
+            joinList, self.joinList = self.joinList, None
         if joinList is not None:
             for future in joinList:
                 future.completed()
@@ -223,7 +219,7 @@ class SocketFile(object):
         try:
             return self.socket.recv(size)
         except socket.error as e:
-            if e.errno == 104:      # connection reset by peer
+            if e.errno == os.errno.ECONNRESET:
                 return ""
             else:
                 raise

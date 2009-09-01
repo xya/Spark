@@ -27,91 +27,79 @@ import traceback
 from cStringIO import StringIO
 
 __all__ = ["Future", "FutureFrozenError", "TaskError", "TaskFailedError", "TaskCanceledError",
-           "Delegate", "BlockingQueue", "QueueClosedError", "asyncMethod", "threadedMethod"]
-
-def asyncMethod(func):
-    """
-    Mark the function asynchronous. The last argument must be a future.
-    
-    An asynchronous function does not block. When the operation is completed,
-    the caller is notified through the future object.
-    
-    The decoration makes the function synchronous if the future object is None,
-    and also allows passing a callable instead of a future.
-    """
-    def wrapper(*args, **kw):
-        if len(args) == 0:
-            return func(*args, **kw)
-        arg = args[-1]
-        if arg is None:
-            future = Future()
-            newArgs = args[:-1] + (future, )
-            func(*newArgs, **kw)
-            return future.results
-        elif hasattr(arg, "__call__"):
-            newArgs = args[:-1] + (Future(arg), )
-            return func(*newArgs, **kw)
-        else:
-            if not arg.pending:
-                raise ValueError("The future object has been used already")
-            return func(*args, **kw)
-    return wrapper
+           "Delegate", "BlockingQueue", "QueueClosedError", "threadedMethod"]
 
 def threadedMethod(func):
     """
-    Mark the function threaded. This adds an argument to the function,
-    to which a callable, a future or None can be passed.
-    
-    If the future object is None, the function is executed synchronously.
-    Otherwise a thread is started, which executes the function and
-    appropriately calls completed() with the result value or failed().
+    When the function is called a thread is started, which executes the function
+    and appropriately calls completed() with the result values or failed().
     """
     def wrapper(*args, **kw):
-        if (len(args) == 0) or (args[-1] is None):
-            return func(*args, **kw)
-        args, last = args[:-1], args[-1]
-        if last is None:
-            return func(*args, **kw)
-        else:
-            if hasattr(last, "__call__"):
-                last = Future(last)
-            elif not last.pending:
-                raise ValueError("The future object has been used already")
-            args = (func, ) + args
-            t = threading.Thread(target=last.run, args=args, kwargs=kw)
-            t.daemon = True
-            t.start()
+        cont = Future()
+        newArgs = (func, ) + args
+        t = threading.Thread(target=cont.run, args=newArgs, kwargs=kw)
+        t.daemon = True
+        t.start()
+        return cont
     return wrapper
 
 class Future(object):
     """
     Represents a task whose result will be known in the future.
-    passSelf determines whether "self" should be passed to the callback or not.
     """
-    def __init__(self, callback=None, passSelf=True):
-        if passSelf and (callback is not None):
-            # is the callback a bound function?
-            if hasattr(callback, "__self__"):
-                self.__callback = types.MethodType(lambda f: callback(f), self)
-            else:
-                self.__callback = types.MethodType(callback, self)
-        else:
-            self.__callback = callback
+    def __init__(self):
+        self.__callback = None
+        self.__args = None
         self.__result = None
         self.__lock = threading.RLock()
         self.__wait = threading.Condition(self.__lock)
+    
+    @classmethod
+    def done(cls, *args):
+        """
+        Create a future whose operation is already done (e.g. completed synchronously without blocking).
+        """
+        f = cls()
+        f.completed(*args)
+        return f
+    
+    @classmethod
+    def error(cls, e=None):
+        """
+        Create a future whose operation has already failed (e.g. failed synchronously without blocking).
+        """
+        f = cls()
+        f.failed(e)
+        return f
+    
+    """
+    Invoke the callable or Future when the operation completes. If it was completed before, it is called before returning.
+    The first argument of the function will be the Future, but optional args can be passed.
+    Return True if the operation is complete, or False otherwise.
+    """
+    def after(self, continuation, *args):
+        callback = self._makeCallback(continuation)
+        with self.__lock:
+            result = self.__result
+            if result is None:
+                if self.__callback is None:
+                    self.__callback = callback
+                    self.__args = args
+                else:
+                    raise Exception("The continuation has already been set")
+        self._invoke(result, callback, args)
+        return result is not None
     
     @property
     def pending(self):
         """ Indicate whether the task is still active or if it is complete. """
         with self.__lock:
             return self.__result is None
-    
-    @property
-    def results(self):
+        
+    def wait(self):
         """
-        Access the results of the task. If no result is available yet, block until there are.
-        May raise an exception if the task failed or was canceled.
+        Wait for the task to be completed and return the results of the task.
+        This will raise an exception if the task failed or was canceled.
         """
         with self.__lock:
             while self.__result is None:
@@ -125,6 +113,14 @@ class Future(object):
                 raise StandardError("The task failed for an unknown reason")
     
     @property
+    def results(self):
+        """
+        Access the results of the task. If no result is available yet, block until there are.
+        May raise an exception if the task failed or was canceled.
+        """
+        return self.wait()   
+    
+    @property
     def result(self):
         """ Convenience property for accessing the first element of result. See results. """
         results = self.results
@@ -132,14 +128,6 @@ class Future(object):
             return results[0]
         else:
             return None
-    
-    def wait(self):
-        """
-        Wait for the task to be completed. Does not raise an exception if the task fails.
-        """
-        with self.__lock:
-            while self.__result is None:
-                self.__wait.wait()
     
     def run(self, func, *args, **kw):
         """
@@ -156,19 +144,42 @@ class Future(object):
     def _assignResult(self, result):
         """ Set the result and invoke the callback, if any. """
         callback = None
+        args = None
         with self.__lock:
             if self.__result is None:
                 self.__result = result
                 self.__wait.notifyAll()
                 callback = self.__callback
+                args = self.__args
             elif isinstance(self.__result, TaskCanceledError):
                 raise TaskCanceledError(self.__result.tb)
             else:
                 raise FutureFrozenError("The result of the task has already been set")
         
-        # don't call the callback with the lock held
-        if callback:
-            callback()
+        # don't invoke the callback with the lock held
+        self._invoke(result, callback, args)
+    
+    def _invoke(self, result, callback, args):
+        if hasattr(callback, "__call__"):
+            if result is not None:
+                callback(*args)
+        elif isinstance(callback, Future):
+            if isinstance(result, tuple):
+                callback.completed(*args)
+            elif isinstance(result, BaseException):
+                callback.failed()
+    
+    def _makeCallback(self, continuation):
+        if hasattr(continuation, "__call__"):
+            # bound function?
+            if hasattr(continuation, "__self__"):
+                return types.MethodType(lambda f, *args: continuation(f, *args), self)
+            else:
+                return types.MethodType(continuation, self)
+        if not isinstance(continuation, Future):
+            return continuation
+        else:
+            raise ValueError("'continuation' should be a callable or a Future")
     
     def completed(self, *args):
         """ Provide the result of the task. """
@@ -194,6 +205,23 @@ class Future(object):
         tb = traceback.extract_stack()[:-1]
         self._assignResult(TaskCanceledError(tb))
     
+    def fork(self, completeCont, failCont, *args):
+        """ Run one of two continuations, depending on the success of the operation. """
+        def handler(prev):
+            try:
+                results = prev.results + args
+            except:
+                if hasattr(failCont, "failed"):
+                    failCont.failed()
+                elif hasattr(failCont, "__call__"):
+                    failCont(*args)
+            else:
+                if hasattr(completeCont, "completed"):
+                    completeCont.completed(*results)
+                elif hasattr(completeCont, "__call__"):
+                    completeCont(*results)
+        self.after(handler)
+
 class FutureFrozenError(StandardError):
     """ Exception raised when one tries to call completed() or failed() twice on a future. """
     pass
@@ -205,18 +233,14 @@ class TaskError(StandardError):
 def format_exception(type, value, tb):
     """ Format just exception, just a traceback or both. Return a list of lines. """
     buffer = StringIO()
-    if hasattr(tb, "tb_frame"):
-        if (type is not None) and (value is not None):
-            traceback.print_exception(type, value, tb, file=buffer)
-        else:
-            traceback.print_tb(tb, file=buffer)
-    else:
-        if tb is not None:
-            for line in traceback.format_list(tb):
-                buffer.write(line)
-        if (type is not None) and (value is not None):
-            for line in traceback.format_exception_only(type, value):
-                buffer.write(line)
+    if tb is not None:
+        if hasattr(tb, "tb_frame"):
+            tb = traceback.extract_tb(tb)
+        for line in traceback.format_list(tb):
+            buffer.write(line)
+    if (type is not None) and (value is not None):
+        for line in traceback.format_exception_only(type, value):
+            buffer.write(line)
     buffer.seek(0)
     return buffer.readlines()
 

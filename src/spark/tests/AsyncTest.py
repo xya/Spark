@@ -20,7 +20,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 import unittest
-from spark.async import Future, TaskError, asyncMethod
+from spark.async import Future, TaskError
 
 class FutureTest(unittest.TestCase):
     def testCompleted(self):
@@ -89,46 +89,87 @@ class FutureTest(unittest.TestCase):
         except:
             pass
     
+    def testCallback(self):
+        """ The callback should be invoked with the right arguments (result plus positional args). """
+        result = []
+        def bar(prev, *args):
+            result.append(prev.results + args)
+        f = Future()
+        f.after(bar, 1, 2, 3)
+        f.completed("spam", "eggs")
+        self.assertEqual(1, len(result))
+        self.assertEqual(("spam", "eggs", 1, 2, 3), result[0])
+    
+    def testAfterCompleted(self):
+        """ The callback should be invoked even when after() is called after completion. """
+        result = []
+        def bar(prev, *args):
+            result.append(prev.results + args)
+        f = Future()
+        f.completed("spam", "eggs")
+        f.after(bar, 1, 2, 3)
+        self.assertEqual(1, len(result))
+        self.assertEqual(("spam", "eggs", 1, 2, 3), result[0])
+    
     def testBoundMethodCallback(self):
+        """ Callbacks to bound methods should be usable as continuations. """
         class Foo(object):
             def __init__(self):
                 self.result = []
             def bar(self, f):
                 self.result.append(f.results)
         foo = Foo()
-        f = Future(foo.bar)
+        f = Future()
+        f.after(foo.bar)
         f.completed("spam", "eggs")
         self.assertEqual(1, len(foo.result))
         self.assertEqual(("spam", "eggs"), foo.result[0])
-
-@asyncMethod
-def foo(arg, future):
-    future.completed("foo", arg)
-
-class AsyncMethodTest(unittest.TestCase):
-    def setUp(self):
-        self.result = None
+    
+    def testForkOK(self):
+        result = []
+        error = []
+        def bar(*args):
+            result.append(args)
+        def foo(*args):
+            error.append(args)
+        f = Future()
+        f.fork(bar, foo, 1, 2, 3)
+        f.completed("spam", "eggs")
+        self.assertEqual(1, len(result))
+        self.assertEqual(0, len(error))
+        self.assertEqual(("spam", "eggs", 1, 2, 3), result[0])
         
-    def testSyncCall(self):
-        """ Passing no future should invoke the method synchronously """
-        result = foo("bar", None)
-        self.assertEqual(("foo", "bar"), result)
+        fOK, fFail, f2 = Future(), Future(), Future()
+        f2.fork(fOK, fFail, 1, 2, 3)
+        f2.completed("spam", "eggs")
+        self.assertEqual(False, fOK.pending)
+        self.assertEqual(True, fFail.pending)
+        self.assertEqual(("spam", "eggs", 1, 2, 3), fOK.results)
     
-    def testAsyncCall(self):
-        """ Passing a future should invoke the method asynchronously """
-        future = Future()
-        foo("bar", future)
-        future.wait()
-        self.assertFalse(future.pending)
-        self.assertEqual(("foo", "bar"), future.results)
-    
-    def testAsyncCallback(self):
-        """ Passing a callable instead of a future should work as expected """
-        foo("bar", self.futureCompleted)
-        self.assertEqual(("foo", "bar"), self.result)
-    
-    def futureCompleted(self, future):
-        self.result = future.results
+    def testForkFail(self):
+        result = []
+        error = []
+        def bar(*args):
+            result.append(args)
+        def foo(*args):
+            error.append(args)
+        f = Future()
+        f.fork(bar, foo, 1, 2, 3)
+        f.failed(KeyError())
+        self.assertEqual(0, len(result))
+        self.assertEqual(1, len(error))
+        self.assertEqual((1, 2, 3), error[0])
+        
+        fOK, fFail, f2 = Future(), Future(), Future()
+        f2.fork(fOK, fFail, 1, 2, 3)
+        f2.failed(KeyError())
+        self.assertEqual(True, fOK.pending)
+        self.assertEqual(False, fFail.pending)
+        try:
+            fFail.wait()
+            self.fail("wait should have thrown an exception")
+        except:
+            pass
 
 if __name__ == '__main__':
     unittest.main()

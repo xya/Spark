@@ -19,14 +19,6 @@ def blocking_mode(fd, blocking=None):
         fcntl.fcntl(fd, fcntl.F_SETFL, new_mode)
     return (old_mode & flag) == 0
 
-def acceptCallable(func):
-    """ Decorator which converts a callable to a future, when it is the last argument to the function. """
-    def wrapper(*args, **kw):
-        if (len(args) > 0) and hasattr(args[-1], "__call__"):
-            args = args[:-1] + (Future(args[-1]), )
-        return func(*args, **kw)
-    return wrapper
-
 class IOReactor(object):    
     def __init__(self):
         self.lock = threading.RLock()
@@ -37,25 +29,29 @@ class IOReactor(object):
         blocking_mode(self.req_r, False)
         blocking_mode(self.req_w, False)
     
-    @acceptCallable
-    def begin_read(self, file, size, future):
-        op = ReadOperation(file, size, future)
+    def read(self, file, size):
+        cont = Future()
+        op = ReadOperation(file, size, cont)
         self.submit(op)
+        return cont
     
-    @acceptCallable
-    def begin_write(self, file, data, future):
-        op = WriteOperation(file, data, future)
+    def write(self, file, data):
+        cont = Future()
+        op = WriteOperation(file, data, cont)
         self.submit(op)
+        return cont
     
-    @acceptCallable
-    def begin_connect(self, socket, address, future):
-        op = ConnectOperation(socket, address, future)
+    def connect(self, socket, address):
+        cont = Future()
+        op = ConnectOperation(socket, address, cont)
         self.submit(op)
+        return cont
     
-    @acceptCallable
-    def begin_accept(self, socket, future):
-        op = AcceptOperation(socket, future)
+    def accept(self, socket):
+        cont = Future()
+        op = AcceptOperation(socket, cont)
         self.submit(op)
+        return cont
     
     def launch_thread(self):
         """ Start a background I/O thread to run the reactor. """
@@ -69,7 +65,7 @@ class IOReactor(object):
             else:
                 return False
     
-    def run(self, future=None):
+    def run(self, continuation=None):
         """
         Run the reactor on the current thread, optionally signaling the future
         or calling back the callable when the event loop is entered.
@@ -77,9 +73,12 @@ class IOReactor(object):
         with self.lock:
             if self.active is False:
                 self.active = True
-                if future:
-                    if hasattr(future, "__call__"):
-                        future = Future(future)
+                if continuation:
+                    if hasattr(continuation, "__call__"):
+                        future = Future()
+                        future.after(continuation)
+                    else:
+                        future = continuation
                     self.submit(NoOperation(future, self))
         self.eventLoop()
     
@@ -193,30 +192,37 @@ class IOOperation(object):
     def complete(self, event=None):
         raise NotImplementedError()
     
+    def init_file(self, file):
+        """ Init the fd attribute. 'file' can either be a file or a file descriptor. """
+        if hasattr(file, "fileno"):
+            self.fd = file.fileno()
+        else:
+            self.fd = file
+    
     def canceled(self):
-        self.future_canceled()
+        self.raise_canceled()
     
     def failed(self):
-        self.future_failed()
+        self.raise_failed()
     
     def completed(self):
-        self.future_completed()
+        self.raise_completed()
     
-    def future_completed(self, *args):
+    def raise_completed(self, *args):
         try:
-            self.future.completed(*args)
+            self.cont.completed(*args)
         except:
             traceback.print_exc()
     
-    def future_failed(self, *args):
+    def raise_failed(self, *args):
         try:
-            self.future.failed(*args)
+            self.cont.failed(*args)
         except:
             traceback.print_exc()
     
-    def future_canceled(self):
+    def raise_canceled(self):
         try:
-            self.future.cancel()
+            self.cont.cancel()
         except:
             traceback.print_exc()
     
@@ -232,15 +238,15 @@ class IOOperation(object):
                 raise
 
 class NoOperation(IOOperation):
-    def __init__(self, future, reactor):
-        self.future = future
+    def __init__(self, cont, reactor):
+        self.cont = cont
         self.reactor = reactor
     
     def complete(self, event=None):
         return True
     
     def completed(self):
-        self.future_completed(self.reactor)
+        self.raise_completed(self.reactor)
 
 class PipeReadOperation(IOOperation):
     def __init__(self, fd, reactor):
@@ -266,16 +272,15 @@ class PipeReadOperation(IOOperation):
         pass
 
 class ReadOperation(IOOperation):
-    def __init__(self, file, size, future):
-        self.fd = file.fileno()
+    def __init__(self, file, size, cont):
         self.event = select.POLLIN
-        self.file = file
+        self.init_file(file)
         self.data = []
         self.left = size
-        self.future = future
+        self.cont = cont
     
     def complete(self, event=None):
-        success, data = self.nonblock(self.file.read, (self.left, ))
+        success, data = self.nonblock(os.read, (self.fd, self.left, ))
         if success and (len(data) > 0):
             self.data.append(data)
             self.left -= len(data)
@@ -284,33 +289,35 @@ class ReadOperation(IOOperation):
             return False
     
     def canceled(self):
-        self.future_completed("")
-        
+        self.raise_completed("")
+    
     def completed(self):
-        self.future_completed("".join(self.data))
+        self.raise_completed("".join(self.data))
 
 class WriteOperation(IOOperation):
-    def __init__(self, file, data, future):
-        self.fd = file.fileno()
+    def __init__(self, file, data, cont):
         self.event = select.POLLOUT
-        self.file = file
+        self.init_file(file)
         self.data = data
         self.left = len(data)
-        self.future = future
+        self.cont = cont
     
     def complete(self, event=None):
-        written = self.file.write(self.data)
-        self.data = self.data[written:]
-        self.left -= written
-        return self.left == 0
+        success, written = self.nonblock(os.write, (self.fd, self.data, ))
+        if success and written > 0:
+            self.data = self.data[written:]
+            self.left -= written
+            return self.left == 0
+        else:
+            return False
 
 class ConnectOperation(IOOperation):
-    def __init__(self, socket, address, future):
+    def __init__(self, socket, address, cont):
         self.fd = socket.fileno()
         self.event = select.POLLOUT
         self.socket = socket
         self.address = address
-        self.future = future
+        self.cont = cont
 
     def complete(self, event=None):
         success, result = self.nonblock(self.socket.connect, (self.address, ),
@@ -318,16 +325,16 @@ class ConnectOperation(IOOperation):
         return success
     
     def completed(self):
-        self.future_completed(self.address)
+        self.raise_completed(self.address)
 
 class AcceptOperation(IOOperation):
-    def __init__(self, socket, future):
+    def __init__(self, socket, cont):
         self.fd = socket.fileno()
         self.event = select.POLLIN
         self.socket = socket
         self.conn = None
         self.address = None
-        self.future = future
+        self.cont = cont
     
     def complete(self, event=None):
         success, result = self.nonblock(self.socket.accept)
@@ -336,4 +343,4 @@ class AcceptOperation(IOOperation):
         return success
     
     def completed(self):
-        self.future_completed(self.conn, self.address)
+        self.raise_completed(self.conn, self.address)

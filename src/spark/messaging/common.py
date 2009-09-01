@@ -33,11 +33,11 @@ class Messenger(object):
     def __init__(self):
         super(Messenger, self).__init__()
         
-    def sendMessage(self, message, future):
+    def sendMessage(self, message):
         """ Send a message. """
         raise NotImplementedError()
     
-    def receiveMessage(self, future):
+    def receiveMessage(self):
         """ Receive a message. """
         raise NotImplementedError()
 
@@ -57,34 +57,33 @@ class MessageDelivery(object):
         self.nextID = 0
         self.pendingRequests = {}
     
-    @asyncMethod
-    def sendRequest(self, req, future):
-        """ Send a request and return the response through the future. """
+    def sendRequest(self, req):
+        """ Send a request and return the response through the continuation (Future). """
         if not hasattr(req, "type") or (req.type != TextMessage.REQUEST):
             raise TypeError("req should be a text request.")
+        cont = Future()
         with self.__lock:
             req.transID = self.nextID
             self.nextID += 1
-            self.pendingRequests[req.transID] = future
-        self.sendMessage(req, Future())
+            self.pendingRequests[req.transID] = cont
+        self.sendMessage(req)
+        return cont
     
-    @asyncMethod
-    def sendResponse(self, req, params, future):
+    def sendResponse(self, req, params):
         """ Respond to a request. """
         if not hasattr(req, "type") or (req.type != TextMessage.REQUEST):
             raise TypeError("req should be a text request.")
         response = Response(req.tag, params, req.transID)
-        self.sendMessage(response, future)
+        return self.sendMessage(response)
     
-    @asyncMethod
-    def sendNotification(self, n, future):
+    def sendNotification(self, n):
         """ Send a notification. """
         if not hasattr(n, "type") or (n.type != TextMessage.NOTIFICATION):
             raise TypeError("n should be a text notification.")
         with self.__lock:
             n.transID = self.nextID
             self.nextID += 1
-        self.sendMessage(n, future)
+        return self.sendMessage(n)
     
     def resetDelivery(self):
         """ Reset the state of message delivery."""
@@ -106,9 +105,9 @@ class MessageDelivery(object):
             if m.type == TextMessage.RESPONSE:
                 # notifies the request's sender that the response arrived
                 with self.__lock:
-                    future = self.pendingRequests.pop(m.transID, None)
-                if future:
-                    future.completed(m)
+                    cont = self.pendingRequests.pop(m.transID, None)
+                if cont:
+                    cont.completed(m)
             elif m.type == TextMessage.REQUEST:
                 self.requestReceived(m)
             elif m.type == TextMessage.NOTIFICATION:
@@ -135,27 +134,29 @@ class ThreadedMessenger(Messenger):
         self.sendThread.join()
         self.receiveThread.join()
     
-    @asyncMethod
-    def sendMessage(self, message, future):
-        self.sendQueue.put((message, future))
+    def sendMessage(self, message):
+        cont = Future()
+        self.sendQueue.put((message, cont))
+        return cont
     
-    @asyncMethod
-    def receiveMessage(self, future):
-        self.receiveQueue.put(future)
+    def receiveMessage(self):
+        cont = Future()
+        self.receiveQueue.put(cont)
+        return cont
     
     def sendLoop(self):
         writer = messageWriter(self.file)
-        for message, future in self.sendQueue:
+        for message, cont in self.sendQueue:
             try:
-                future.run(writer.write, message)
+                cont.run(writer.write, message)
             except:
                 traceback.print_exc()
     
     def receiveLoop(self):
         parser = messageReader(self.file)
-        for future in self.receiveQueue:
+        for cont in self.receiveQueue:
             try:
-                future.run(parser.read)
+                cont.run(parser.read)
             except:
                 traceback.print_exc()
 

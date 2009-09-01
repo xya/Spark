@@ -20,7 +20,7 @@
 
 from types import MethodType
 import threading
-from spark.async import Future, asyncMethod
+from spark.async import Future
 from spark.session import Session
 from spark.messaging import MessageDelivery
 from common import FileShare
@@ -74,14 +74,14 @@ class FileShareSession(Session, MessageDelivery):
 
 class InvokeRequestTask(object):
     """ Task of invoking a request on a file share's thread. """
-    def __init__(self, share, tag, params, future):
+    def __init__(self, share, tag, params, cont):
         self.share = share
         self.tag = tag
         self.params = params
-        self.future = future
+        self.cont = cont
     
     def invoke(self):
-        self.share.invokeRequest(self.tag, self.params, self.future)
+        self.share.invokeRequest(self.tag, self.params).after(self.cont)
 
 class FileShareProxy(FileShare):
     """ Proxy which submits requests to the session's queue, so they are executed on the session's thread. """
@@ -97,6 +97,8 @@ class FileShareProxy(FileShare):
     
     def requestHandler(self, tag):
         """ Create a function to handle sending requests with the given tag """
-        def handler(self, params, future):
-            self.session.submitTask(InvokeRequestTask(self.share, tag, params, future))
-        return asyncMethod(MethodType(handler, self))
+        def handler(self, params):
+            cont = Future()
+            self.session.submitTask(InvokeRequestTask(self.share, tag, params, cont))
+            return cont
+        return MethodType(handler, self)

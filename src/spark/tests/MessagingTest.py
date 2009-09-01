@@ -20,7 +20,7 @@
 
 import unittest
 from spark.messaging import *
-from spark.async import Future, asyncMethod
+from spark.async import Future
 from spark.tests.ProtocolTest import testRequest, testResponse, testNotification, testBlock
 
 class MockSender(Messenger, MessageDelivery):
@@ -28,10 +28,9 @@ class MockSender(Messenger, MessageDelivery):
         super(MockSender, self).__init__()
         self.sent = []
     
-    @asyncMethod
-    def sendMessage(self, message, future):
+    def sendMessage(self, message):
         self.sent.append(message)
-        future.completed(message)
+        return Future.done(message)
 
 class MessageDeliveryTest(unittest.TestCase):
     def setUp(self):
@@ -60,11 +59,11 @@ class MessageDeliveryTest(unittest.TestCase):
         """ Sending a request should attribute it an unique transaction ID. """
         req = testRequest()
         req.transID = None
-        self.delivery.sendRequest(req, Future())
+        self.delivery.sendRequest(req)
         self.assertNotEqual(None, req.transID)
         req2 = testRequest()
         req2.transID = None
-        self.delivery.sendRequest(req2, Future())
+        self.delivery.sendRequest(req2)
         self.assertNotEqual(None, req2.transID)
         self.assertNotEqual(req.transID, req2.transID)
         
@@ -92,7 +91,7 @@ class MessageDeliveryTest(unittest.TestCase):
     def testDeliverResponse(self):
         """ Receiving a response matching a previous request should deliver it to the sender. """
         req = testRequest()
-        self.delivery.sendRequest(req, self.responseReceived)
+        self.delivery.sendRequest(req).after(self.responseReceived)
         self.assertMessageCount(0, 0, 0, 0)
         resp = testResponse()
         resp.transID = req.transID + 1  # response not matching the request
@@ -104,5 +103,5 @@ class MessageDeliveryTest(unittest.TestCase):
         self.assertMessageCount(0, 1, 0, 0)
         self.assertMessagesEqual(resp2, self.responses[0])
     
-    def responseReceived(self, future):
-        self.responses.append(future.result)
+    def responseReceived(self, prev):
+        self.responses.append(prev.result)

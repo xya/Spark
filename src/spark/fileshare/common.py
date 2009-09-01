@@ -46,7 +46,7 @@ class FileShare(object):
         """ Create a request for the specified tag. """
         name = self.attributeName(tag)
         if handler is None:
-            def requestHandler(self, params, future):
+            def requestHandler(self, params):
                 raise NotImplementedError("The '%s' request handler is not implemented" % tag)
             handler = types.MethodType(requestHandler, self)
         setattr(self, name, handler)
@@ -58,7 +58,7 @@ class FileShare(object):
         if hasattr(self, name):
             handler = getattr(self, name)
             if hasattr(handler, "__call__"):
-                handler(*args)
+                return handler(*args)
         
     def createEvent(self, tag):
         """ Create an event for the specified tag. """
