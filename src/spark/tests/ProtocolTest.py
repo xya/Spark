@@ -21,6 +21,8 @@
 
 import unittest
 import copy
+import sys
+from spark.async import TaskFailedError
 from spark.messaging import *
 from StringIO import StringIO
 
@@ -106,6 +108,8 @@ class ClientSocket(object):
         self.state = 0
     
     def read(self, count):
+        if (count is None) or (count <= 0):
+            count = len(self.readBuffer)
         if count <= len(self.readBuffer):
             data, self.readBuffer = self.readBuffer[:count], self.readBuffer[count:]
             return data
@@ -134,6 +138,8 @@ class ServerSocket(object):
         self.choice = None
     
     def read(self, count):
+        if (count is None) or (count <= 0):
+            count = len(self.readBuffer)
         if count <= len(self.readBuffer):
             data, self.readBuffer = self.readBuffer[:count], self.readBuffer[count:]
             return data
@@ -168,7 +174,7 @@ class ProtocolNegociationTest(unittest.TestCase):
         """ Negociation should work out if there is at last one supported protocol. """
         supported = ["SPARKv2", "SPARKv1"]
         f = ClientSocket(supported)
-        name = negociateProtocol(f, False).result
+        name = negociateProtocol(f, False).wait(1.0)[0]
         self.assertTrue(name in supported)
     
     def testServerNegociationNotSupported(self):
@@ -176,16 +182,20 @@ class ProtocolNegociationTest(unittest.TestCase):
         supported = ["SPARKv2"]
         f = ClientSocket(supported)
         try:
-            name = negociateProtocol(f, False).result
+            name = negociateProtocol(f, False).wait(1.0)[0]
             self.fail("Protocol negociation should have failed, no supported protocol")
-        except:
+        except TaskFailedError as e:
+            type, val, tb = e.inner()
+            if type != NegociationError:
+                raise
+        except NegociationError:
             pass
 
     def testClientNegociationSupported(self):
         """ Negociation should work out if there is at last one supported protocol. """
         supported = ["SPARKv2", "SPARKv1"]
         f = ServerSocket(supported)
-        name = negociateProtocol(f, True).result
+        name = negociateProtocol(f, True).wait(1.0)[0]
         self.assertTrue(name in supported)
     
     def testClientNegociationNotSupported(self):
@@ -193,10 +203,14 @@ class ProtocolNegociationTest(unittest.TestCase):
         supported = ["SPARKv2"]
         f = ServerSocket(supported)
         try:
-            name = negociateProtocol(f, True).result
+            name = negociateProtocol(f, True).wait(1.0)[0]
             self.fail("Protocol negociation should have failed, no supported protocol")
-        except:
+        except NegociationError:
             pass
+        except TaskFailedError as e:
+            type, val, tb = e.inner()
+            if type != NegociationError:
+                raise
 
 if __name__ == '__main__':
     unittest.main()

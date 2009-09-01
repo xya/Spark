@@ -96,14 +96,18 @@ class Future(object):
         with self.__lock:
             return self.__result is None
         
-    def wait(self):
+    def wait(self, timeout=None):
         """
         Wait for the task to be completed and return the results of the task.
         This will raise an exception if the task failed or was canceled.
         """
         with self.__lock:
             while self.__result is None:
+                if timeout is not None:
+                    threading.Timer(timeout, self._interrupt_wait).start()
                 self.__wait.wait()
+                if (timeout is not None) and (self.__result is None):
+                    raise WaitTimeoutError("The task didn't complete within the specified duration")
             r = self.__result
             if isinstance(r, tuple):
                 return r
@@ -111,6 +115,12 @@ class Future(object):
                 raise r
             else:
                 raise StandardError("The task failed for an unknown reason")
+    
+    def _interrupt_wait(self):
+        """ Wake up the threads waiting for the results when the timeout is elapsed """
+        with self.__lock:
+            if self.__result is None:
+                self.__wait.notifyAll()
     
     @property
     def results(self):
@@ -226,6 +236,10 @@ class FutureFrozenError(StandardError):
     """ Exception raised when one tries to call completed() or failed() twice on a future. """
     pass
 
+class WaitTimeoutError(StandardError):
+    """ Exception raised when the timeout for wait() elapsed and the task isn't finished. """
+    pass
+
 class TaskError(StandardError):
     """ Base class for errors related to Future tasks. """
     pass
@@ -259,6 +273,16 @@ class TaskFailedError(TaskError):
         if len(desc):
             desc = "\n" + desc
         return "The task failed: %s" % desc
+    
+    def inner(self):
+        """ Return the very first exception of a chain. """
+        type, val, tb = self.type, self.value, self.tb
+        while val is not None:
+            if hasattr(val, "type") and hasattr(val, "value") and hasattr(val, "tb"):
+                type, val, tb = val.type, val.value, val.tb
+            else:
+                break
+        return type, val, tb
 
 class TaskCanceledError(TaskError):
     """ The task was canceled before it could be completed. """
