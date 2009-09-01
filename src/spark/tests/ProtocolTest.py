@@ -168,7 +168,7 @@ class ProtocolNegociationTest(unittest.TestCase):
         """ Negociation should work out if there is at last one supported protocol. """
         supported = ["SPARKv2", "SPARKv1"]
         f = ClientSocket(supported)
-        name = negociateProtocol(f, False)
+        name = negociateProtocol(f, False).result
         self.assertTrue(name in supported)
     
     def testServerNegociationNotSupported(self):
@@ -176,7 +176,7 @@ class ProtocolNegociationTest(unittest.TestCase):
         supported = ["SPARKv2"]
         f = ClientSocket(supported)
         try:
-            name = negociateProtocol(f, False)
+            name = negociateProtocol(f, False).result
             self.fail("Protocol negociation should have failed, no supported protocol")
         except:
             pass
@@ -185,7 +185,7 @@ class ProtocolNegociationTest(unittest.TestCase):
         """ Negociation should work out if there is at last one supported protocol. """
         supported = ["SPARKv2", "SPARKv1"]
         f = ServerSocket(supported)
-        name = negociateProtocol(f, True)
+        name = negociateProtocol(f, True).result
         self.assertTrue(name in supported)
     
     def testClientNegociationNotSupported(self):
@@ -193,7 +193,7 @@ class ProtocolNegociationTest(unittest.TestCase):
         supported = ["SPARKv2"]
         f = ServerSocket(supported)
         try:
-            name = negociateProtocol(f, True)
+            name = negociateProtocol(f, True).result
             self.fail("Protocol negociation should have failed, no supported protocol")
         except:
             pass

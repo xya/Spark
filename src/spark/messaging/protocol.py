@@ -18,6 +18,7 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+from async import Future
 from parser import MessageReader
 from messages import MessageWriter
 
@@ -45,21 +46,27 @@ class Negociator(object):
         self.newline = newline
     
     def negociate(self, initiating):
+        cont = Future()
         if initiating:
-            self.writeSupportedProtocols()
-            remoteChoice = self.readProtocol()
-            if remoteChoice not in Supported:
-                raise ValueError("Protocol '%s' is not supported" % remoteChoice)
-            self.writeProtocol(remoteChoice)
-            return remoteChoice
+            def step2(remoteChoice):
+                if remoteChoice not in Supported:
+                    raise ValueError("Protocol '%s' is not supported" % remoteChoice)
+                self.writeProtocol(remoteChoice).after(cont, remoteChoice)
+            def step1():
+                self.readProtocol().fork(step2, cont)
+            self.writeSupportedProtocols().fork(step1, cont)
         else:
-            proposed = self.readSupportedProtocols()
-            choice = self.chooseProtocol(proposed)
-            self.writeProtocol(choice)
-            remoteChoice = self.readProtocol()
-            if remoteChoice != choice:
-                raise ValueError("The remote peer chose another protocol: '%s' (was '%s')" % (remoteChoice, choice))
-            return remoteChoice
+            def step3(remoteChoice, choice):
+                if remoteChoice != choice:
+                    cont.failed(ValueError("The remote peer chose another protocol: '%s' (was '%s')" % (remoteChoice, choice)))
+                cont.completed(remoteChoice)
+            def step2(choice):
+                self.readProtocol().fork(step3, cont, choice)
+            def step1(proposed):
+                choice = self.chooseProtocol(proposed)
+                self.writeProtocol(choice).fork(step2, cont, choice)
+            self.readSupportedProtocols().fork(step1, cont)
+        return cont
     
     def chooseProtocol(self, proposedNames):
         for name in proposedNames:
@@ -68,28 +75,48 @@ class Negociator(object):
         raise ValueError("No protocol in the proposed list is supported")
     
     def writeSupportedProtocols(self):
-        self.file.write("supports %s%s" % (" ".join(Supported), self.newline))
+        data = "supports %s%s" % (" ".join(Supported), self.newline)
+        try:
+            self.file.write(data)
+            return Future.done()
+        except:
+            return Future.error()
     
     def writeProtocol(self, name):
-        self.file.write("protocol %s%s" % (name, self.newline))
+        data = "protocol %s%s" % (name, self.newline)
+        try:
+            self.file.write(data)
+            return Future.done()
+        except:
+            return Future.error()
     
     def readSupportedProtocols(self):
-        chunks = self.readLine().split(" ")
+        cont = Future()
+        self.readLine().after(self.parseSupportedProtocol, cont)
+        return cont
+    
+    def parseSupportedProtocol(self, prev, cont):
+        chunks = prev.result.split(" ")
         if chunks[0] != "supports":
-            raise ValueError("Exepected '%s', read '%s'" % ("supports", chunks[0]))
+            cont.failed(ValueError("Exepected '%s', read '%s'" % ("supports", chunks[0])))
         elif len(chunks) < 2:
-            raise ValueError("Expected at least one protocol name")
+            cont.failed(ValueError("Expected at least one protocol name"))
         else:
-            return chunks[1:]
+            cont.completed(chunks[1:])
     
     def readProtocol(self):
-        chunks = self.readLine().split(" ")
+        cont = Future()
+        self.readLine().after(self.parseProtocol, cont)
+        return cont
+    
+    def parseProtocol(self, prev, cont):
+        chunks = prev.result.split(" ")
         if chunks[0] != "protocol":
-            raise ValueError("Exepected '%s', read '%s'" % ("protocol", chunks[0]))
+            cont.failed(ValueError("Exepected '%s', read '%s'" % ("protocol", chunks[0])))
         elif len(chunks) < 2:
-            raise ValueError("Expected a protocol name")
+            cont.failed(ValueError("Expected a protocol name"))
         else:
-            return chunks[1]
+            cont.completed(chunks[1])
     
     def readLine(self):
         data = []
@@ -105,6 +132,6 @@ class Negociator(object):
                 data.append(c)
             c = self.file.read(1)
         if len(c) == 0:
-            raise EOFError()
+            return Future.error(EOFError())
         else:
-            return "".join(data)
+            return Future.done("".join(data))

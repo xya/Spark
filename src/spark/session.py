@@ -104,7 +104,7 @@ class Session(object):
         try:
             # establish a connection and a protocol
             conn, remoteAddress = self.establishConnection(address, initiating)
-            negociateProtocol(SocketFile(conn), initiating)
+            name = negociateProtocol(SocketFile(conn), initiating).result
             
             # initialize the session, including derived classes' sessionStarted()
             with self.lock:

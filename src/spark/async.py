@@ -176,7 +176,7 @@ class Future(object):
                 return types.MethodType(lambda f, *args: continuation(f, *args), self)
             else:
                 return types.MethodType(continuation, self)
-        if not isinstance(continuation, Future):
+        if isinstance(continuation, Future):
             return continuation
         else:
             raise ValueError("'continuation' should be a callable or a Future")
