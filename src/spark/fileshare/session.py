@@ -23,9 +23,9 @@ import threading
 from spark.async import Future
 from spark.session import Session
 from spark.messaging import MessageDelivery
-from common import FileShare
-from local import LocalFileShare
-from remote import RemoteFileShare
+from spark.fileshare.common import FileShare
+from spark.fileshare.local import LocalFileShare
+from spark.fileshare.remote import RemoteFileShare
 
 __all__ = ["FileShareSession"]
 

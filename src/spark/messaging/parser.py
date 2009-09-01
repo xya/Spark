@@ -20,7 +20,7 @@
 
 import json
 from struct import Struct
-from messages import *
+from spark.messaging.messages import *
 
 __all__ = ["MessageReader"]
 

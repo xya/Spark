@@ -18,7 +18,7 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-from common import *
-from session import *
+from spark.fileshare.common import *
+from spark.fileshare.session import *
 
 __all__ = ["FileShare", "FileShareSession"]

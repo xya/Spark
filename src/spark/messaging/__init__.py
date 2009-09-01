@@ -18,12 +18,12 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-import messages
-import parser
-import common
-from messages import *
-from common import *
-from protocol import *
+import spark.messaging.messages
+import spark.messaging.parser
+import spark.messaging.common
+from spark.messaging.messages import *
+from spark.messaging.common import *
+from spark.messaging.protocol import *
 
 __all__ = []
 for module in (messages, common, protocol):

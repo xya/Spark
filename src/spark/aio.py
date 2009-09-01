@@ -4,7 +4,7 @@ import select
 import fcntl
 import threading
 import traceback
-from async import Future, BlockingQueue, QueueClosedError
+from spark.async import Future, BlockingQueue, QueueClosedError
 
 __all__ = ["blocking_mode", "IOReactor"]
 

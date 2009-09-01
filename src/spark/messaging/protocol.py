@@ -19,8 +19,8 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 from spark.async import Future
-from parser import MessageReader
-from messages import MessageWriter
+from spark.messaging.parser import MessageReader
+from spark.messaging.messages import MessageWriter
 
 __all__ = ["messageReader", "messageWriter", "negociateProtocol", "Supported", "NegociationError"]
 
