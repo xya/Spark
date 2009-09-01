@@ -1,1 +1,1 @@
-__all__ = ["AsyncTest", "ProtocolTest", "MessagingTest"]
+__all__ = ["AsyncTest", "ProtocolTest", "MessagingTest", "IntegrationTest"]
