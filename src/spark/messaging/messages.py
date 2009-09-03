@@ -50,15 +50,8 @@ class TextMessage(Message):
         self.params = params
     
     def canonical(self):
-        chunks = [self.type, " ", self.tag, " ", str(self.transID), " "]
-        if not self.params is None:
-            jsonData = json.dumps(self.params, sort_keys=True)
-            chunks.append(str(len(jsonData)))
-            chunks.append(" ")
-            chunks.append(jsonData)
-        else:
-            chunks.append("0")
-        return "".join(chunks)
+        return " ".join([self.type, self.tag, str(self.transID),
+            json.dumps(self.params, sort_keys=True)])
 
 class Request(TextMessage):
     def __init__(self, tag, params=None, transID=None):
@@ -73,8 +66,7 @@ class Notification(TextMessage):
         super(Notification, self).__init__(TextMessage.NOTIFICATION, tag, params, transID)
 
 class Blob(Message):
-    HEX_DIGITS = 4
-    Type = Struct("!H")
+    Type = Struct("BB")
     
     def __init__(self):
         super(Blob, self).__init__()
@@ -85,13 +77,11 @@ class Blob(Message):
     
     def canonical(self):
         data = self.data
-        size = 2 + len(data)
         cls = self.__class__
-        return "".join(["0x", hex(size)[2:].zfill(Blob.HEX_DIGITS),
-            cls.Type.pack(cls.ID), data])
+        return "".join([cls.Type.pack(0, cls.ID), data])
 
 class Block(Blob):
-    Header = Struct("!HI")
+    Header = Struct("!HIH")
     ID = 1
     
     def __init__(self, transferID, blockID, blockData):
@@ -102,14 +92,19 @@ class Block(Blob):
     
     @property
     def data(self):
-        return Block.Header.pack(self.transferID, self.blockID) + self.blockData
+        return Block.Header.pack(self.transferID, self.blockID,
+                                 len(self.blockData)) + self.blockData
 
 class MessageWriter(object):
     def __init__(self, file):
         self.file = file
+        
+    def format(self, m):
+        data = " %s\r\n" % str(m)
+        return "%04x%s" % (len(data), data)
     
     def write(self, m):
-        self.file.write(str(m) + "\r\n")
+        self.file.write(self.format(m))
     
     def writeAll(self, it):
         for m in it:

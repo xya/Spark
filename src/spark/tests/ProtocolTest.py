@@ -22,23 +22,23 @@
 import unittest
 import copy
 import sys
-from spark.async import TaskFailedError
+from spark.async import Future, TaskFailedError
 from spark.messaging import *
 from StringIO import StringIO
 
-TestText = """> list-files 0 18 {"register": true}
-< list-files 0 108 {"<guid>": {"id": "<guid>", "name": "Report.pdf", "size": 3145728, "last-modified": "20090619T173529.000Z"}}
-! file-added 55 106 {"id": "<guid>", "name": "SeisRoX-2.0.9660.exe", "size": 3145728, "last-modified": "20090619T173529.000Z"}
-> create-transfer 26 79 {"file-id": "<guid>", "blocksize": 1024, "ranges": [{"start": 0, "end": 3071}]}
-< create-transfer 26 30 {"id": 2, "state": "inactive"}
-> start-transfer 27 9 {"id": 2}
-< start-transfer 27 30 {"id": 2, "state": "starting"}
-! transfer-state-changed 56 28 {"id": 2, "state": "active"}
-0x0014\x00\x01\x00\x02\x00\x00\x00\x00Hello, world
-0x0408\x00\x01\x00\x02\x00\x00\x0B\xFF""" + ("!" * 1024) + """
-> close-transfer 28 9 {"id": 2}
-< close-transfer 28 9 {"id": 2}
-"""
+TestText = """0023 > list-files 0 {"register": true}
+007d < list-files 0 {"<guid>": {"id": "<guid>", "last-modified": "20090619T173529.000Z", "name": "Report.pdf", "size": 3145728}}
+007c ! file-added 55 {"id": "<guid>", "last-modified": "20090619T173529.000Z", "name": "SeisRoX-2.0.9660.exe", "size": 3145728}
+0066 > create-transfer 26 {"blocksize": 1024, "file-id": "<guid>", "ranges": [{"end": 3071, "start": 0}]}
+0036 < create-transfer 26 {"id": 2, "state": "inactive"}
+001f > start-transfer 27 {"id": 2}
+0034 < start-transfer 27 {"id": 2, "state": "starting"}
+003a ! transfer-state-changed 56 {"id": 2, "state": "active"}
+0018 \x00\x01\x00\x02\x00\x00\x00\x00\x00\x0cHello, world
+0018 \x00\x01\x00\x02\x00\x00\x00\x01\x00\x0cSpaces      
+040c \x00\x01\x00\x02\x00\x00\x0b\xff\x04\x00""" + ("!" * 1024) + """
+001f > close-transfer 28 {"id": 2}
+001e < close-transfer 28 {"id": 2}"""
 
 TestItems = [
     Request("list-files", {"register": True}, 0),
@@ -50,6 +50,7 @@ TestItems = [
     Response("start-transfer", {"id": 2, "state": "starting"}, 27),
     Notification("transfer-state-changed", {"id": 2, "state": "active"}, 56),
     Block(2, 0, "Hello, world"),
+    Block(2, 1, "Spaces      "),
     Block(2, 3071, "!" * 1024),
     Request("close-transfer", {"id": 2}, 28),
     Response("close-transfer", {"id": 2}, 28),
@@ -65,6 +66,33 @@ testResponse = TestItemProperty(1)
 testNotification = TestItemProperty(2)
 testBlock = TestItemProperty(8)
 
+class AsyncWrapper(object):
+    """
+    Provides beginRead and beginWrite methods for testing purposes,
+    calling the file's read and write methods.
+    """
+    def __init__(self, file):
+        self.file = file
+        self.read = file.read
+        self.write = file.write
+        self.seek = file.seek
+    
+    def beginRead(self, size):
+        try:
+            data = self.file.read(size)
+        except:
+            return Future.error()
+        else:
+            return Future.done(data)
+    
+    def beginWrite(self, data):
+        try:
+            self.file.write(data)
+        except:
+            return Future.error()
+        else:
+            return Future.done()
+
 class ProtocolTest(unittest.TestCase):
     def assertMessagesEqual(self, expected, actual):
         if expected is None:
@@ -77,35 +105,97 @@ class ProtocolTest(unittest.TestCase):
         for expected, actual in zip(expectedSeq, actualSeq):
             self.assertMessagesEqual(expected, actual)
     
+    def readAllMessages(self, reader):
+        messages = []
+        def messageRead(message):
+            if message:
+                messages.append(message)
+                return reader.read()
+        cont = Future()
+        reader.read().loop(cont, messageRead)
+        cont.wait(0.1)
+        return messages
+    
     def testParseText(self):
         """ Ensure that messageReader() can read messages from a text file """
-        p = messageReader(StringIO(TestText))
-        actualItems = list(p.readAll())
+        p = messageReader(AsyncWrapper(StringIO(TestText)))
+        actualItems = self.readAllMessages(p)
         self.assertSeqsEqual(TestItems, actualItems)
     
     def testReadWriteSync(self):
         """ Ensure that messages written by messageWriter() can be read by messageReader() """
         # first individual messages
         for item in TestItems:
-            f = StringIO()
+            f = AsyncWrapper(StringIO())
             messageWriter(f).write(item)
             f.seek(0)
-            actual = messageReader(f).read()
+            actual = messageReader(f).read().wait(0.1)[0]
             self.assertMessagesEqual(item, actual)
         
         # then a stream of messages
-        f = StringIO()
+        f =  AsyncWrapper(StringIO())
         messageWriter(f).writeAll(TestItems)
         f.seek(0)
-        actualItems = list(messageReader(f).readAll())
+        actualItems = self.readAllMessages(messageReader(f))
         self.assertSeqsEqual(TestItems, actualItems)
 
-class ClientSocket(object):
-    def __init__(self, supportedList):
-        self.supported = supportedList
-        self.readBuffer = "supports %s\r\n" % " ".join(supportedList)
+def formatMessage(m):
+    data = " %s\r\n" % str(m)
+    return "%04x%s" % (len(data), data)
+
+class MockAsyncPipe(object):
+    def __init__(self, readList):
+        self.readList = readList
+        self.readRequests = []
+        self.remoteEnd = None
+    
+    def _available(self):
+        return sum((len(buf) for buf in self.readList))
+    
+    def _read(self, size):
+        data = "".join(self.readList)
+        read, remaining = data[:size], data[size:]
+        while len(self.readList):
+            self.readList.pop()
+        self.readList.append(remaining)
+        return read
+    
+    def _onWrite(self):
+        while self.readRequests:
+            req, size = self.readRequests[0]
+            if size <= self._available():
+                self.readRequests.pop(0)
+                req.completed(self._read(size))
+            else:
+                break
+    
+    def beginRead(self, size):
+        if (size is None) or (size < 1):
+            return Future.error(ValueError("size should be >= 1"))
+        if not self.readRequests and (size <= self._available()):
+            return Future.done(self._read(size))
+        else:
+            cont = Future()
+            self.readRequests.append((cont, size))
+            return cont
+    
+    def beginWrite(self, data):
+        self.remoteEnd.readList.append(data)
+        self.remoteEnd._onWrite()
+        return Future.done()
+    
+    @classmethod
+    def create(cls):
+        pipeA = MockAsyncPipe([])
+        pipeB = MockAsyncPipe([])
+        pipeA.remoteEnd = pipeB
+        pipeB.remoteEnd = pipeA
+        return pipeA, pipeB
+
+class MockFile(object):
+    def __init__(self):
+        self.readBuffer = ""
         self.writeBuffer = ""
-        self.state = 0
     
     def read(self, count):
         if (count is None) or (count <= 0):
@@ -118,56 +208,68 @@ class ClientSocket(object):
     
     def write(self, data):
         self.writeBuffer += data
-        end = self.writeBuffer.find("\r\n")
-        if end >= 0:
-            if self.state == 0:
-                line, self.writeBuffer = self.writeBuffer[:end], self.writeBuffer[end:]
-                w = line.split(" ")
-                if (w[0] != "protocol") or (len(w) != 2) or (w[1] not in self.supported):
-                    self.readBuffer += "not-supported\r\n"
-                else:
-                    self.readBuffer += "protocol %s\r\n" % w[1]
-                    self.state += 1
+        message = self.innerReadMessage()
+        if message is not None:
+            self.onMessageWritten(message)
+    
+    def innerWrite(self, data):
+        """ Append data to the read buffer. """
+        self.readBuffer += data
+    
+    def innerRead(self, size):
+        """ Remove data from the write buffer. """
+        data, self.writeBuffer = self.writeBuffer[:size], self.writeBuffer[size:]
+        return data
+    
+    def innerReadMessage(self):
+        bufferSize = len(self.writeBuffer)
+        if bufferSize >= 4:
+            messageSize = int(self.writeBuffer[0:4], 16)
+            if bufferSize >= (4 + messageSize):
+                self.innerRead(4)
+                return self.innerRead(messageSize).strip()
+        return None
 
-class ServerSocket(object):
+class ClientSocket(MockFile):
     def __init__(self, supportedList):
+        super(ClientSocket, self).__init__()
         self.supported = supportedList
-        self.readBuffer = ""
-        self.writeBuffer = ""
+        self.innerWrite(formatMessage("supports %s" % " ".join(supportedList)))
+        self.state = 0
+    
+    def onMessageWritten(self, message):
+        if self.state == 0:
+            w = message.split(" ")
+            if (w[0] != "protocol") or (len(w) != 2) or (w[1] not in self.supported):
+                self.innerWrite(formatMessage("not-supported"))
+            else:
+                self.innerWrite(formatMessage("protocol %s" % w[1]))
+                self.state += 1
+
+class ServerSocket(MockFile):
+    def __init__(self, supportedList):
+        super(ServerSocket, self).__init__()
+        self.supported = supportedList
         self.state = 0
         self.choice = None
     
-    def read(self, count):
-        if (count is None) or (count <= 0):
-            count = len(self.readBuffer)
-        if count <= len(self.readBuffer):
-            data, self.readBuffer = self.readBuffer[:count], self.readBuffer[count:]
-            return data
-        else:
-            raise EOFError("Read would have blocked forever")
-    
-    def write(self, data):
-        self.writeBuffer += data
-        end = self.writeBuffer.find("\r\n")
-        if end >= 0:
-            if self.state == 0:    
-                line, self.writeBuffer = self.writeBuffer[:end], self.writeBuffer[end:]
-                w = line.split(" ")
-                matches = [name for name in w[1:] if name in self.supported]
-                if (w[0] != "supports") or (len(w) < 2) or (len(matches) == 0):
-                    self.readBuffer += "not-supported\r\n"
-                else:
-                    self.choice = matches[0]
-                    self.readBuffer += "protocol %s\r\n" % self.choice
-                    self.state += 1
-            elif self.state == 1:
-                line, self.writeBuffer = self.writeBuffer[:end], self.writeBuffer[end:]
-                w = line.split(" ")
-                if (w[0] != "protocol") or (len(w) != 2) or (w[1] != self.choice):
-                    self.readBuffer += "not-supported\r\n"
-                else:
-                    self.readBuffer += "protocol %s\r\n" % w[1]
-                    self.state += 1
+    def onMessageWritten(self, message):
+        if self.state == 0:
+            w = message.split(" ")
+            matches = [name for name in w[1:] if name in self.supported]
+            if (w[0] != "supports") or (len(w) < 2) or (len(matches) == 0):
+                self.innerWrite(formatMessage("not-supported"))
+            else:
+                self.choice = matches[0]
+                self.innerWrite(formatMessage("protocol %s" % self.choice))
+                self.state += 1
+        elif self.state == 1:
+            w = message.split(" ")
+            if (w[0] != "protocol") or (len(w) != 2) or (w[1] != self.choice):
+                self.innerWrite(formatMessage("not-supported"))
+            else:
+                self.innerWrite(formatMessage("protocol %s" % w[1]))
+                self.state += 1
 
 class ProtocolNegociationTest(unittest.TestCase):
     def testServerNegociationSupported(self):
@@ -211,6 +313,21 @@ class ProtocolNegociationTest(unittest.TestCase):
             type, val, tb = e.inner()
             if type != NegociationError:
                 raise
+    
+    def testClientServerNegociation(self):
+        """ Negociation should work out with client and server using the same negociation code. """
+        names = []
+        def completed(prev):
+            try:
+                names.append(prev.result)
+            except Exception as e:
+                names.append(e)
+        c, s = MockAsyncPipe.create()
+        self.assertFalse(negociateProtocol(s, False).after(completed))
+        self.assertTrue(negociateProtocol(c, True).after(completed))
+        self.assertEqual(2, len(names))
+        for name in names:
+            self.assertTrue(name in Supported)
 
 if __name__ == '__main__':
     unittest.main()

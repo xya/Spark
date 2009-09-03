@@ -666,9 +666,10 @@ It should be noted that this protocol is stateful.
 \begin_layout Standard
 This section assumes a stream-based transport protocol (e.g.
  TCP) is used.
- This is why messages are separated by newlines.
+ This is why messages are prefixed with their sizes.
  This protocol could be used with message-based protocols (e.g.
- UDP, SCTP) without newline delimiters.
+ UDP, SCTP) without size prefixes.
+ 
 \end_layout
 
 \begin_layout Subsection
@@ -698,7 +699,7 @@ status open
 
 
 \backslash
-begin{verbatim}supports SPARKv2 SPARKv1
+begin{verbatim}001b supports SPARKv2 SPARKv1
 \backslash
 r
 \backslash
@@ -724,7 +725,7 @@ status open
 
 
 \backslash
-begin{verbatim}protocol SPARKv1
+begin{verbatim}0013 protocol SPARKv1
 \backslash
 r
 \backslash
@@ -779,7 +780,7 @@ status open
 
 
 \backslash
-begin{verbatim}protocol SPARKv1
+begin{verbatim}0013 protocol SPARKv1
 \backslash
 r
 \backslash
@@ -844,7 +845,7 @@ status open
 
 
 \backslash
-begin{verbatim}not-supported
+begin{verbatim}0010 not-supported
 \backslash
 r
 \backslash
@@ -934,39 +935,13 @@ a transaction identifier.
 \end_layout
 
 \begin_layout Itemize
-an optional parameters object, which is formatted in JSON and prefixed by
- its length in bytes
-\end_layout
-
-\begin_layout Itemize
-a newline (either 
-\begin_inset Quotes eld
-\end_inset
-
-
-\backslash
-r
-\backslash
-n
-\begin_inset Quotes erd
-\end_inset
-
- or 
-\begin_inset Quotes eld
-\end_inset
-
-
-\backslash
-n
-\begin_inset Quotes erd
-\end_inset
-
-)
+a parameter object, which is formatted in JSON
 \end_layout
 
 \begin_layout Standard
 Elements are separated with spaces.
- As an exception no space is supported before the trailing newline.
+ The use of newlines is optional and purely for ease of debugging.
+ Within a message, leading and trailing whitespace is ignored.
  The following is an example of a text message: 
 \begin_inset ERT
 status open
@@ -975,7 +950,7 @@ status open
 
 
 \backslash
-begin{verbatim}> start-transfer 27 10 {'id' : 1}
+begin{verbatim}001f > start-transfer 27 {'id' : 1}
 \backslash
 r
 \backslash
@@ -1028,7 +1003,7 @@ status open
 
 
 \backslash
-begin{verbatim}0x0408
+begin{verbatim}0408
 \backslash
 x00
 \backslash
@@ -1044,7 +1019,11 @@ x00
 \backslash
 x0B
 \backslash
-xFF<block data>
+xFF
+\backslash
+x04
+\backslash
+x00<block data>
 \backslash
 r
 \backslash
@@ -1059,9 +1038,19 @@ end{verbatim}
 \end_layout
 
 \begin_layout Standard
-The first two bytes indicate the type of the blob.
- 1 is the identifier for blocks (the only type of blob in the current version
- of the protocol).
+The first character of the message (
+\begin_inset Quotes eld
+\end_inset
+
+
+\backslash
+x00
+\begin_inset Quotes erd
+\end_inset
+
+) indicates that this is a binary message.
+ The following byte indicates the type of the blob --- 1 is the identifier
+ for blocks (the only type of blob in the current version of the protocol).
  Integer fields are in network order (big-endian order).
 \end_layout
 
@@ -1078,6 +1067,14 @@ The following is specific to blocks:
 \end_layout
 
 \begin_layout Itemize
+2 bytes indicating the size of the block (
+\begin_inset Formula $n$
+\end_inset
+
+) --- 1024 in this example
+\end_layout
+
+\begin_layout Itemize
 \begin_inset Formula $n$
 \end_inset
 
@@ -1089,7 +1086,7 @@ Grammar
 \end_layout
 
 \begin_layout Standard
-Below is a BNF-like grammar for a stream of messages.
+Below is a BNF-like grammar for protocol negociation messages.
 \end_layout
 
 \begin_layout Standard
@@ -1100,12 +1097,8 @@ status open
 
 
 \backslash
-begin{verbatim}message-stream = message | message newline message-stream
-\end_layout
-
-\begin_layout Plain Layout
-
-message = supported-protocol-names | protocol-name | text-message | blob
+begin{verbatim}message = supported-protocol-names | protocol-name | not-supporte
+d
 \end_layout
 
 \begin_layout Plain Layout
@@ -1120,61 +1113,107 @@ protocol-name = 'protocol' delimiter tag
 
 \begin_layout Plain Layout
 
-text-message = text-type delimiter transID delimiter text-data
-\end_layout
-
-\begin_layout Plain Layout
-
-blob = hex-size blob-data
-\end_layout
-
-\begin_layout Plain Layout
-
 protocol-list = tag | tag delimiter protocol-list
 \end_layout
 
 \begin_layout Plain Layout
 
-text-data = '0' | text-size delimiter <JSON object>
+delimiter = ' '
 \end_layout
 
 \begin_layout Plain Layout
 
-blob-data = '
+tag = [^ 
 \backslash
-x00
+t
 \backslash
-x01' block
+r
+\backslash
+n]+
+\backslash
+end{verbatim}
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+And a grammar for application messages.
+\end_layout
+
+\begin_layout Standard
+\begin_inset ERT
+status open
+
+\begin_layout Plain Layout
+
+
+\backslash
+begin{verbatim}message = text-message | blob
 \end_layout
 
 \begin_layout Plain Layout
 
-block = transferID blockID <binary data>
+text-message = text-message-contents | wspace text-message | text-message
+ wspace
 \end_layout
 
 \begin_layout Plain Layout
 
-delimiter = [ ]+
+text-message-contents = text-type delimiter transID delimiter <JSON object>
 \end_layout
 
 \begin_layout Plain Layout
 
-tag = [^ ]+
+blob = '
+\backslash
+x00' block-ID block-data
+\end_layout
+
+\begin_layout Plain Layout
+
+block-ID = '
+\backslash
+x01'
+\end_layout
+
+\begin_layout Plain Layout
+
+block-data = transferID blockID <binary data>
+\end_layout
+
+\begin_layout Plain Layout
+
+delimiter = ' '
+\end_layout
+
+\begin_layout Plain Layout
+
+wspace = ' ' | '
+\backslash
+t' | '
+\backslash
+r' | '
+\backslash
+n'
+\end_layout
+
+\begin_layout Plain Layout
+
+tag = [^ 
+\backslash
+t
+\backslash
+r
+\backslash
+n]+
 \end_layout
 
 \begin_layout Plain Layout
 
 text-type = '>' | '<' | '!'
-\end_layout
-
-\begin_layout Plain Layout
-
-hex-size = '0x' [0-9A-F]{4}
-\end_layout
-
-\begin_layout Plain Layout
-
-text-size = [0-9]+
 \backslash
 end{verbatim}
 \end_layout

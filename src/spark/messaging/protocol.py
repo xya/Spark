@@ -24,20 +24,27 @@ from spark.messaging.messages import MessageWriter
 
 __all__ = ["messageReader", "messageWriter", "negociateProtocol", "Supported", "NegociationError"]
 
-Supported = frozenset(["SPARKv1"])
+VERSION_1 = "SPARKv1"
+Supported = frozenset([VERSION_1])
 
-def messageReader(file, buffer=4096):
-    return MessageReader(file, buffer)
+def messageReader(file, protocol=VERSION_1):
+    if protocol == VERSION_1:
+        return MessageReader(file)
+    else:
+        raise ValueError("Protocol not supported")
 
-def messageWriter(file):
-    return MessageWriter(file)
+def messageWriter(file, protocol=VERSION_1):
+    if protocol == VERSION_1:
+        return MessageWriter(file)
+    else:
+        raise ValueError("Protocol not supported")
 
 def negociateProtocol(f, initiating):
     """
     Negociate a protocol with the remote peer, using the file for exchanging messages.
     'initiating' indicates whether the local user initiated the connection or not.
     """
-    n = Negociator(f, "\r\n")
+    n = Negociator(f)
     return n.negociate(initiating)
 
 class NegociationError(StandardError):
@@ -45,9 +52,8 @@ class NegociationError(StandardError):
     pass
 
 class Negociator(object):
-    def __init__(self, file, newline):
+    def __init__(self, file):
         self.file = file
-        self.newline = newline
     
     def negociate(self, initiating):
         cont = Future()
@@ -79,20 +85,16 @@ class Negociator(object):
         raise NegociationError("No protocol in the proposed list is supported")
     
     def writeSupportedProtocols(self):
-        data = "supports %s%s" % (" ".join(Supported), self.newline)
-        try:
-            self.file.write(data)
-            return Future.done()
-        except:
-            return Future.error()
+        data = self.formatMessage("supports %s" % " ".join(Supported))
+        return self.asyncWrite(data)
     
     def writeProtocol(self, name):
-        data = "protocol %s%s" % (name, self.newline)
-        return self.fakeAsyncWrite(data)
+        data = self.formatMessage("protocol %s" % name)
+        return self.asyncWrite(data)
     
     def readSupportedProtocols(self):
         cont = Future()
-        self.readLine().after(self.parseSupportedProtocol, cont)
+        self.readMessage().after(self.parseSupportedProtocol, cont)
         return cont
     
     def parseSupportedProtocol(self, prev, cont):
@@ -109,7 +111,7 @@ class Negociator(object):
     
     def readProtocol(self):
         cont = Future()
-        self.readLine().after(self.parseProtocol, cont)
+        self.readMessage().after(self.parseProtocol, cont)
         return cont
     
     def parseProtocol(self, prev, cont):
@@ -124,33 +126,41 @@ class Negociator(object):
         else:
             cont.completed(chunks[1])
     
-    def readLine(self):
+    def readMessage(self):
         cont = Future()
-        self.fakeAsyncRead(1).fork(self.dataRead, cont, cont, [], 0)
+        self.asyncRead(4).fork(self.sizeRead, cont, cont)
         return cont
     
-    def dataRead(self, read, cont, data, matched):
+    def sizeRead(self, read, cont):
+        try:
+            size = int(read, 16)
+        except:
+            cont.failed()
+        else:
+            self.asyncRead(size).fork(self.dataRead, cont, cont)
+    
+    def dataRead(self, read, cont):
         if len(read) > 0:
-            for c in read:
-                if c == self.newline[matched]:
-                    matched += 1
-                    if matched == len(self.newline):
-                        cont.completed("".join(data))
-                        return
-                else:
-                    data.append(c)
-            self.fakeAsyncRead(1).fork(self.dataRead, cont, cont, data, matched)
+            cont.completed(read.strip())
         else:
             cont.error(EOFError())
     
-    def fakeAsyncRead(self, size=None):
+    def formatMessage(self, m):
+        data = " %s\r\n" % str(m)
+        return "%04x%s" % (len(data), data)
+    
+    def asyncRead(self, size=None):
+        if hasattr(self.file, "beginRead"):
+            return self.file.beginRead(size)
         try:
             data = self.file.read(size)
             return Future.done(data)
         except:
             return Future.error()
     
-    def fakeAsyncWrite(self, data):
+    def asyncWrite(self, data):
+        if hasattr(self.file, "beginWrite"):
+            return self.file.beginWrite(data)
         try:
             self.file.write(data)
             return Future.done()

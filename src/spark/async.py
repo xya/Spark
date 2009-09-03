@@ -231,6 +231,35 @@ class Future(object):
                 elif hasattr(completeCont, "__call__"):
                     completeCont(*results)
         self.after(handler)
+    
+    def loop(self, cont, iterFunc, *args):
+        """
+        Execute a "continuation-style" loop when the operation completes.
+        Each iteration calls iterFunc with the specified arguments.
+        The continuation is executed at the end of the loop.
+        
+        iterFunc should return a future (in which case it will be called again
+        when the future completes), or a result (sequence of results or None).
+        """
+        def loopHandler(prev):
+            try:
+                results = prev.results
+            except:
+                cont.failed()
+                return
+            newArgs = results + args
+            try:
+                ret = iterFunc(*newArgs)
+            except:
+                cont.failed()
+                return
+            if isinstance(ret, Future):
+                ret.after(loopHandler)
+            elif hasattr(ret, "__len__"):
+                cont.completed(*ret)
+            else:
+                cont.completed()
+        return self.after(loopHandler)
 
 class FutureFrozenError(StandardError):
     """ Exception raised when one tries to call completed() or failed() twice on a future. """
