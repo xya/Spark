@@ -18,14 +18,26 @@
  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
+#include <stdio.h>
+#include <unistd.h>
+#include <malloc.h>
+#include <string.h>
+
 #include <libssh/libssh.h>
 #include <libssh/server.h>
 
 int main(int argc, char **argv)
 {
     char *host = "127.0.0.1";
-    int port = 4551;
+    int port = 22;
     return client_pipe(host, port);
+}
+
+int session_error(SSH_SESSION *session, const char *tag)
+{
+    const char *error = ssh_get_error(session);
+    fprintf(stderr, "error %s %lu %s\n", tag, (unsigned long)strlen(error), error);
+    return 1;
 }
 
 // Connect to a SSH server.
@@ -35,66 +47,50 @@ int client_pipe(char *host, int port)
     SSH_OPTIONS *opt = ssh_options_new();
     ssh_options_set_host(opt, host); 
     ssh_options_set_port(opt, port);
+    ssh_options_set_username(opt, "xya");
     
-    SSH_SESSION *s = ssh_connect(opt);
-    if(!s)
-    {
-        fprintf(STDERR, "error connect %s\n", ssh_get_error(s));
-        return 1;
-    }
-    else
-    {
-        fprintf(STDERR, "connected\n");
-    }
+    SSH_SESSION *s = ssh_new();
+    ssh_set_options(s, opt);
+    if(ssh_connect(s) < 0)
+        return session_error(s, "connect");
+    fprintf(stderr, "connected\n");
     
-    char hash[MD5_DIGEST_LEN];
-    ssh_get_pubkey_hash(s, hash);
-    fprintf(STDERR, "public-key %s\n", hash);
+    unsigned char *hash;
+    int hashlen = ssh_get_pubkey_hash(s, &hash);
+    char *hashstr = ssh_get_hexa(hash, hashlen);
+    fprintf(stderr, "public-key %s\n", hashstr);
+    free(hashstr);
+    free(hash);
     
     int keytype;
     ssh_string pub = publickey_from_file(s, "test-client-key.pub", &keytype);
-    if(SSH_AUTH_SUCCESS != ssh_userauth_offer_pubkey(s, "sshpipe", keytype, pub))
-    {
-        fprintf(STDERR, "error offer-public-key %s\n", ssh_get_error(s));
-        return 1;
-    }
+    if(!pub)
+        return session_error(s, "open-public-key");
+    if(SSH_AUTH_SUCCESS != ssh_userauth_offer_pubkey(s, NULL, keytype, pub))
+        return session_error(s, "offer-public-key");
     
     ssh_private_key priv = privatekey_from_file(s, "test-client-key.priv", keytype, NULL);
     if(!priv)
-    {
-        fprintf(STDERR, "error open-private-key %s\n", ssh_get_error(s));
-        return 1;
-    }
-    if(SSH_AUTH_SUCCESS != ssh_userauth_pubkey(s, "sshpipe", pub, priv))
-    {
-        fprintf(STDERR, "error offer-public-key %s\n", ssh_get_error(s));
-        return 1;
-    }
+        return session_error(s, "open-private-key");
+    if(SSH_AUTH_SUCCESS != ssh_userauth_pubkey(s, NULL, pub, priv))
+        return session_error(s, "user-auth");
     string_free(pub);
-    private_key_free(priv);
+    privatekey_free(priv);
     
     ssh_channel chan = channel_new(s);
     if(!chan)
-    {
-        fprintf(STDERR, "error create-channel %s\n", ssh_get_error(s));
-        return 1;
-    }
-    else if(SSH_SUCCESS != channel_open_session(chan))
-    {
-        fprintf(STDERR, "error open-channel %s\n", ssh_get_error(s));
-        return 1;
-    }
-    else
-    {
-        fprintf(STDERR, "channel-opened\n");
-    }
+        return session_error(s, "create-channel");
+    if(channel_open_session(chan) < 0)
+        return session_error(s, "open-channel");
+    fprintf(stderr, "channel-opened\n");
+    
     char buf[4096];
-    int read;
+    int n;
     do
     {
-        read = read(STDIN, buf, 4096);
-        if(read > 0)
-            channel_write(chan, buf, read);
+        n = read(0, buf, 4096);
+        if(n > 0)
+            channel_write(chan, buf, n);
     } while (read > 0);
     channel_send_eof(chan);
     channel_free(chan);
@@ -110,6 +106,7 @@ int client_pipe(char *host, int port)
 
 // Listen for incoming SSH connections.
 // When a connection is established, write all data received to stdout.
+/*
 int server_pipe(char *host, int port)
 {
     SSH_OPTIONS *opt = ssh_options_new();
@@ -193,3 +190,4 @@ void server_handle_message(SSH_MESSAGE *m, int type, int subtype, int *state)
     }
     ssh_message_reply_default(m);
 }
+*/
