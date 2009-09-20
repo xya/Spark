@@ -29,11 +29,17 @@
 int main(int argc, char **argv)
 {
     char *host = "127.0.0.1";
-    int port = 22;
-    return client_pipe(host, port);
+    int port = 4551;
+    if(argc > 1)
+        return server_pipe(host, port);
+    else
+        return client_pipe(host, port);
 }
 
-int session_error(SSH_SESSION *session, const char *tag)
+char *pubkey_hash(ssh_string key);
+int authenticate(const char *keyhash, int partial);
+
+int session_error(void *session, const char *tag)
 {
     const char *error = ssh_get_error(session);
     fprintf(stderr, "error %s %lu %s\n", tag, (unsigned long)strlen(error), error);
@@ -45,7 +51,7 @@ int session_error(SSH_SESSION *session, const char *tag)
 int client_pipe(char *host, int port)
 {
     SSH_OPTIONS *opt = ssh_options_new();
-    ssh_options_set_host(opt, host); 
+    ssh_options_set_host(opt, host);
     ssh_options_set_port(opt, port);
     ssh_options_set_username(opt, "xya");
     
@@ -53,14 +59,18 @@ int client_pipe(char *host, int port)
     ssh_set_options(s, opt);
     if(ssh_connect(s) < 0)
         return session_error(s, "connect");
-    fprintf(stderr, "connected\n");
     
-    unsigned char *hash;
-    int hashlen = ssh_get_pubkey_hash(s, &hash);
-    char *hashstr = ssh_get_hexa(hash, hashlen);
-    fprintf(stderr, "public-key %s\n", hashstr);
-    free(hashstr);
-    free(hash);
+    char *hash = pubkey_hash(ssh_get_pubkey(s));
+    if(authenticate(hash, 0))
+    {
+        fprintf(stderr, "! authenticated %s\n", hash);
+        free(hash);
+    }
+    else
+    {
+        free(hash);
+        return 1;
+    }
     
     int keytype;
     ssh_string pub = publickey_from_file(s, "test-client-key.pub", &keytype);
@@ -69,7 +79,7 @@ int client_pipe(char *host, int port)
     if(SSH_AUTH_SUCCESS != ssh_userauth_offer_pubkey(s, NULL, keytype, pub))
         return session_error(s, "offer-public-key");
     
-    ssh_private_key priv = privatekey_from_file(s, "test-client-key.priv", keytype, NULL);
+    ssh_private_key priv = privatekey_from_file(s, "test-client-key", keytype, NULL);
     if(!priv)
         return session_error(s, "open-private-key");
     if(SSH_AUTH_SUCCESS != ssh_userauth_pubkey(s, NULL, pub, priv))
@@ -82,7 +92,7 @@ int client_pipe(char *host, int port)
         return session_error(s, "create-channel");
     if(channel_open_session(chan) < 0)
         return session_error(s, "open-channel");
-    fprintf(stderr, "channel-opened\n");
+    fprintf(stderr, "! channel-opened\n");
     
     char buf[4096];
     int n;
@@ -104,30 +114,27 @@ int client_pipe(char *host, int port)
 #define SERVER_AUTHENTICATED    2
 #define SERVER_CHANNEL_OPENED   3
 
+void server_handle_message(SSH_MESSAGE *, int, int, int *);
+
 // Listen for incoming SSH connections.
 // When a connection is established, write all data received to stdout.
-/*
 int server_pipe(char *host, int port)
 {
     SSH_OPTIONS *opt = ssh_options_new();
-    ssh_options_set_dsa_server_key(opt, "test-server-key");
-    ssh_options_set_auth_methods(opt, SSH_AUTH_METHOD_PUBLICKEY);
+    ssh_options_set_host(opt, host);
+    ssh_options_set_port(opt, port);
+    ssh_options_set_rsa_server_key(opt, "test-server-key");
     
     SSH_BIND *b = ssh_bind_new();
     ssh_bind_set_options(b, opt);
     if(ssh_bind_listen(b) < 0)
-    {
-        fprintf(STDERR, "error listen %s\n", ssh_get_error(b));
-        return 1;
-    }
+        return session_error(b, "listen");
     
     SSH_SESSION *s = ssh_bind_accept(b);
     if(!s)
-    {
-        fprintf(STDERR, "error accept %s\n", ssh_get_error(b));
-        return 1;
-    }
-    fprintf(STDERR, "connected\n");
+        return session_error(b, "accept");
+    if(ssh_accept(s) < 0)
+        return session_error(s, "handshake");
     
     int state = SERVER_CONNECTED;
     while(1)
@@ -150,28 +157,52 @@ int server_pipe(char *host, int port)
         }
         else
         {
-            fprintf(STDERR, "error session %s\n", ssh_get_error(s));
-            return 1;
+            return session_error(s, "session");
         }
     }
 }
 
 void server_handle_message(SSH_MESSAGE *m, int type, int subtype, int *state)
 {
+    int handled = 0;
     if((*state == SERVER_CONNECTED) && (type == SSH_REQUEST_AUTH) && (subtype == SSH_AUTH_METHOD_PUBLICKEY))
     {
         ssh_public_key key = ssh_message_auth_publickey(m);
         ssh_string keystr = publickey_to_string(key);
-        ssh_string algostr = string_from_char(ssh_type_to_char(key->type));
-        fprintf(STDERR, "public-key\n");
-        ssh_message_auth_reply_pk_ok(m, 0, keystr);
+        char *keyhash = pubkey_hash(keystr);
+        int has_sig = ssh_message_auth_sig_state(m);
+        if(has_sig == 0)
+        {
+            if(authenticate(keyhash, 1))
+            {
+                //FIXME: type detection
+                ssh_string algostr = string_from_char("ssh-rsa");
+                ssh_message_auth_reply_pk_ok(m, algostr, keystr);
+                string_free(algostr);
+                handled = 1;
+            }
+        }
+        else if(has_sig == 1)
+        {
+            if(authenticate(keyhash, 0))
+            {
+                fprintf(stderr, "! authenticated %s\n", keyhash);
+                ssh_message_auth_reply_success(m, 0);
+                *state = SERVER_AUTHENTICATED;
+            }
+            else
+            {
+                ssh_message_reply_default(m);
+                *state = SERVER_CLOSED;
+            }
+            handled = 1;
+        }
         string_free(keystr);
-        *state = SERVER_AUTHENTICATED;
-        return;
+        free(keyhash);
     }
     else if((*state == SERVER_AUTHENTICATED) && (type == SSH_REQUEST_CHANNEL_OPEN) && (subtype == SSH_CHANNEL_SESSION))
     {
-        fprintf(STDERR, "channel-opened\n");
+        fprintf(stderr, "! channel-opened\n");
         ssh_channel chan = ssh_message_channel_request_open_reply_accept(m);
         if(chan)
         {
@@ -181,13 +212,31 @@ void server_handle_message(SSH_MESSAGE *m, int type, int subtype, int *state)
             {
                 read = channel_read_buffer(chan, buf, 0, 0);
                 if(read > 0)
-                    write(STDOUT, buffer_get(buf), buffer_get_len(buf));
+                    write(1, buffer_get(buf), buffer_get_len(buf));
             } while (read > 0);
             buffer_free(buf);
         }
+        channel_close(chan);
         *state = SERVER_CLOSED;
-        return;
+        handled = 1;
     }
-    ssh_message_reply_default(m);
+    if(!handled)
+        ssh_message_reply_default(m);
 }
-*/
+
+char *pubkey_hash(ssh_string key)
+{
+    unsigned char *hash = NULL;
+    if(ssh_hash_string_md5(key, &hash) < 0)
+        return NULL;
+    
+    char *hashstr = ssh_get_hexa(hash, MD5_DIGEST_LEN);
+    free(hash);
+    return hashstr;
+}
+
+int authenticate(const char *keyhash, int partial)
+{
+    fprintf(stderr, "> user-auth %i %s\n", partial ? 0 : 1, keyhash);
+    return 1;
+}
