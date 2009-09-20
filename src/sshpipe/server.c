@@ -19,102 +19,12 @@
 */
 
 #include <stdio.h>
-#include <unistd.h>
 #include <malloc.h>
-#include <string.h>
-
-#include <libssh/libssh.h>
+#include <unistd.h>
 #include <libssh/server.h>
 
-int main(int argc, char **argv)
-{
-    char *host = "127.0.0.1";
-    int port = 4551;
-    if(argc > 1)
-        return server_pipe(host, port);
-    else
-        return client_pipe(host, port);
-}
-
-char *pubkey_hash(ssh_string key);
-int authenticate(const char *keyhash, int partial);
-
-int session_error(void *session, const char *tag)
-{
-    const char *error = ssh_get_error(session);
-    fprintf(stderr, "error %s %lu %s\n", tag, (unsigned long)strlen(error), error);
-    return 1;
-}
-
-// Connect to a SSH server.
-// When the connection is established, read data from stdin and send it to the server.
-int client_pipe(char *host, int port)
-{
-    SSH_OPTIONS *opt = ssh_options_new();
-    ssh_options_set_host(opt, host);
-    ssh_options_set_port(opt, port);
-    ssh_options_set_username(opt, "xya");
-    
-    SSH_SESSION *s = ssh_new();
-    ssh_set_options(s, opt);
-    if(ssh_connect(s) < 0)
-        return session_error(s, "connect");
-    
-    char *hash = pubkey_hash(ssh_get_pubkey(s));
-    if(authenticate(hash, 0))
-    {
-        fprintf(stderr, "! authenticated %s\n", hash);
-        free(hash);
-    }
-    else
-    {
-        free(hash);
-        return 1;
-    }
-    
-    int keytype;
-    ssh_string pub = publickey_from_file(s, "test-client-key.pub", &keytype);
-    if(!pub)
-        return session_error(s, "open-public-key");
-    if(SSH_AUTH_SUCCESS != ssh_userauth_offer_pubkey(s, NULL, keytype, pub))
-        return session_error(s, "offer-public-key");
-    
-    ssh_private_key priv = privatekey_from_file(s, "test-client-key", keytype, NULL);
-    if(!priv)
-        return session_error(s, "open-private-key");
-    if(SSH_AUTH_SUCCESS != ssh_userauth_pubkey(s, NULL, pub, priv))
-        return session_error(s, "user-auth");
-    string_free(pub);
-    privatekey_free(priv);
-    
-    ssh_channel chan = channel_new(s);
-    if(!chan)
-        return session_error(s, "create-channel");
-    if(channel_open_session(chan) < 0)
-        return session_error(s, "open-channel");
-    fprintf(stderr, "! channel-opened\n");
-    
-    char buf[4096];
-    int n;
-    do
-    {
-        n = read(0, buf, 4096);
-        if(n > 0)
-            channel_write(chan, buf, n);
-    } while (read > 0);
-    channel_send_eof(chan);
-    channel_free(chan);
-    ssh_disconnect(s);
-    ssh_finalize();
-    return 0;
-}
-
-#define SERVER_CLOSED           0
-#define SERVER_CONNECTED        1
-#define SERVER_AUTHENTICATED    2
-#define SERVER_CHANNEL_OPENED   3
-
-void server_handle_message(SSH_MESSAGE *, int, int, int *);
+#include "common.h"
+#include "server.h"
 
 // Listen for incoming SSH connections.
 // When a connection is established, write all data received to stdout.
@@ -222,21 +132,4 @@ void server_handle_message(SSH_MESSAGE *m, int type, int subtype, int *state)
     }
     if(!handled)
         ssh_message_reply_default(m);
-}
-
-char *pubkey_hash(ssh_string key)
-{
-    unsigned char *hash = NULL;
-    if(ssh_hash_string_md5(key, &hash) < 0)
-        return NULL;
-    
-    char *hashstr = ssh_get_hexa(hash, MD5_DIGEST_LEN);
-    free(hash);
-    return hashstr;
-}
-
-int authenticate(const char *keyhash, int partial)
-{
-    fprintf(stderr, "> user-auth %i %s\n", partial ? 0 : 1, keyhash);
-    return 1;
 }
