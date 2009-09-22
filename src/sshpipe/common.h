@@ -25,6 +25,9 @@
 
 char *pubkey_hash(ssh_string key);
 int authenticate(const char *keyhash, int partial);
-int session_error(void *session, const char *tag);
+void session_event(void *session, const char *tag, const char *data);
+void session_error(void *session, const char *tag);
+void channel_to_file(ssh_channel chan, int fd);
+void channel_from_file(ssh_channel chan, int fd);
 
 #endif

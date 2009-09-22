@@ -28,7 +28,7 @@
 
 // Listen for incoming SSH connections.
 // When a connection is established, write all data received to stdout.
-int server_pipe(char *host, int port)
+void server_pipe(char *host, int port)
 {
     SSH_OPTIONS *opt = ssh_options_new();
     ssh_options_set_host(opt, host);
@@ -38,13 +38,13 @@ int server_pipe(char *host, int port)
     SSH_BIND *b = ssh_bind_new();
     ssh_bind_set_options(b, opt);
     if(ssh_bind_listen(b) < 0)
-        return session_error(b, "listen");
+        session_error(b, "listen");
     
     SSH_SESSION *s = ssh_bind_accept(b);
     if(!s)
-        return session_error(b, "accept");
+        session_error(b, "accept");
     if(ssh_accept(s) < 0)
-        return session_error(s, "handshake");
+        session_error(s, "handshake");
     
     int state = SERVER_CONNECTED;
     while(1)
@@ -55,24 +55,24 @@ int server_pipe(char *host, int port)
             int type = ssh_message_type(m);
             int subtype = ssh_message_subtype(m);
             ssh_message_auth_set_methods(m, SSH_AUTH_METHOD_PUBLICKEY);
-            server_handle_message(m, type, subtype, &state);
+            server_handle_message(s, m, type, subtype, &state);
             ssh_message_free(m);
             if(state == SERVER_CLOSED)
             {
                 ssh_disconnect(s);
                 ssh_bind_free(b);
                 ssh_finalize();
-                return 0;
+                return;
             }
         }
         else
         {
-            return session_error(s, "session");
+            session_error(s, "session");
         }
     }
 }
 
-void server_handle_message(SSH_MESSAGE *m, int type, int subtype, int *state)
+void server_handle_message(SSH_SESSION *s, SSH_MESSAGE *m, int type, int subtype, int *state)
 {
     int handled = 0;
     if((*state == SERVER_CONNECTED) && (type == SSH_REQUEST_AUTH) && (subtype == SSH_AUTH_METHOD_PUBLICKEY))
@@ -88,47 +88,39 @@ void server_handle_message(SSH_MESSAGE *m, int type, int subtype, int *state)
                 //FIXME: type detection
                 ssh_string algostr = string_from_char("ssh-rsa");
                 ssh_message_auth_reply_pk_ok(m, algostr, keystr);
-                string_free(algostr);
                 handled = 1;
+                string_free(algostr);
             }
         }
         else if(has_sig == 1)
         {
             if(authenticate(keyhash, 0))
             {
-                fprintf(stderr, "! authenticated %s\n", keyhash);
+                session_event(s, "authenticated", keyhash);
                 ssh_message_auth_reply_success(m, 0);
+                handled = 1;
                 *state = SERVER_AUTHENTICATED;
             }
             else
             {
                 ssh_message_reply_default(m);
+                handled = 1;
                 *state = SERVER_CLOSED;
             }
-            handled = 1;
         }
         string_free(keystr);
         free(keyhash);
     }
     else if((*state == SERVER_AUTHENTICATED) && (type == SSH_REQUEST_CHANNEL_OPEN) && (subtype == SSH_CHANNEL_SESSION))
     {
-        fprintf(stderr, "! channel-opened\n");
         ssh_channel chan = ssh_message_channel_request_open_reply_accept(m);
-        if(chan)
-        {
-            ssh_buffer buf = buffer_new();
-            int read;
-            do
-            {
-                read = channel_read_buffer(chan, buf, 0, 0);
-                if(read > 0)
-                    write(1, buffer_get(buf), buffer_get_len(buf));
-            } while (read > 0);
-            buffer_free(buf);
-        }
-        channel_close(chan);
-        *state = SERVER_CLOSED;
+        if(!chan)
+            session_error(s, "open-channel");
         handled = 1;
+        session_event(s, "channel-opened", NULL);
+        channel_to_file(chan, 1);
+        channel_free(chan);
+        *state = SERVER_CLOSED;
     }
     if(!handled)
         ssh_message_reply_default(m);

@@ -21,13 +21,14 @@
 #include <stdio.h>
 #include <malloc.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 #include "common.h"
 #include "client.h"
 
 // Connect to a SSH server.
 // When the connection is established, read data from stdin and send it to the server.
-int client_pipe(char *host, int port)
+void client_pipe(char *host, int port)
 {
     SSH_OPTIONS *opt = ssh_options_new();
     ssh_options_set_host(opt, host);
@@ -42,48 +43,38 @@ int client_pipe(char *host, int port)
     char *hash = pubkey_hash(ssh_get_pubkey(s));
     if(authenticate(hash, 0))
     {
-        fprintf(stderr, "! authenticated %s\n", hash);
+        session_event(s, "authenticated", hash);
         free(hash);
     }
     else
     {
         free(hash);
-        return 1;
+        exit(1);
     }
     
     int keytype;
     ssh_string pub = publickey_from_file(s, "test-client-key.pub", &keytype);
     if(!pub)
-        return session_error(s, "open-public-key");
+        session_error(s, "open-public-key");
     if(SSH_AUTH_SUCCESS != ssh_userauth_offer_pubkey(s, NULL, keytype, pub))
-        return session_error(s, "offer-public-key");
+        session_error(s, "offer-public-key");
     
     ssh_private_key priv = privatekey_from_file(s, "test-client-key", keytype, NULL);
     if(!priv)
-        return session_error(s, "open-private-key");
+        session_error(s, "open-private-key");
     if(SSH_AUTH_SUCCESS != ssh_userauth_pubkey(s, NULL, pub, priv))
-        return session_error(s, "user-auth");
+        session_error(s, "user-auth");
     string_free(pub);
     privatekey_free(priv);
     
     ssh_channel chan = channel_new(s);
     if(!chan)
-        return session_error(s, "create-channel");
+        session_error(s, "create-channel");
     if(channel_open_session(chan) < 0)
-        return session_error(s, "open-channel");
-    fprintf(stderr, "! channel-opened\n");
-    
-    char buf[4096];
-    int n;
-    do
-    {
-        n = read(0, buf, 4096);
-        if(n > 0)
-            channel_write(chan, buf, n);
-    } while (read > 0);
-    channel_send_eof(chan);
+        session_error(s, "open-channel");
+    session_event(s, "channel-opened", NULL);
+    channel_from_file(chan, 0);
     channel_free(chan);
     ssh_disconnect(s);
     ssh_finalize();
-    return 0;
 }

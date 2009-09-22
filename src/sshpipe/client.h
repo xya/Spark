@@ -21,6 +21,6 @@
 #ifndef SSHPIPE_CLIENT_H
 #define SSHPIPE_CLIENT_H
 
-int client_pipe(char *host, int port);
+void client_pipe(char *host, int port);
 
 #endif

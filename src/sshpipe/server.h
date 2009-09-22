@@ -28,6 +28,6 @@
 #define SERVER_AUTHENTICATED    2
 #define SERVER_CHANNEL_OPENED   3
 
-int server_pipe(char *host, int port);
-void server_handle_message(SSH_MESSAGE *m, int type, int subtype, int *state);
+void server_pipe(char *host, int port);
+void server_handle_message(SSH_SESSION *s, SSH_MESSAGE *m, int type, int subtype, int *state);
 #endif
