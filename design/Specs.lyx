@@ -479,14 +479,13 @@ sendMessage
 \emph on
 receiveMessage
 \emph default
- methods can be called either synchronously (the method blocks until the
- message is sent/received) or asynchronously (i.e.
- in a non-blocking way).
- By default each method is blocking, but the caller can pass a 
+ methods are asynchronous by default, that is they don't wait until the
+ message is sent or received to return.
+ Instead they return a 
 \emph on
 Future
 \emph default
- object to make it non-blocking.
+ object.
  These objects accept a callback to notify the caller of the task's completion;
  alternatively the caller can retrieve the Future's result, which blocks
  until the task is completed.
@@ -599,12 +598,12 @@ poll
 \begin_inset Float figure
 wide false
 sideways false
-status open
+status collapsed
 
 \begin_layout Plain Layout
 \align center
 \begin_inset Graphics
-	filename Model.dia
+	filename Model.eps
 	display false
 	scale 45
 
@@ -978,17 +977,19 @@ blobs
 \end_inset
 
 ) is very simple.
- Before the binary data is added a text prefix indicating its size.
- This prefix consists of the text 
+ A blob starts with the 
 \begin_inset Quotes eld
 \end_inset
 
-0x
+
+\backslash
+x00
 \begin_inset Quotes erd
 \end_inset
 
- followed by six hexadecimal digits.
- A newline follows the binary data.
+ byte and another byte indicating the blob's type.
+ What follows is type-specific binary data.
+ A newline may follow the binary data.
 \end_layout
 
 \begin_layout Standard
