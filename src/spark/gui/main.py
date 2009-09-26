@@ -22,6 +22,8 @@ import sys
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from spark.gui.filelist import FileList, FileInfoWidget, iconPath
+from spark.fileshare.files import SharedList, SharedFile
+from spark.fileshare.common import TransferInfo, TransferLocation
 
 __all__ = ["MainView"]
 
@@ -36,19 +38,27 @@ class MainView(object):
         MainView.app.exec_()
 
 class MainWindow(QMainWindow):
-    #toolbarActions = [
-    #    ("status/network-transmit-receive", "Connect"),
-    #    
-    #]
-    
     def __init__(self, parent=None):
         super(MainWindow, self).__init__(parent)
         self.setWindowIcon(QIcon(iconPath("emblems/emblem-new", 16)))
         self.setWindowTitle("Spark")
         self.actions = {}
         self.initToolbar()
-        self.initFileList()
+        self.initTransferList()
         self.initStatusBar()
+        self.sharedFiles = SharedList()
+        self.sharedFiles.updated += self.sharedFilesUpdated
+        self.createSharedFiles()
+    
+    def createSharedFiles(self):
+        self.sharedFiles.addFile(SharedFile("Report.pdf", 3 * 1024 * 1024,
+            mimeType="mimetypes/gnome-mime-application-pdf"))
+        self.sharedFiles.addFile(SharedFile("Spark-0.1_noarch.deb", 1 * 1024 * 1024,
+            mimeType="mimetypes/deb"))
+        self.sharedFiles.addFile(SharedFile("SeisRoX-2.0.9660.exe", 1 * 1024 * 1024,
+            mimeType="mimetypes/deb"))
+        self.sharedFiles.addFile(SharedFile("TestArchive.zip", 117 * 1024 * 1024,
+            mimeType="mimetypes/zip"))
     
     def createAction(self, icon, size, text, help=None):
         action = QAction(QIcon(iconPath(icon, size)), text, self)
@@ -76,20 +86,17 @@ class MainWindow(QMainWindow):
             else:
                 self.toolbar.addSeparator()
         self.toolbar.setMovable(False)
-        self.updateSelectedFile(-1)
     
     def initStatusBar(self):
         self.connStatus = QLabel(self.statusBar())
-        self.connStatus.setPixmap(QPixmap(iconPath("status/network-idle", 24)))
-        self.connStatus.setToolTip("Connected to a peer")
-        self.myIP = QLabel("My IP: 127.0.0.1", self.statusBar())
-        self.transferCount = QLabel("1 transfer(s)", self.statusBar())
+        self.myIP = QLabel(self.statusBar())
+        self.transferCount = QLabel(self.statusBar())
         self.uploadSpeedIcon = QLabel(self.statusBar())
         self.uploadSpeedIcon.setPixmap(QPixmap(iconPath("actions/up", 24)))
-        self.uploadSpeedText = QLabel("0 KiB/s", self.statusBar())
+        self.uploadSpeedText = QLabel(self.statusBar())
         self.downloadSpeedIcon = QLabel(self.statusBar())
         self.downloadSpeedIcon.setPixmap(QPixmap(iconPath("actions/down", 24)))
-        self.downloadSpeedText = QLabel("50 KiB/s", self.statusBar())
+        self.downloadSpeedText = QLabel(self.statusBar())
         self.statusBar().addWidget(self.connStatus)
         self.statusBar().addWidget(self.myIP, 2)
         self.statusBar().addWidget(self.transferCount)
@@ -98,51 +105,58 @@ class MainWindow(QMainWindow):
         self.statusBar().addWidget(self.downloadSpeedIcon)
         self.statusBar().addWidget(self.downloadSpeedText)
     
-    def initFileList(self):
-        self.sharedFiles = FileList()
-        file = self.createFile("Report.pdf", "Size: 3 MiB", "mimetypes/gnome-mime-application-pdf",
-                   None, None, "categories/applications-internet")
-        self.sharedFiles.addItem(file)
-        
-        file = self.createFile("Spark-0.1_noarch.deb", "Size: 1 MiB", "mimetypes/deb",
-                   "actions/go-home", None, "categories/applications-internet")
-        file.setTransferTime("Received in 10 secondes (100 KiB/s)")
-        self.sharedFiles.addItem(file)
-        
-        file = self.createFile("SeisRoX-2.0.9660.exe", "Received 5.25 MiB out of 22 MiB (24.5%)", "mimetypes/exec",
-                   "actions/go-home", "actions/go-previous", "categories/applications-internet")
-        file.setTransferProgress(24)
-        file.setTransferTime("5 minutes left (50 KiB/s)")
-        self.sharedFiles.addItem(file)
-        
-        file = self.createFile("TestArchive.zip", "Size: 117 MiB", "mimetypes/zip",
-                   "actions/go-home", None, None)
-        self.sharedFiles.addItem(file)
-        
-        self.sharedFiles.addSpace()
-        self.connect(self.sharedFiles, SIGNAL("selectionChanged"), self.updateSelectedFile)
-        
-        self.setCentralWidget(self.sharedFiles)
-        self.sharedFiles.setFocus()
+    def updateStatusBar(self):
+        self.connStatus.setPixmap(QPixmap(iconPath("status/network-idle", 24)))
+        self.connStatus.setToolTip("Connected to a peer")
+        self.myIP.setText("My IP: 127.0.0.1")
+        self.transferCount.setText("%d transfer(s)" % self.sharedFiles.activeTransfers)
+        self.uploadSpeedText.setText("%s/s" % self.formatSize(self.sharedFiles.uploadSpeed))
+        self.downloadSpeedText.setText("%s/s" % self.formatSize(self.sharedFiles.downloadSpeed))
     
-    def createFile(self, name, size, icon, *args):
+    def initTransferList(self):
+        self.transferList = FileList()
+        self.connect(self.transferList, SIGNAL("selectionChanged"), self.updateSelectedTransfer)
+        self.setCentralWidget(self.transferList)
+        self.transferList.setFocus()
+    
+    def updateTransferList(self):
+        self.transferList.clear()
+        for file in self.sharedFiles:
+            self.transferList.addItem(self.createFileWidget(file))
+        self.transferList.addSpace()
+        self.updateSelectedTransfer(-1)
+    
+    def createFileWidget(self, file):
         widget = FileInfoWidget(self)
-        widget.setName(name)
-        widget.setTransferSize(size)
-        widget.setTypeIcon(icon)
-        for i, icon in enumerate(args):
-            widget.setStatusIcon(icon, i)
+        widget.setName(file.name)
+        widget.setTransferSize("Size: %s" % self.formatSize(file.size))
+        if file.mimeType:
+            widget.setTypeIcon(file.mimeType)
+        widget.setStatusIcon(file.isLocal and "actions/go-home" or None, 0)
+        if file.isReceiving:
+            widget.setStatusIcon("actions/go-previous", 1)
+        elif file.isSending:
+            widget.setStatusIcon("actions/go-next", 1)
+        else:
+            widget.setStatusIcon(None, 1)
+        widget.setStatusIcon(file.isRemote and "categories/applications-internet" or None, 2)
+        if file.transfer:
+            widget.setTransferProgress(file.transfer.progress)
+            widget.setTransferTime(file.transfer.duration)
         return widget
     
-    def updateSelectedFile(self, index):
-        keys = ["remove", "start", "pause", "stop", "open"]
-        if index < 0:
-            values = [False, False, False, False, False]
-        elif index == 0:
-            values = [True, True, False, False, False]
-        elif (index == 1) or (index == 3):
-            values = [True, False, False, False, True]
-        elif index == 2:
-            values = [False, False, True, True, False]
-        for key, value in zip(keys, values):
-            self.actions[key].setEnabled(value)
+    def updateSelectedTransfer(self, index):
+        file = self.sharedFiles[index]
+        for key in ("add", "remove", "start", "pause", "stop", "open"):
+            self.actions[key].setEnabled(self.sharedFiles.isActionAvailable(key, file))
+    
+    def sharedFilesUpdated(self):
+        self.updateTransferList()
+        self.updateStatusBar()
+    
+    Units = [("KiB", 1024), ("MiB", 1024 * 1024), ("GiB", 1024 * 1024 * 1024)]
+    def formatSize(self, size):
+        for unit, count in reversed(MainWindow.Units):
+            if size >= count:
+                return "%0.2f %s" % (size / float(count), unit)
+        return "%d byte" % size

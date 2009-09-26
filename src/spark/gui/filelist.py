@@ -54,6 +54,12 @@ class CustomList(QWidget):
     def addSpace(self):
         self.layout().addStretch()
     
+    def clear(self):
+        """ Remove all the items from the list. """
+        for i in range(0, self.layout().count()):
+            self.layout().takeAt(0)
+        self.items = []
+    
     def updateItems(self):
         for i in range(0, len(self.items)):
             self.updateItemPalette(i)
@@ -149,6 +155,9 @@ class FileList(QWidget):
     
     def addSpace(self):
         self.list.addSpace()
+    
+    def clear(self):
+        self.list.clear()
 
 class FileInfoWidget(QWidget):
     """ Shows the relevant information about a file or transfer to the user. """

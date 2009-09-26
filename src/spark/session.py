@@ -98,6 +98,12 @@ class Session(object):
             else:
                 return Future.done(False)
     
+    @property
+    def isActive(self):
+        """ Is the session currently active? """ 
+        with self.lock:
+            return (self.thread is not None) and (self.joinList is not None)
+    
     def threadEntry(self, address, initiating, cont):
         """ Thread entry point for 'connect'. """
         started = False

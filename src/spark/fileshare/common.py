@@ -75,8 +75,8 @@ class FileShare(object):
                 delegate(*args)
 
 class TransferLocation(object):
-    LOCAL = 0
-    REMOTE = 1
+    LOCAL = 0       # a local file is being sent
+    REMOTE = 1      # a remite file is being received
     
 class TransferInfo(object):
     """ Provides information about a file transfer. """
