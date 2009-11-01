@@ -115,51 +115,6 @@ class MessageDelivery(object):
         elif hasattr(m, "blockID"):
             self.blockReceived(m)
 
-class ThreadedMessenger(Messenger):
-    def __init__(self, file):
-        super(ThreadedMessenger, self).__init__()
-        self.file = file
-        self.sendQueue = BlockingQueue(32)
-        self.receiveQueue = BlockingQueue(32)
-        self.sendThread = threading.Thread(target=self.sendLoop, name="MessageSender")
-        self.sendThread.daemon = True
-        self.sendThread.start()
-        self.receiveThread = threading.Thread(target=self.receiveLoop, name="MessageReceiver")
-        self.receiveThread.daemon = True
-        self.receiveThread.start()
-    
-    def close(self):
-        self.sendQueue.close()
-        self.receiveQueue.close()
-        self.sendThread.join()
-        self.receiveThread.join()
-    
-    def sendMessage(self, message):
-        cont = Future()
-        self.sendQueue.put((message, cont))
-        return cont
-    
-    def receiveMessage(self):
-        cont = Future()
-        self.receiveQueue.put(cont)
-        return cont
-    
-    def sendLoop(self):
-        writer = messageWriter(self.file)
-        for message, cont in self.sendQueue:
-            try:
-                cont.run(writer.write, message)
-            except:
-                traceback.print_exc()
-    
-    def receiveLoop(self):
-        parser = messageReader(self.file)
-        for cont in self.receiveQueue:
-            try:
-                cont.run(parser.read)
-            except:
-                traceback.print_exc()
-
 class AsyncMessenger(Messenger):
     def __init__(self, file):
         super(AsyncMessenger, self).__init__()
@@ -172,12 +127,10 @@ class AsyncMessenger(Messenger):
     def close(self):
         pass
     
-    @threadedMethod
     def sendMessage(self, message):
         with self.writeLock:
-            self.writer.write(message)
+            return self.writer.write(message)
     
-    @threadedMethod
     def receiveMessage(self):
         with self.readLock:
             return self.reader.read()

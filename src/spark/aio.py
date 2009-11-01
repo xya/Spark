@@ -344,3 +344,21 @@ class AcceptOperation(IOOperation):
     
     def completed(self):
         self.raise_completed(self.conn, self.address)
+
+class AsyncSocket(object):
+    """ File-like wrapper for a socket. Uses a reactor to perform asynchronous I/O. """
+    def __init__(self, socket, reactor):
+        self.socket = socket
+        self.reactor = reactor
+    
+    def beginRead(self, size):
+        return self.reactor.read(self.socket, size)
+    
+    def beginWrite(self, data):
+        return self.reactor.write(self.socket, data)
+    
+    def read(self, size):
+        return self.beginRead(size).result
+    
+    def write(self, data):
+        return self.beginWrite(data).wait()

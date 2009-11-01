@@ -25,8 +25,9 @@ import traceback
 import types
 import threading
 import socket
-from spark.async import Future, Delegate, BlockingQueue, QueueClosedError
-from spark.messaging.common import ThreadedMessenger, AsyncMessenger
+import logging
+from spark.async import Future, Delegate, BlockingQueue, QueueClosedError, threadedMethod
+from spark.messaging.common import AsyncMessenger
 from spark.messaging import *
 
 __all__ = ["Session", "SessionTask"]
@@ -110,14 +111,16 @@ class Session(object):
         try:
             # establish a connection and a protocol
             conn, remoteAddress = self.establishConnection(address, initiating)
+            logging.info("Connected to %s", repr(remoteAddress))
             name = negociateProtocol(SocketFile(conn), initiating).result
+            logging.debug("Negociated protocol '%s'", name)
             
             # initialize the session, including derived classes' sessionStarted()
             with self.lock:
                 self.conn = conn
                 self.joinList = []
                 self.queue.open()
-                self.messenger = ThreadedMessenger(SocketFile(conn))
+                self.messenger = AsyncMessenger(SocketFile(conn))
                 recvCont = self.messenger.receiveMessage()
             self.sessionStarted()
             started = True
@@ -176,6 +179,7 @@ class Session(object):
                 if message is None:
                     self.queue.close(True)
                 else:
+                    logging.debug("Received message: %s", message)
                     self.queue.put(HandleMessageTask(message))
                     self.messenger.receiveMessage().after(self.messageReceived)
 
@@ -230,5 +234,17 @@ class SocketFile(object):
             else:
                 raise
     
+    beginRead = threadedMethod(read)
+    
+    def beginWrite(self, data):
+        cont = Future()
+        try:
+            self.write(data)
+        except:
+            return Future.failed()
+        else:
+            return Future.done()
+    
     def write(self, data):
-        return self.socket.send(data)
+        #FIXME: check how many bytes have been sent
+        self.socket.send(data)

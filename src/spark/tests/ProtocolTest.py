@@ -127,14 +127,16 @@ class ProtocolTest(unittest.TestCase):
         # first individual messages
         for item in TestItems:
             f = AsyncWrapper(StringIO())
-            messageWriter(f).write(item)
+            messageWriter(f).write(item).wait(0.1)
             f.seek(0)
             actual = messageReader(f).read().wait(0.1)[0]
             self.assertMessagesEqual(item, actual)
         
         # then a stream of messages
         f =  AsyncWrapper(StringIO())
-        messageWriter(f).writeAll(TestItems)
+        writer = messageWriter(f)
+        for item in TestItems:
+            writer.write(item).wait(0.1)
         f.seek(0)
         actualItems = self.readAllMessages(messageReader(f))
         self.assertSeqsEqual(TestItems, actualItems)
