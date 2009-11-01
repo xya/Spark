@@ -107,12 +107,16 @@ class ProtocolTest(unittest.TestCase):
     
     def readAllMessages(self, reader):
         messages = []
-        def messageRead(message):
-            if message:
-                messages.append(message)
-                return reader.read()
         cont = Future()
-        reader.read().loop(cont, messageRead)
+        def messageLoop():
+            while True:
+                message = yield reader.read()
+                if message:
+                    messages.append(message)
+                else:
+                    break
+            cont.completed()
+        cont.run_coroutine(messageLoop())
         cont.wait(0.1)
         return messages
     

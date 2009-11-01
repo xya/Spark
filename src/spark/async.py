@@ -236,52 +236,35 @@ class Future(object):
         """
         Execute a coroutine, which returns futures through 'yield'. When the
         future's task is completed, the result is passed to the coroutine.
+        If the future's task fails, the exception is raised in the coroutine.
         """
         def coroutine_step(prev):
-            result = prev.results
-            if len(result) == 1:
-                result = result[0]
             try:
-                f = coroutine.send(result)
-            except StopIteration:
-                pass
+                result = prev.results
+            except:
+                # the task failed, propagate the exception to the coroutine
+                e = sys.exc_info()[1]
+                try:
+                    coroutine.throw(e)
+                except StopIteration:
+                    pass
+                return
             else:
-                f.after(coroutine_step)
+                # the task succeeded, send the result to the coroutine
+                if len(result) == 1:
+                    result = result[0]
+                try:
+                    f = coroutine.send(result)
+                except StopIteration:
+                    pass
+                else:
+                    f.after(coroutine_step)
         try:
             f = coroutine.send(None)
         except StopIteration:
             pass
         else:
             f.after(coroutine_step)
-    
-    def loop(self, cont, iterFunc, *args):
-        """
-        Execute a "continuation-style" loop when the operation completes.
-        Each iteration calls iterFunc with the specified arguments.
-        The continuation is executed at the end of the loop.
-        
-        iterFunc should return a future (in which case it will be called again
-        when the future completes), or a result (sequence of results or None).
-        """
-        def loopHandler(prev):
-            try:
-                results = prev.results
-            except:
-                cont.failed()
-                return
-            newArgs = results + args
-            try:
-                ret = iterFunc(*newArgs)
-            except:
-                cont.failed()
-                return
-            if isinstance(ret, Future):
-                ret.after(loopHandler)
-            elif hasattr(ret, "__len__"):
-                cont.completed(*ret)
-            else:
-                cont.completed()
-        return self.after(loopHandler)
 
 class FutureFrozenError(StandardError):
     """ Exception raised when one tries to call completed() or failed() twice on a future. """

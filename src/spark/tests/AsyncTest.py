@@ -217,6 +217,26 @@ class FutureTest(unittest.TestCase):
         self.assertEqual(0, len(writers))
         self.assertEqual(2, len(results))
         self.assertEqual("baz", results[1])
+    
+    def testRunCoroutineError(self):
+        """ Exceptions raised by futures should look like as if they had been raised by 'yield'. """
+        callers = []
+        results = []
+        def buggyFunc():
+            cont = Future()
+            callers.append(cont)
+            return cont
+        
+        def coroutine():
+            try:
+                val = yield buggyFunc()
+            except Exception as e:
+                results.append(e)
+        
+        f = Future()
+        f.run_coroutine(coroutine())
+        callers.pop().failed(ZeroDivisionError())
+        self.assertEqual(1, len(results))
 
 if __name__ == '__main__':
     unittest.main()
