@@ -232,6 +232,28 @@ class Future(object):
                     completeCont(*results)
         self.after(handler)
     
+    def run_coroutine(self, coroutine):
+        """
+        Execute a coroutine, which returns futures through 'yield'. When the
+        future's task is completed, the result is passed to the coroutine.
+        """
+        def coroutine_step(prev):
+            result = prev.results
+            if len(result) == 1:
+                result = result[0]
+            try:
+                f = coroutine.send(result)
+            except StopIteration:
+                pass
+            else:
+                f.after(coroutine_step)
+        try:
+            f = coroutine.send(None)
+        except StopIteration:
+            pass
+        else:
+            f.after(coroutine_step)
+    
     def loop(self, cont, iterFunc, *args):
         """
         Execute a "continuation-style" loop when the operation completes.

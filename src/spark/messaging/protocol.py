@@ -58,25 +58,35 @@ class Negociator(object):
     def negociate(self, initiating):
         cont = Future()
         if initiating:
-            def step2(remoteChoice):
-                if remoteChoice not in Supported:
-                    raise NegociationError("Protocol '%s' is not supported" % remoteChoice)
-                self.writeProtocol(remoteChoice).after(cont, remoteChoice)
-            def step1():
-                self.readProtocol().fork(step2, cont)
-            self.writeSupportedProtocols().fork(step1, cont)
+            cont.run_coroutine(self.client_negociation(cont))
         else:
-            def step3(remoteChoice, choice):
-                if remoteChoice != choice:
-                    cont.failed(NegociationError("The remote peer chose another protocol: '%s' (was '%s')" % (remoteChoice, choice)))
-                cont.completed(remoteChoice)
-            def step2(choice):
-                self.readProtocol().fork(step3, cont, choice)
-            def step1(proposed):
-                choice = self.chooseProtocol(proposed)
-                self.writeProtocol(choice).fork(step2, cont, choice)
-            self.readSupportedProtocols().fork(step1, cont)
+            cont.run_coroutine(self.server_negociation(cont))
         return cont
+    
+    def client_negociation(self, cont):
+        try:
+            yield self.writeSupportedProtocols()
+            remoteChoice = yield self.readProtocol()
+            if remoteChoice not in Supported:
+                raise NegociationError("Protocol '%s' is not supported" % remoteChoice)
+            yield self.writeProtocol(remoteChoice)
+        except:
+            cont.failed()
+        else:
+            cont.completed(remoteChoice)
+    
+    def server_negociation(self, cont):
+        try:
+            proposed = yield self.readSupportedProtocols()
+            choice = self.chooseProtocol(proposed)
+            yield self.writeProtocol(choice)
+            remoteChoice = yield self.readProtocol()
+            if remoteChoice != choice:
+                cont.failed(NegociationError("The remote peer chose another protocol: '%s' (was '%s')" % (remoteChoice, choice)))
+        except:
+            cont.failed()
+        else:
+            cont.completed(remoteChoice)
     
     def chooseProtocol(self, proposedNames):
         for name in proposedNames:

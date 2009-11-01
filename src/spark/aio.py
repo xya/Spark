@@ -6,7 +6,7 @@ import threading
 import traceback
 from spark.async import Future, BlockingQueue, QueueClosedError
 
-__all__ = ["blocking_mode", "IOReactor"]
+__all__ = ["blocking_mode", "IOReactor", "AsyncSocket"]
 
 def blocking_mode(fd, blocking=None):
     flag = os.O_NONBLOCK
@@ -351,14 +351,14 @@ class AsyncSocket(object):
         self.socket = socket
         self.reactor = reactor
     
+    def beginConnect(self, address):
+        return self.reactor.connect(self.socket, address)
+    
+    def beginAccept(self):
+        return self.reactor.accept(self.socket)
+    
     def beginRead(self, size):
         return self.reactor.read(self.socket, size)
     
     def beginWrite(self, data):
         return self.reactor.write(self.socket, data)
-    
-    def read(self, size):
-        return self.beginRead(size).result
-    
-    def write(self, data):
-        return self.beginWrite(data).wait()

@@ -170,6 +170,53 @@ class FutureTest(unittest.TestCase):
             self.fail("wait should have thrown an exception")
         except:
             pass
+    
+    def testRunCoroutine(self):
+        readers = []
+        writers = []
+        results = []
+        def beginRead():
+            cont = Future()
+            readers.append(cont)
+            return cont
+        
+        def beginWrite(s):
+            cont = Future()
+            writers.append((cont, s))
+            return cont
+        
+        def coroutine(cont):
+            val = yield beginRead()
+            results.append(val)
+            yield beginWrite("bar")
+            cont.completed("baz")
+        
+        def success(cont):
+            results.append(cont.result)
+        
+        f = Future()
+        f.after(success)
+        f.run_coroutine(coroutine(f))
+        
+        # the coroutine should be waiting for beginRead to finish
+        self.assertEqual(1, len(readers))
+        self.assertEqual(0, len(writers))
+        readers.pop().completed("foo")
+        self.assertEqual(1, len(results))
+        self.assertEqual("foo", results[0])
+        
+        # the coroutine should be waiting for beginWrite to finish
+        self.assertEqual(0, len(readers))
+        self.assertEqual(1, len(writers))
+        cont, val = writers.pop()
+        self.assertEqual("bar", val)
+        cont.completed()
+        
+        # the coroutine should have completed
+        self.assertEqual(0, len(readers))
+        self.assertEqual(0, len(writers))
+        self.assertEqual(2, len(results))
+        self.assertEqual("baz", results[1])
 
 if __name__ == '__main__':
     unittest.main()

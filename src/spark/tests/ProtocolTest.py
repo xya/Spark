@@ -330,6 +330,7 @@ class ProtocolNegociationTest(unittest.TestCase):
         self.assertEqual(2, len(names))
         for name in names:
             self.assertTrue(name in Supported)
+        self.assertEqual(names[0], names[1])
 
 if __name__ == '__main__':
     unittest.main()
