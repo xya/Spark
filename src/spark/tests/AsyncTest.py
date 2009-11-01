@@ -218,7 +218,7 @@ class FutureTest(unittest.TestCase):
         self.assertEqual(2, len(results))
         self.assertEqual("baz", results[1])
     
-    def testRunCoroutineError(self):
+    def testRunCoroutineHandledException(self):
         """ Exceptions raised by futures should look like as if they had been raised by 'yield'. """
         callers = []
         results = []
@@ -237,6 +237,28 @@ class FutureTest(unittest.TestCase):
         f.run_coroutine(coroutine())
         callers.pop().failed(ZeroDivisionError())
         self.assertEqual(1, len(results))
+    
+    def testRunCoroutineUnhandledException(self):
+        """ Unhandled exceptions raised in coroutines should fail the future's task. """
+        callers = []
+        results = []
+        def buggyFunc():
+            cont = Future()
+            callers.append(cont)
+            return cont
+        
+        def coroutine():
+            val = yield buggyFunc()
+        
+        f = Future()
+        f.run_coroutine(coroutine())
+        callers.pop().failed(ZeroDivisionError())
+        try:
+            f.wait()
+        except:
+            pass
+        else:
+            self.fail("wait() should have raised an exception")
 
 if __name__ == '__main__':
     unittest.main()

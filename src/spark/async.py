@@ -238,33 +238,46 @@ class Future(object):
         future's task is completed, the result is passed to the coroutine.
         If the future's task fails, the exception is raised in the coroutine.
         """
-        def coroutine_step(prev):
-            try:
-                result = prev.results
-            except:
-                # the task failed, propagate the exception to the coroutine
-                e = sys.exc_info()[1]
-                try:
-                    coroutine.throw(e)
-                except StopIteration:
-                    pass
-                return
-            else:
-                # the task succeeded, send the result to the coroutine
-                if len(result) == 1:
-                    result = result[0]
-                try:
-                    f = coroutine.send(result)
-                except StopIteration:
-                    pass
-                else:
-                    f.after(coroutine_step)
+        self._coroutine_send(coroutine, None)
+    
+    def _coroutine_send(self, coroutine, value):
         try:
-            f = coroutine.send(None)
+            result = coroutine.send(value)
         except StopIteration:
-            pass
+            # the coroutine exited
+            pass # self.completed()
+        except:
+            # the coroutine raised an exception
+            self.failed()
         else:
-            f.after(coroutine_step)
+            # the coroutine yielded something
+            if isinstance(result, Future):
+                result.after(self._coroutine_task_completed, coroutine)
+            elif f is None:
+                self.completed()
+            else:
+                self.completed(result)
+    
+    def _coroutine_task_completed(self, prev, coroutine):
+        try:
+            result = prev.results
+        except:
+            # the task failed, propagate the exception to the coroutine
+            e = sys.exc_info()[1]
+            try:
+                coroutine.throw(e)
+            except StopIteration:
+                # the coroutine handled the exception and exited
+                pass # self.completed()
+            except:
+                # the coroutine didn't handle the exception
+                self.failed()
+            return
+        else:
+            # the task succeeded, send the result to the coroutine
+            if len(result) == 1:
+                result = result[0]
+            self._coroutine_send(coroutine, result)
 
 class FutureFrozenError(StandardError):
     """ Exception raised when one tries to call completed() or failed() twice on a future. """
