@@ -245,34 +245,39 @@ class Future(object):
             result = coroutine.send(value)
         except StopIteration:
             # the coroutine exited
-            pass # self.completed()
+            self.completed()
         except:
             # the coroutine raised an exception
             self.failed()
         else:
             # the coroutine yielded something
-            if isinstance(result, Future):
-                result.after(self._coroutine_task_completed, coroutine)
-            elif f is None:
-                self.completed()
-            else:
-                self.completed(result)
+            self._coroutine_yielded(coroutine, result)
+    
+    def _coroutine_yielded(self, coroutine, result):
+        if isinstance(result, Future):
+            result.after(self._coroutine_task_completed, coroutine)
+        elif result is None:
+            self.completed()
+        else:
+            self.completed(result)
     
     def _coroutine_task_completed(self, prev, coroutine):
         try:
             result = prev.results
         except:
             # the task failed, propagate the exception to the coroutine
-            e = sys.exc_info()[1]
+            type, val = sys.exc_info()[0:2]
             try:
-                coroutine.throw(e)
+                result = coroutine.throw(type, val)
             except StopIteration:
                 # the coroutine handled the exception and exited
-                pass # self.completed()
+                self.completed()
             except:
                 # the coroutine didn't handle the exception
                 self.failed()
-            return
+            else:
+                # the coroutine yielded something
+                self._coroutine_yielded(coroutine, result)
         else:
             # the task succeeded, send the result to the coroutine
             if len(result) == 1:

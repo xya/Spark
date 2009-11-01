@@ -58,35 +58,27 @@ class Negociator(object):
     def negociate(self, initiating):
         cont = Future()
         if initiating:
-            cont.run_coroutine(self.client_negociation(cont))
+            cont.run_coroutine(self.client_negociation())
         else:
-            cont.run_coroutine(self.server_negociation(cont))
+            cont.run_coroutine(self.server_negociation())
         return cont
     
-    def client_negociation(self, cont):
-        try:
-            yield self.writeSupportedProtocols()
-            remoteChoice = yield self.readProtocol()
-            if remoteChoice not in Supported:
-                raise NegociationError("Protocol '%s' is not supported" % remoteChoice)
-            yield self.writeProtocol(remoteChoice)
-        except:
-            cont.failed()
-        else:
-            cont.completed(remoteChoice)
+    def client_negociation(self):
+        yield self.writeSupportedProtocols()
+        remoteChoice = yield self.readProtocol()
+        if remoteChoice not in Supported:
+            raise NegociationError("Protocol '%s' is not supported" % remoteChoice)
+        yield self.writeProtocol(remoteChoice)
+        yield remoteChoice
     
-    def server_negociation(self, cont):
-        try:
-            proposed = yield self.readSupportedProtocols()
-            choice = self.chooseProtocol(proposed)
-            yield self.writeProtocol(choice)
-            remoteChoice = yield self.readProtocol()
-            if remoteChoice != choice:
-                cont.failed(NegociationError("The remote peer chose another protocol: '%s' (was '%s')" % (remoteChoice, choice)))
-        except:
-            cont.failed()
-        else:
-            cont.completed(remoteChoice)
+    def server_negociation(self):
+        proposed = yield self.readSupportedProtocols()
+        choice = self.chooseProtocol(proposed)
+        yield self.writeProtocol(choice)
+        remoteChoice = yield self.readProtocol()
+        if remoteChoice != choice:
+            cont.failed(NegociationError("The remote peer chose another protocol: '%s' (was '%s')" % (remoteChoice, choice)))
+        yield remoteChoice
     
     def chooseProtocol(self, proposedNames):
         for name in proposedNames:

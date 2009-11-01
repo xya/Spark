@@ -106,19 +106,17 @@ class ProtocolTest(unittest.TestCase):
             self.assertMessagesEqual(expected, actual)
     
     def readAllMessages(self, reader):
-        messages = []
-        cont = Future()
         def messageLoop():
+            messages = []
             while True:
                 message = yield reader.read()
-                if message:
+                if message is not None:
                     messages.append(message)
                 else:
-                    break
-            cont.completed()
+                    yield messages
+        cont = Future()
         cont.run_coroutine(messageLoop())
-        cont.wait(0.1)
-        return messages
+        return cont.wait(0.1)[0]
     
     def testParseText(self):
         """ Ensure that messageReader() can read messages from a text file """

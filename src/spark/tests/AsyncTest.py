@@ -185,18 +185,18 @@ class FutureTest(unittest.TestCase):
             writers.append((cont, s))
             return cont
         
-        def coroutine(cont):
+        def coroutine():
             val = yield beginRead()
             results.append(val)
             yield beginWrite("bar")
-            cont.completed("baz")
+            yield "baz"
         
         def success(cont):
             results.append(cont.result)
         
         f = Future()
         f.after(success)
-        f.run_coroutine(coroutine(f))
+        f.run_coroutine(coroutine())
         
         # the coroutine should be waiting for beginRead to finish
         self.assertEqual(1, len(readers))
