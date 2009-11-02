@@ -20,7 +20,7 @@
 
 import json
 from struct import Struct
-from spark.async import Future
+from spark.async import Future, coroutine
 from spark.messaging.messages import *
 
 __all__ = ["MessageReader"]
@@ -39,28 +39,19 @@ class MessageReader(object):
             Block.ID : self.parseBlock
         }
     
+    @coroutine
     def read(self):
         """ Asynchronously read a message from the file. """
-        cont = Future()
-        self.file.beginRead(4).fork(self.messageSizeRead, cont, cont)
-        return cont
-    
-    def messageSizeRead(self, read, cont):
-        if len(read) == 0:
-            cont.completed(None)
-            return
-        try:
-            size = int(read, 16)
-        except:
-            cont.failed()
+        sizeText = yield self.file.beginRead(4)
+        if len(sizeText) == 0:
+            yield None
         else:
-            self.file.beginRead(size).fork(self.messageDataRead, cont, cont)
-    
-    def messageDataRead(self, read, cont):
-        if len(read) > 0:
-            cont.run(self.parse, read.lstrip())
-        else:
-            cont.error(EOFError())
+            size = int(sizeText, 16)
+            data = yield self.file.beginRead(size)
+            if len(data) == 0:
+                raise EOFError()
+            else:
+                yield self.parse(data.lstrip())
     
     def parse(self, data):
         if data[0] == '\x00':

@@ -18,7 +18,7 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-from spark.async import Future
+from spark.async import Future, coroutine
 from spark.messaging.parser import MessageReader
 from spark.messaging.messages import MessageWriter
 
@@ -44,8 +44,7 @@ def negociateProtocol(f, initiating):
     Negociate a protocol with the remote peer, using the file for exchanging messages.
     'initiating' indicates whether the local user initiated the connection or not.
     """
-    n = Negociator(f)
-    return n.negociate(initiating)
+    return Negociator(f).negociate(initiating)
 
 class NegociationError(StandardError):
     """ Exception raised when protocol negociation fails. """
@@ -56,14 +55,13 @@ class Negociator(object):
         self.file = file
     
     def negociate(self, initiating):
-        cont = Future()
         if initiating:
-            cont.run_coroutine(self.client_negociation())
+            return self.clientNegociation()
         else:
-            cont.run_coroutine(self.server_negociation())
-        return cont
+            return self.serverNegociation()
     
-    def client_negociation(self):
+    @coroutine
+    def clientNegociation(self):
         yield self.writeSupportedProtocols()
         remoteChoice = yield self.readProtocol()
         if remoteChoice not in Supported:
@@ -71,7 +69,8 @@ class Negociator(object):
         yield self.writeProtocol(remoteChoice)
         yield remoteChoice
     
-    def server_negociation(self):
+    @coroutine
+    def serverNegociation(self):
         proposed = yield self.readSupportedProtocols()
         choice = self.chooseProtocol(proposed)
         yield self.writeProtocol(choice)
@@ -86,6 +85,42 @@ class Negociator(object):
                 return name
         raise NegociationError("No protocol in the proposed list is supported")
     
+    @coroutine
+    def readSupportedProtocols(self):
+        message = yield self.readMessage()
+        chunks = message.split(" ")
+        if chunks[0] != "supports":
+            if chunks[0] == "not-supported":
+                raise NegociationError("The remote peer returned an error")
+            else:
+                raise NegociationError("Exepected '%s', read '%s'" % ("protocol", chunks[0]))
+        elif len(chunks) < 2:
+            raise NegociationError("Expected at least one protocol name")
+        else:
+            yield chunks[1:]
+    
+    @coroutine
+    def readProtocol(self):
+        message = yield self.readMessage()
+        chunks = message.split(" ")
+        if chunks[0] != "protocol":
+            if chunks[0] == "not-supported":
+                raise NegociationError("The remote peer returned an error")
+            else:
+                raise NegociationError("Exepected '%s', read '%s'" % ("protocol", chunks[0]))
+        elif len(chunks) < 2:
+            raise NegociationError("Expected a protocol name")
+        else:
+            yield chunks[1]
+    
+    @coroutine
+    def readMessage(self):
+        size = int((yield self.asyncRead(4)), 16)
+        data = yield self.asyncRead(size)
+        if len(data) == 0:
+            raise EOFError()
+        yield data.strip()
+    
     def writeSupportedProtocols(self):
         data = self.formatMessage("supports %s" % " ".join(Supported))
         return self.asyncWrite(data)
@@ -93,59 +128,6 @@ class Negociator(object):
     def writeProtocol(self, name):
         data = self.formatMessage("protocol %s" % name)
         return self.asyncWrite(data)
-    
-    def readSupportedProtocols(self):
-        cont = Future()
-        self.readMessage().after(self.parseSupportedProtocol, cont)
-        return cont
-    
-    def parseSupportedProtocol(self, prev, cont):
-        chunks = prev.result.split(" ")
-        if chunks[0] != "supports":
-            if chunks[0] == "not-supported":
-                cont.failed(NegociationError("The remote peer returned an error"))
-            else:
-                cont.failed(NegociationError("Exepected '%s', read '%s'" % ("protocol", chunks[0])))
-        elif len(chunks) < 2:
-            cont.failed(NegociationError("Expected at least one protocol name"))
-        else:
-            cont.completed(chunks[1:])
-    
-    def readProtocol(self):
-        cont = Future()
-        self.readMessage().after(self.parseProtocol, cont)
-        return cont
-    
-    def parseProtocol(self, prev, cont):
-        chunks = prev.result.split(" ")
-        if chunks[0] != "protocol":
-            if chunks[0] == "not-supported":
-                cont.failed(NegociationError("The remote peer returned an error"))
-            else:
-                cont.failed(NegociationError("Exepected '%s', read '%s'" % ("protocol", chunks[0])))
-        elif len(chunks) < 2:
-            cont.failed(NegociationError("Expected a protocol name"))
-        else:
-            cont.completed(chunks[1])
-    
-    def readMessage(self):
-        cont = Future()
-        self.asyncRead(4).fork(self.sizeRead, cont, cont)
-        return cont
-    
-    def sizeRead(self, read, cont):
-        try:
-            size = int(read, 16)
-        except:
-            cont.failed()
-        else:
-            self.asyncRead(size).fork(self.dataRead, cont, cont)
-    
-    def dataRead(self, read, cont):
-        if len(read) > 0:
-            cont.completed(read.strip())
-        else:
-            cont.error(EOFError())
     
     def formatMessage(self, m):
         data = " %s\r\n" % str(m)

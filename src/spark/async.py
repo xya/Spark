@@ -27,7 +27,7 @@ import traceback
 from cStringIO import StringIO
 
 __all__ = ["Future", "FutureFrozenError", "TaskError", "TaskFailedError", "TaskCanceledError",
-           "Delegate", "BlockingQueue", "QueueClosedError", "threadedMethod"]
+           "Delegate", "BlockingQueue", "QueueClosedError", "threadedMethod", "coroutine"]
 
 def threadedMethod(func):
     """
@@ -40,6 +40,17 @@ def threadedMethod(func):
         t = threading.Thread(target=cont.run, args=newArgs, kwargs=kw)
         t.daemon = True
         t.start()
+        return cont
+    return wrapper
+
+def coroutine(func):
+    """
+    Wrap a generator function to act as a coroutine. The new function creates a
+    future and executes the generator until it yields. The future is then returned.
+    """
+    def wrapper(*args, **kw):
+        cont = Future()
+        cont.run_coroutine(func(*args, **kw))
         return cont
     return wrapper
 
@@ -238,6 +249,8 @@ class Future(object):
         future's task is completed, the result is passed to the coroutine.
         If the future's task fails, the exception is raised in the coroutine.
         """
+        if not isinstance(coroutine, types.GeneratorType):
+            raise TypeError("'coroutine' should be a generator")
         self._coroutine_send(coroutine, None)
     
     def _coroutine_send(self, coroutine, value):
@@ -280,7 +293,9 @@ class Future(object):
                 self._coroutine_yielded(coroutine, result)
         else:
             # the task succeeded, send the result to the coroutine
-            if len(result) == 1:
+            if len(result) == 0:
+                result = None
+            elif len(result) == 1:
                 result = result[0]
             self._coroutine_send(coroutine, result)
 

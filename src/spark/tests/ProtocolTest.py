@@ -22,7 +22,7 @@
 import unittest
 import copy
 import sys
-from spark.async import Future, TaskFailedError
+from spark.async import Future, TaskFailedError, coroutine
 from spark.messaging import *
 from StringIO import StringIO
 
@@ -106,6 +106,7 @@ class ProtocolTest(unittest.TestCase):
             self.assertMessagesEqual(expected, actual)
     
     def readAllMessages(self, reader):
+        @coroutine
         def messageLoop():
             messages = []
             while True:
@@ -114,9 +115,7 @@ class ProtocolTest(unittest.TestCase):
                     messages.append(message)
                 else:
                     yield messages
-        cont = Future()
-        cont.run_coroutine(messageLoop())
-        return cont.wait(0.1)[0]
+        return messageLoop().wait(0.1)[0]
     
     def testParseText(self):
         """ Ensure that messageReader() can read messages from a text file """
