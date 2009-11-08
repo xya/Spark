@@ -1,3 +1,23 @@
+# -*- coding: utf-8 -*-
+#
+# Copyright (C) 2009 Pierre-André Saulais <pasaulais@free.fr>
+#
+# This file is part of the Spark File-transfer Tool.
+#
+# Spark is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# Spark is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Spark; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
 import sys
 import os
 import select
@@ -5,8 +25,9 @@ import fcntl
 import threading
 import traceback
 from spark.async import Future, BlockingQueue, QueueClosedError
+from spark.aio.interface import Reactor
 
-__all__ = ["blocking_mode", "IOReactor", "AsyncSocket"]
+__all__ = ["blocking_mode", "PollReactor"]
 
 def blocking_mode(fd, blocking=None):
     flag = os.O_NONBLOCK
@@ -19,7 +40,7 @@ def blocking_mode(fd, blocking=None):
         fcntl.fcntl(fd, fcntl.F_SETFL, new_mode)
     return (old_mode & flag) == 0
 
-class IOReactor(object):    
+class PollReactor(Reactor):
     def __init__(self):
         self.lock = threading.RLock()
         self.queue = BlockingQueue(64, lock=self.lock)
@@ -28,6 +49,14 @@ class IOReactor(object):
         self.req_r, self.req_w = os.pipe()
         blocking_mode(self.req_r, False)
         blocking_mode(self.req_w, False)
+    
+    def register(self, file):
+        """ Register the file to be used for asynchronous I/O operations. """
+        if hasattr(file, "fileno"):
+            fd = file.fileno()
+        else:
+            fd = file
+        blocking_mode(fd, False)
     
     def read(self, file, size):
         cont = Future()
@@ -53,6 +82,14 @@ class IOReactor(object):
         self.submit(op)
         return cont
     
+    def callback(self, fun, *args):
+        """ Submit a function to be called back on the reactor's thread. """
+        cont = Future()
+        cont.after(fun, *args)
+        op = NoOperation(cont, self)
+        self.submit(op)
+        return cont
+    
     def launch_thread(self):
         """ Start a background I/O thread to run the reactor. """
         with self.lock:
@@ -65,21 +102,13 @@ class IOReactor(object):
             else:
                 return False
     
-    def run(self, continuation=None):
-        """
-        Run the reactor on the current thread, optionally signaling the future
-        or calling back the callable when the event loop is entered.
-        """
+    def run(self):
+        """ Run the reactor on the current thread. """
         with self.lock:
             if self.active is False:
                 self.active = True
-                if continuation:
-                    if hasattr(continuation, "__call__"):
-                        future = Future()
-                        future.after(continuation)
-                    else:
-                        future = continuation
-                    self.submit(NoOperation(future, self))
+            else:
+                return
         self.eventLoop()
     
     def submit(self, op):
@@ -97,6 +126,12 @@ class IOReactor(object):
                 os.close(self.req_w)
                 self.req_w = None
         self.queue.close()
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, type, e, traceback):
+        self.close()
     
     def cleanup(self):
         with self.lock:
@@ -344,21 +379,3 @@ class AcceptOperation(IOOperation):
     
     def completed(self):
         self.raise_completed(self.conn, self.address)
-
-class AsyncSocket(object):
-    """ File-like wrapper for a socket. Uses a reactor to perform asynchronous I/O. """
-    def __init__(self, socket, reactor):
-        self.socket = socket
-        self.reactor = reactor
-    
-    def beginConnect(self, address):
-        return self.reactor.connect(self.socket, address)
-    
-    def beginAccept(self):
-        return self.reactor.accept(self.socket)
-    
-    def beginRead(self, size):
-        return self.reactor.read(self.socket, size)
-    
-    def beginWrite(self, data):
-        return self.reactor.write(self.socket, data)

@@ -473,6 +473,8 @@ class BlockingQueue(object):
                     return (False, None)
             finally:
                 self.__lock.release()
+        else:
+            return (False, None)
     
     _iter_get_nowait = _iter_wrap(get_nowait)
     
