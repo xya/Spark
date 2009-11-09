@@ -18,7 +18,13 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-from spark.aio.interface import *
-from spark.aio.pollreactor import *
+from spark.async.tasks import *
+from spark.async.queue import *
+from spark.async.aio import *
+from spark.async.pollreactor import *
 
-__all__ = ["Reactor", "AsyncSocket", "blocking_mode", "PollReactor"]
+__all__ = [ "Reactor", "AsyncSocket", "blocking_mode", "PollReactor",
+    "BlockingQueue", "QueueClosedError", "Future",
+    "FutureFrozenError", "TaskError", "TaskFailedError", "TaskCanceledError",
+    "Delegate", "threadedMethod", "coroutine"
+]

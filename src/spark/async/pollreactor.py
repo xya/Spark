@@ -25,7 +25,7 @@ import fcntl
 import threading
 import traceback
 from spark.async import Future, BlockingQueue, QueueClosedError
-from spark.aio.interface import Reactor
+from spark.async.aio import Reactor
 
 __all__ = ["blocking_mode", "PollReactor"]
 
