@@ -113,12 +113,14 @@ class Future(object):
         This will raise an exception if the task failed or was canceled.
         """
         with self.__lock:
-            while self.__result is None:
-                if timeout is not None:
-                    threading.Timer(timeout, self._interrupt_wait).start()
-                self.__wait.wait()
-                if (timeout is not None) and (self.__result is None):
-                    raise WaitTimeoutError("The task didn't complete within the specified duration")
+            if timeout is not None:
+                if self.__result is None:
+                    self.__wait.wait(timeout)
+                    if self.__result is None:
+                        raise WaitTimeoutError("The task didn't complete within the specified duration")
+            else:
+                while self.__result is None:
+                    self.__wait.wait()
             r = self.__result
             if isinstance(r, tuple):
                 return r
@@ -126,12 +128,6 @@ class Future(object):
                 raise r
             else:
                 raise StandardError("The task failed for an unknown reason")
-    
-    def _interrupt_wait(self):
-        """ Wake up the threads waiting for the results when the timeout is elapsed """
-        with self.__lock:
-            if self.__result is None:
-                self.__wait.notifyAll()
     
     @property
     def results(self):

@@ -105,3 +105,6 @@ class MessageDeliveryTest(unittest.TestCase):
     
     def responseReceived(self, prev):
         self.responses.append(prev.result)
+
+if __name__ == '__main__':
+    unittest.main()

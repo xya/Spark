@@ -68,3 +68,6 @@ class BasicIntegrationTest(unittest.TestCase):
             if listenCont.pending:
                 listenCont.failed()
             cont.failed()
+
+if __name__ == '__main__':
+    unittest.main()

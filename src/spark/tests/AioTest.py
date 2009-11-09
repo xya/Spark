@@ -36,7 +36,7 @@ class ReactorTest(unittest.TestCase):
             f = rea.read(r, 3)
             f.after(read_complete)
             os.write(w, "foo")
-            f.wait(0.5)
+            f.wait(1.0)
             # TODO: make it thread-safe
             self.assertEqual(1, len(results))
             self.assertEqual("foo", results[0])
