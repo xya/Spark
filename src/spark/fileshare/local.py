@@ -37,7 +37,7 @@ class LocalFileShare(FileShare):
         if req.tag in self.publicRequests:
             self.invokeRequest(req.tag, req.params).after(self.requestCompleted, req)
         else:
-            self.requestCompleted(Future.done({"error" : "not-authorized"}))
+            self.requestCompleted(Future.done({"error" : "not-authorized"}), req)
     
     def requestCompleted(self, prev, request):
         """ Send a response after the request is completed. """

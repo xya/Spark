@@ -31,7 +31,7 @@ class FileShare(object):
     ]
     
     Notifications = [
-        "file-added", "file-removed", "transfer-state-chaned", "panic"
+        "file-added", "file-removed", "transfer-state-changed", "panic"
     ]
     
     def close(self):
