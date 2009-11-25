@@ -40,4 +40,8 @@ def allTests():
 if __name__ == '__main__':
     import locale    
     locale.setlocale(locale.LC_ALL, '')
-    unittest.TextTestRunner().run(allTests())
+    if "-v" in sys.argv:
+        verbosity = 2
+    else:
+        verbosity = 1
+    unittest.TextTestRunner(verbosity=verbosity).run(allTests())

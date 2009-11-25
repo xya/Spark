@@ -334,4 +334,5 @@ class ProtocolNegociationTest(unittest.TestCase):
         self.assertEqual(names[0], names[1])
 
 if __name__ == '__main__':
-    unittest.main()
+    import sys
+    unittest.main(argv=sys.argv)

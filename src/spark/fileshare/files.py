@@ -69,12 +69,3 @@ class SharedFile(object):
     def isSending(self):
         """ Is the file being sent to the remote peer? """
         return self.transfer and (self.transfer.location == TransferLocation.LOCAL) or False
-    
-    def startTransfer(self):
-        raise NotImplementedError()
-    
-    def stopTransfer(self):
-        raise NotImplementedError()
-    
-    def open(self):
-        raise NotImplementedError()

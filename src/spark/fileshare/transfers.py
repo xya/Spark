@@ -69,11 +69,3 @@ class TransferInfo(object):
     def eta(self):
         """ Return an estimation of the time when the transfer will be completed. """
         raise NotImplementedError()
-
-def toCamelCase(tag):
-    """ Convert the tag to camel case (e.g. "create-transfer" becomes "createTransfer"). """
-    words = tag.split("-")
-    first = words.pop(0)
-    words = [word.capitalize() for word in words]
-    words.insert(0, first)
-    return "".join(words)

@@ -51,7 +51,7 @@ class Service(object):
     # The service has been started, and is connected to a peer.
     CONNECTED = 4
     # The service has been started and connected, and has been requested to close its connection.
-    DICONNECT_REQUESTED = 5
+    DISCONNECT_REQUESTED = 5
     # The service has finished executing and released its resources.
     FINISHED = 6
     
@@ -61,7 +61,22 @@ class Service(object):
         self.reactor = PollReactor(self.lock)
         self.state = Service.UNSTARTED
         self.conn = None
-            
+    
+    def start(self):
+        """
+        Execute the service on the current thread. This method blocks until
+        the service has finished executing.
+        """
+        self._swapState(Service.UNSTARTED, Service.DISCONNECTED)
+        self.reactor.run()
+    
+    def startThread(self):
+        """
+        Execute the service on a new thread. This method returns immediatly.
+        """
+        self._swapState(Service.UNSTARTED, Service.DISCONNECTED)
+        self.reactor.launch_thread()
+    
     def connect(self, address):
         """ Try to establish a connection with a remote peer with the specified address. """
         self._swapState(Service.DISCONNECTED, Service.CONNECT_REQUESTED)
@@ -77,6 +92,10 @@ class Service(object):
         return cont
     
     def disconnect(self):
+        """
+        Close an established connection. It is possible to call connect()
+        or listen() again after calling this method.
+        """
         self._swapState(Service.CONNECTED, Service.DISCONNECT_REQUESTED)
         cont = Future()
         self.reactor.callback(self._disconnectRequest, cont)
@@ -100,72 +119,66 @@ class Service(object):
     def _connectRequest(self, cont, initiating, address):
         try:
             self._assertState(Service.CONNECT_REQUESTED)
-            self._startSession(address, initiating, cont)
+            self._startConnection(address, initiating, cont)
         except Exception:
             cont.failed()
     
     def _disconnectRequest(self, cont):
         try:
             self._assertState(Service.DISCONNECT_REQUESTED)
-            self._endSession()
+            self._endConnection()
         except Exception:
             cont.failed()
         else:
             cont.completed()
     
     @coroutine
-    def _startSession(self, address, initiating, cont):
-        started = False
+    def _startConnection(self, address, initiating, cont):
         try:
-            # establish a connection and a protocol
-            self.conn, remoteAddress = yield self._establishConnection(address, initiating)
-            logging.info("Connected to %s", repr(remoteAddress))
-            name = yield negociateProtocol(SocketFile(conn), initiating)
-            logging.debug("Negociated protocol '%s'", name)
-            
-            # initialize the session, including derived classes' onConnected()
-            self.onConnected(remoteAddress)
-            started = True
-            cont.completed(remoteAddress)
-        except:
-            if started:
-                traceback.print_exc()
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
+            if initiating:
+                yield self.reactor.connect(sock, address)
+                self.conn, remoteAddress = sock, address
             else:
-                cont.failed()
-    
-    @coroutine
-    def _establishConnection(self, address, initiating):
-        """ Establish a connection for the service, either with accept() or connect(). """
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
-        if initiating:
-            yield self.reactor.connect(sock, address)
-            yield sock, address
+                try:
+                    sock.bind(address)
+                    sock.listen(1)
+                    self.conn, remoteAddress = yield self.reactor.accept(sock)
+                finally:
+                    sock.close()
+            logging.info("Connected to %s", repr(remoteAddress))
+        except:
+            cont.failed()
         else:
-            try:
-                sock.bind(address)
-                sock.listen(1)
-                conn, remoteAddr = yield self.reactor.accept(sock)
-                yield conn, remoteAddr
-            finally:
-                sock.close()
+            cont.completed(remoteAddress)
+        self.connected(remoteAddress, initiating)
     
-    def _endSession(self):
+    def _endConnection(self):
         """ Close the connection and free all session-related resources. """
-        if self.conn:
-            # force threads blocked on recv (and send?) to return
-            try:
-                self.conn.shutdown(socket.SHUT_RDWR)
-            except:
-                pass
-            self.conn.close()
-            self.conn = None
-            self.onDisconnected()
+        wasDisconnected = False
+        with self.lock:
+            if self.state in (Service.DISCONNECT_REQUESTED, Service.CONNECTED):
+                # force threads blocked on recv (and send?) to return
+                try:
+                    self.conn.shutdown(socket.SHUT_RDWR)
+                except:
+                    pass
+                self.conn.close()
+                self.conn = None
+                self.state = Service.DISCONNECTED
+                wasDisconnected = True
+                
+        if wasDisconnected:
+            self.disconnected()
     
-    def onConnected(self, remoteAddr):
-        """ Called when a connection is established to the peer at 'remoteAddr'. """
+    def connected(self, remoteAddr, initiating):
+        """
+        Called when a connection is established to the peer at 'remoteAddr'.
+        'initiating' is True if connect() was used, or False if it was listen().
+        """
         pass
     
-    def onDisconnected(self):
+    def disconnected(self):
         """ Called after a connection is terminated. """
         pass
 
@@ -178,20 +191,29 @@ class MessengerService(Service):
         self.messenger = None
         self.recvOp = None
     
-    def onConnected(self, remoteAddr):
-        self.messenger = AsyncMessenger(SocketFile(self.conn))
+    def connected(self, remoteAddr, initiating):
+        f = SocketFile(conn)
+        negociateProtocol(f, initiating).after(self._protocolNegociated, f)
+    
+    def _protocolNegociated(self, prev, f):
+        name = prev.result
+        logging.debug("Negociated protocol '%s'", name)
+        self.messenger = AsyncMessenger(f)
         self.recvOp = self.messenger.receiveMessage()
+        self.sessionStarted()
         self.recvOp.after(self._messageReceived)
     
-    def onDisconnected(self):
+    def disconnected(self):
         self.recvOp.cancel()
         if hasattr(self.messenger, "close"):
             self.messenger.close()
         self.messenger = None
+        self.sessionEnded()
     
     def sendMessage(self, message):
-        if self.messenger is None:
-            raise Exception("The service has to be connected for sending messages.")
+        """ Send a message to the connected peer if there is an active session. """
+        if not self.isSessionActive:
+            raise Exception("A session has be active for sending messages.")
         return self.messenger.sendMessage(message)
     
     def _messageReceived(self, prev):
@@ -203,14 +225,35 @@ class MessengerService(Service):
         
         if message is None:
             # we have been disconnected
-            self._endSession()
+            self._endConnection()
         else:
             logging.debug("Received message: %s", message)
             self.onMessageReceived(message)
             self.recvOp = self.messenger.receiveMessage()
             self.recvOp.after(self._messageReceived)
     
-    def onMessageReceived(self, message):
+    @property
+    def isSessionActive(self):
+        """
+        Indicate whether a session is currently active,
+        i.e. messages can be sent and received """
+        return self.messenger is not None
+    
+    def sessionStarted(self):
+        """
+        This method is called when a session has started,
+        i.e. messages can be sent and received.
+        """
+        pass
+    
+    def sessionEnded(self):
+        """
+        This method is called when a session has ended,
+        i.e. messages can't be sent or received anymore.
+        """
+        pass
+    
+    def messageReceived(self, message):
         """ This method is called when a message is received. """
         pass
 

@@ -56,38 +56,28 @@ class FutureTest(unittest.TestCase):
             pass
     
     def testCompletedTwice(self):
+        """ completed() should raise an exception the second time """
         f = Future()
         f.completed("spam", "eggs")
-        try:
-            f.completed("eggs", "spam")
-            self.fail("completed() didn't raise an exception the second time")
-        except:
-            pass
-        
+        self.assertRaises(Exception, f.completed, "eggs", "spam")
+    
+    def testCompletedAfterFailed(self):
+        """ completed() should raise an exception after failed() is called """
         f = Future()
         f.failed()
-        try:
-            f.completed("eggs", "spam")
-            self.fail("completed() didn't raise an exception after failed() was called")
-        except:
-            pass
+        self.assertRaises(Exception, f.completed, "eggs", "spam")
     
     def testFailedTwice(self):
+        """ failed() should raise an exception the second time """
         f = Future()
         f.failed()
-        try:
-            f.failed()
-            self.fail("failed() didn't raise an exception the second time")
-        except:
-            pass
-        
+        self.assertRaises(Exception, f.failed)
+    
+    def testFailedAfterCompleted(self):
+        """ failedd() should raise an exception after completed() is called """
         f = Future()
-        f.completed("eggs", "spam")        
-        try:
-            f.failed()
-            self.fail("failed() didn't raise an exception after completed() was called")
-        except:
-            pass
+        f.completed("eggs", "spam")
+        self.assertRaises(Exception, f.failed)
     
     def testCallback(self):
         """ The callback should be invoked with the right arguments (result plus positional args). """
@@ -147,6 +137,7 @@ class FutureTest(unittest.TestCase):
         self.assertEqual(("spam", "eggs", 1, 2, 3), fOK.results)
     
     def testForkFail(self):
+        """ wait() should throw an exception if the operation fails """
         result = []
         error = []
         def bar(*args):
@@ -165,11 +156,7 @@ class FutureTest(unittest.TestCase):
         f2.failed(KeyError())
         self.assertEqual(True, fOK.pending)
         self.assertEqual(False, fFail.pending)
-        try:
-            fFail.wait()
-            self.fail("wait should have thrown an exception")
-        except:
-            pass
+        self.assertRaises(Exception, fFail.wait)
     
     def testRunCoroutine(self):
         readers = []
@@ -261,4 +248,5 @@ class FutureTest(unittest.TestCase):
             self.fail("wait() should have raised an exception")
 
 if __name__ == '__main__':
-    unittest.main()
+    import sys
+    unittest.main(argv=sys.argv)

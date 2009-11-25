@@ -22,14 +22,15 @@
 import unittest
 import os
 from spark.async import Future
+from spark.fileshare import FileShare
 
 class FileShareTest(unittest.TestCase):
     def testAddFile(self):
-        """ Files added through addLocalFile should be retrievable with listFiles """
+        """ Files added through addFile() should be retrievable with files() """
         s = FileShare()
-        self.assertEqual(0, len(s.listFiles()))
-        id = s.addLocalFile("FileShareTest.py")
-        files = s.listFiles()
+        self.assertEqual(0, len(s.files()))
+        id = s.addFile("FileShareTest.py")
+        files = s.files()
         self.assertEqual(1, len(files))
         file = files[0]
         self.assertEqual("FileShareTest.py", file.name)
@@ -38,20 +39,15 @@ class FileShareTest(unittest.TestCase):
     def testRemoveExistingFile(self):
         """ removeFile should remove the file with the specified ID from the list """
         s = FileShare()
-        id = s.addLocalFile("FileShareTest.py")
+        id = s.addFile("FileShareTest.py")
         s.removeFile(id)
         self.assertEqual(0, len(s.listFiles()))
     
     def testRemoveInvalidFile(self):
         """ removeFile should fail if the given ID doesn't match any file """
         s = FileShare()
-        id = s.addLocalFile("FileShareTest.py")
-        try:
-            s.removeFile("foo")
-        except:
-            pass
-        else:
-            self.fail("removeFile should fail if the ID is invalid")
+        id = s.addFile("FileShareTest.py")
+        self.assertRaises(Exception, s.removeFile, "foo")
     
     def testAddNotification(self):
         """ Notifications should be sent when a file is added to the list """
@@ -59,9 +55,8 @@ class FileShareTest(unittest.TestCase):
         def fileAdded(file):
             notifications.append(file)
         s = FileShare()
-        s.FileAdded += fileAdded
-        s.watch()
-        s.addLocalFile("FileShareTest.py")
+        s.fileAdded += fileAdded
+        s.addFile("FileShareTest.py")
         self.assertEqual(1, len(notifications))
 
     def testRemoveNotification(self):
@@ -70,11 +65,11 @@ class FileShareTest(unittest.TestCase):
         def fileRemoved(file):
             notifications.append(file)
         s = FileShare()
-        s.FileRemoved += fileRemoved
-        id = s.addLocalFile("FileShareTest.py")
-        s.watch()
+        s.fileRemoved += fileRemoved
+        id = s.addFile("FileShareTest.py")
         s.removeFile(id)
         self.assertEqual(1, len(notifications))
 
 if __name__ == '__main__':
-    unittest.main()
+    import sys
+    unittest.main(argv=sys.argv)

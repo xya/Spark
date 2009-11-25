@@ -85,13 +85,10 @@ class PollReactor(Reactor):
         self.submit(op)
         return cont
     
-    def callback(self, fun, *args):
+    def callback(self, fun, *args, **kwargs):
         """ Submit a function to be called back on the reactor's thread. """
-        cont = Future()
-        cont.after(fun, *args)
-        op = NoOperation(cont, self)
+        op = NoOperation(self, fun, args, kwargs)
         self.submit(op)
-        return cont
     
     def launch_thread(self):
         """ Start a background I/O thread to run the reactor. """
@@ -276,15 +273,17 @@ class IOOperation(object):
                 raise
 
 class NoOperation(IOOperation):
-    def __init__(self, cont, reactor):
-        self.cont = cont
+    def __init__(self, reactor, fun, args, kwargs):
         self.reactor = reactor
+        self.fun = fun
+        self.args = args
+        self.kwargs = kwargs
     
     def complete(self, event=None):
         return True
     
     def completed(self):
-        self.raise_completed(self.reactor)
+        self.fun(*self.args, **self.kwargs)
 
 class PipeReadOperation(IOOperation):
     def __init__(self, fd, reactor):

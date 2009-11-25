@@ -30,6 +30,7 @@ BIND_PORT = 4550
 
 class BasicIntegrationTest(unittest.TestCase):
     def test(self):
+        """ Two locally-connected file shares should be able to exchange their file lists. """
         listenCalled = Future()
         serverDone = Future()
         serverThread = threading.Thread(target=self.server, args=(listenCalled, serverDone))
@@ -42,8 +43,8 @@ class BasicIntegrationTest(unittest.TestCase):
         clientThread.start()
         response = clientDone.wait(1.0)[0]
         serverDone.wait(1.0)
-        self.assertEqual(TextMessage.RESPONSE, response.type)
-        self.assertEqual("list-files", response.tag)
+        self.assertTrue(isinstance(response, dict))
+        self.assertEqual(0, len(response))
     
     def client(self, cont):
         try:
@@ -51,7 +52,7 @@ class BasicIntegrationTest(unittest.TestCase):
             s = FileShare()
             s.startThread()
             s.connect(remoteAddr).wait(1.0)
-            response = s.listFiles({}).wait(1.0)[0]
+            response = s.files().wait(1.0)[0]
             s.disconnect().wait(1.0)
             cont.completed(response)
         except:
@@ -72,4 +73,5 @@ class BasicIntegrationTest(unittest.TestCase):
             discCont.failed()
 
 if __name__ == '__main__':
-    unittest.main()
+    import sys
+    unittest.main(argv=sys.argv)

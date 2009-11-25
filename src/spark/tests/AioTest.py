@@ -46,4 +46,5 @@ class ReactorTest(unittest.TestCase):
             os.close(w)
 
 if __name__ == '__main__':
-    unittest.main()
+    import sys
+    unittest.main(argv=sys.argv)
