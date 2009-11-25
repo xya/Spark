@@ -26,200 +26,193 @@ import types
 import threading
 import socket
 import logging
-from spark.async import Future, Delegate, BlockingQueue, QueueClosedError, threadedMethod
+from spark.async import Future, Delegate, threadedMethod, coroutine, PollReactor
 from spark.messaging.common import AsyncMessenger
 from spark.messaging.protocol import negociateProtocol
 
-__all__ = ["SparkService"]
+__all__ = ["Service", "MessengerService"]
 
-class SparkService(object):
-    def __init__(self):
-        super(SparkService, self).__init__()
-        # all attributes except queue are protected by the lock
-        # invariants:
-        # (1)   'thread != None' means the session has started
-        # (2)   'joinList != None' and 'messenger != None' means the session is active
-        # (3)   'joinList != None' and 'messenger == None' means the session is closing
-        self.lock = threading.RLock()
-        self.conn = None
-        self.thread = None
-        self.messenger = None
-        self.joinList = None
-        # Using the queue is only allowed if (2) is true
-        self.queue = BlockingQueue(32, False, self.lock)
+class Service(object):
+    """
+    Base class for long-running tasks which can use a socket for communication.
     
+    This class uses an asynchronous execution model. The reactor should be used
+    for all perations (I/O and non-I/O), so that the service runs on a single thread.
+    """
+    
+    # The service has not been started yet.
+    UNSTARTED = 0
+    # The service has been started, but is not connected to any peer.
+    DISCONNECTED = 1
+    # The service has been started, and has been requested to establish a connection.
+    CONNECT_REQUESTED = 2
+    # The service has been started, and is waiting for a connection to be established.
+    CONNECTING = 3
+    # The service has been started, and is connected to a peer.
+    CONNECTED = 4
+    # The service has been started and connected, and has been requested to close its connection.
+    DICONNECT_REQUESTED = 5
+    # The service has finished executing and released its resources.
+    FINISHED = 6
+    
+    def __init__(self):
+        super(Service, self).__init__()
+        self.lock = threading.RLock()
+        self.reactor = PollReactor(self.lock)
+        self.state = Service.UNSTARTED
+        self.conn = None
+            
     def connect(self, address):
         """ Try to establish a connection with a remote peer with the specified address. """
-        with self.lock:
-            if self.thread is None:
-                cont = Future()
-                self.thread = threading.Thread(name="Session",
-                    target=self.threadEntry, args=(address, True, cont))
-                self.thread.daemon = True
-                self.thread.start()
-                return cont
-            else:
-                raise Exception("The current session is still active")
+        self._swapState(Service.DISCONNECTED, Service.CONNECT_REQUESTED)
+        cont = Future()
+        self.reactor.callback(self._connectRequest, cont, True, address)
+        return cont
     
     def listen(self, address):
         """ Listen on the interface with the specified addres for a connection. """
-        with self.lock:
-            if self.thread is None:
-                cont = Future()
-                self.thread = threading.Thread(name="Session",
-                    target=self.threadEntry, args=(address, False, cont))
-                self.thread.daemon = True
-                self.thread.start()
-                return cont
-            else:
-                raise Exception("The current session is still active")
+        self._swapState(Service.DISCONNECTED, Service.CONNECT_REQUESTED)
+        cont = Future()
+        self.reactor.callback(self._connectRequest, cont, False, address)
+        return cont
     
     def disconnect(self):
-        """ Terminate the session if it is active. """
+        self._swapState(Service.CONNECTED, Service.DISCONNECT_REQUESTED)
+        cont = Future()
+        self.reactor.callback(self._disconnectRequest, cont)
+        return cont
+    
+    def _assertState(self, state, *otherStates):
         with self.lock:
-            if self.thread is not None:
-                if self.joinList is None:
-                    raise NotImplementedError("Can't close a session which is still starting")
-                else:
-                    cont = Future()
-                    self.joinList.append(cont)
-                    if self.messenger is not None:
-                        self.queue.close()
-                    return cont
+            actualState = state
+        if (actualState != state) and (not actualState in otherStates):
+            raise Exception("The service is in the wrong state to do the operation")
+        else:
+            return actualState
+    
+    def _swapState(self, oldState, newState):
+        with self.lock:
+            if self.state == oldState:
+                self.state = newState
             else:
-                return Future.done()
+                raise Exception("The service is in the wrong state to do the operation")
+
+    def _connectRequest(self, cont, initiating, address):
+        try:
+            self._assertState(Service.CONNECT_REQUESTED)
+            self._startSession(address, initiating, cont)
+        except Exception:
+            cont.failed()
     
-    def join(self):
-        """ Wait for the session to be finished if it is active. """
-        with self.lock:
-            if self.joinList is not None:
-                cont = Future()
-                self.joinList.append(cont)
-                return cont
-            else:
-                return Future.done(False)
+    def _disconnectRequest(self, cont):
+        try:
+            self._assertState(Service.DISCONNECT_REQUESTED)
+            self._endSession()
+        except Exception:
+            cont.failed()
+        else:
+            cont.completed()
     
-    @property
-    def isActive(self):
-        """ Is the session currently active? """ 
-        with self.lock:
-            return (self.thread is not None) and (self.joinList is not None)
-    
-    def threadEntry(self, address, initiating, cont):
-        """ Thread entry point for 'connect'. """
+    @coroutine
+    def _startSession(self, address, initiating, cont):
         started = False
         try:
             # establish a connection and a protocol
-            conn, remoteAddress = self.establishConnection(address, initiating)
+            self.conn, remoteAddress = yield self._establishConnection(address, initiating)
             logging.info("Connected to %s", repr(remoteAddress))
-            name = negociateProtocol(SocketFile(conn), initiating).result
+            name = yield negociateProtocol(SocketFile(conn), initiating)
             logging.debug("Negociated protocol '%s'", name)
             
-            # initialize the session, including derived classes' sessionStarted()
-            with self.lock:
-                self.conn = conn
-                self.joinList = []
-                self.queue.open()
-                self.messenger = AsyncMessenger(SocketFile(conn))
-                recvCont = self.messenger.receiveMessage()
-            self.sessionStarted()
+            # initialize the session, including derived classes' onConnected()
+            self.onConnected(remoteAddress)
             started = True
             cont.completed(remoteAddress)
-            
-            # enter the main loop
-            recvCont.after(self.messageReceived)
-            for task in self.queue:
-                self.handleTask(task)
         except:
             if started:
                 traceback.print_exc()
             else:
                 cont.failed()
-        finally:
-            self.sessionCleanup()
     
-    def establishConnection(self, address, initiating):
+    @coroutine
+    def _establishConnection(self, address, initiating):
+        """ Establish a connection for the service, either with accept() or connect(). """
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
         if initiating:
-            sock.connect(address)
-            return sock, address
+            yield self.reactor.connect(sock, address)
+            yield sock, address
         else:
             try:
                 sock.bind(address)
                 sock.listen(1)
-                return sock.accept()
+                conn, remoteAddr = yield self.reactor.accept(sock)
+                yield conn, remoteAddr
             finally:
                 sock.close()
     
-    def sessionStarted(self):
-        """ Called when a session has started, that is messages can be sent and received. """
+    def _endSession(self):
+        """ Close the connection and free all session-related resources. """
+        if self.conn:
+            # force threads blocked on recv (and send?) to return
+            try:
+                self.conn.shutdown(socket.SHUT_RDWR)
+            except:
+                pass
+            self.conn.close()
+            self.conn = None
+            self.onDisconnected()
+    
+    def onConnected(self, remoteAddr):
+        """ Called when a connection is established to the peer at 'remoteAddr'. """
         pass
     
-    def sendMessage(self, m):
-        """ Send a message to the remote peer. """
-        with self.lock:
-            if self.messenger is None:
-                return Future.error(Exception(
-                    "The current session is not active, can't send messages"))
-            else:
-                return self.messenger.sendMessage(m)
-    
-    def handleTask(task):
-        """ Do something with a task that was submitted. """
+    def onDisconnected(self):
+        """ Called after a connection is terminated. """
         pass
 
-    def messageReceived(self, prev):
+class MessengerService(Service):
+    """
+    Base class for long-running tasks which can comunicate with messages.
+    """
+    def __init__(self):
+        super(MessengerService, self).__init__()
+        self.messenger = None
+        self.recvOp = None
+    
+    def onConnected(self, remoteAddr):
+        self.messenger = AsyncMessenger(SocketFile(self.conn))
+        self.recvOp = self.messenger.receiveMessage()
+        self.recvOp.after(self._messageReceived)
+    
+    def onDisconnected(self):
+        self.recvOp.cancel()
+        if hasattr(self.messenger, "close"):
+            self.messenger.close()
+        self.messenger = None
+    
+    def sendMessage(self, message):
+        if self.messenger is None:
+            raise Exception("The service has to be connected for sending messages.")
+        return self.messenger.sendMessage(message)
+    
+    def _messageReceived(self, prev):
         try:
             message = prev.result
         except:
             message = None
             traceback.print_exc()
-        with self.lock:
-            if self.messenger is not None:
-                if message is None:
-                    self.queue.close(True)
-                else:
-                    logging.debug("Received message: %s", message)
-                    self.queue.put(HandleMessageTask(message))
-                    self.messenger.receiveMessage().after(self.messageReceived)
-
-    def submitTask(self, task):
-        """ Submit a task for execution during an active session. """
-        with self.lock:
-            if self.messenger is None:
-                raise Exception("The current session is not active")
-            else:
-                self.queue.put(task)
-
-    def sessionCleanup(self):
-        """ Close the connection and free all session-related resources. """
-        # close the connection and messenger
-        with self.lock:
-            conn, self.conn = self.conn, None
-            messenger, self.messenger = self.messenger, None
-            self.queue.close()
-        if conn:
-            # force threads blocked on recv (and send?) to return
-            try:
-                conn.shutdown(socket.SHUT_RDWR)
-            except:
-                pass
-            conn.close()
-        if messenger and hasattr(messenger, "close"):
-            messenger.close()
         
-        # stop the session and call futures queued by join and disconnect
-        with self.lock:
-            self.thread = None
-            joinList, self.joinList = self.joinList, None
-        if joinList is not None:
-            for future in joinList:
-                future.completed()
-
-class HandleMessageTask(object):
-    """ Task of handling a message that was received. """
-    def __init__(self, message):
-        self.message = message
+        if message is None:
+            # we have been disconnected
+            self._endSession()
+        else:
+            logging.debug("Received message: %s", message)
+            self.onMessageReceived(message)
+            self.recvOp = self.messenger.receiveMessage()
+            self.recvOp.after(self._messageReceived)
+    
+    def onMessageReceived(self, message):
+        """ This method is called when a message is received. """
+        pass
 
 class SocketFile(object):
     def __init__(self, socket):

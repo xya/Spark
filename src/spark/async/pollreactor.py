@@ -41,8 +41,11 @@ def blocking_mode(fd, blocking=None):
     return (old_mode & flag) == 0
 
 class PollReactor(Reactor):
-    def __init__(self):
-        self.lock = threading.RLock()
+    def __init__(self, lock=None):
+        if lock:
+            self.lock = lock
+        else:
+            self.lock = threading.RLock()
         self.queue = BlockingQueue(64, lock=self.lock)
         self.pending = {}
         self.active = False
@@ -360,7 +363,7 @@ class ConnectOperation(IOOperation):
         return success
     
     def completed(self):
-        self.raise_completed(self.address)
+        self.raise_completed(self.socket, self.address)
 
 class AcceptOperation(IOOperation):
     def __init__(self, socket, cont):

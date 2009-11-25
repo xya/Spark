@@ -23,7 +23,7 @@ import unittest
 import threading
 from spark.async import Future
 from spark.messaging.messages import *
-from spark.fileshare import FileShareSession
+from spark.fileshare import FileShare
 
 BIND_ADDRESS = "127.0.0.1"
 BIND_PORT = 4550
@@ -48,9 +48,10 @@ class BasicIntegrationTest(unittest.TestCase):
     def client(self, cont):
         try:
             remoteAddr = (BIND_ADDRESS, BIND_PORT)
-            s = FileShareSession()
+            s = FileShare()
+            s.startThread()
             s.connect(remoteAddr).wait(1.0)
-            response = s.remoteShare.listFiles({}).wait(1.0)[0]
+            response = s.listFiles({}).wait(1.0)[0]
             s.disconnect().wait(1.0)
             cont.completed(response)
         except:
@@ -58,7 +59,8 @@ class BasicIntegrationTest(unittest.TestCase):
     
     def server(self, listenCont, discCont):
         try:
-            s = FileShareSession()
+            s = FileShare()
+            s.startThread()
             cont = s.listen(("", 4550))
             listenCont.completed()
             cont.wait(1.0)[0]
@@ -67,7 +69,7 @@ class BasicIntegrationTest(unittest.TestCase):
         except:
             if listenCont.pending:
                 listenCont.failed()
-            cont.failed()
+            discCont.failed()
 
 if __name__ == '__main__':
     unittest.main()

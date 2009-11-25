@@ -18,11 +18,31 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-# TODO: refactor this
-from spark.fileshare.files import *
-from spark.fileshare.transfers import *
-from spark.fileshare.service import *
+from types import MethodType
+import threading
+from spark.async import Future
+from spark.messaging import MessengerService
+from spark.messaging import MessageDelivery
 
-__all__ = []
-for module in (files, transfers, service):
-    __all__.extend(module.__all__)
+__all__ = ["FileShare"]
+
+class FileShare(MessengerService, MessageDelivery):
+    """ Service that shares files over a network. """
+    def __init__(self):
+        super(FileShare, self).__init__()
+        self.onMessageReceived = self.deliverMessage
+    
+    def onDisconnected(self):
+        try:
+            self.resetDelivery()
+        finally:
+            super(FileShare, self).onDisconnected()
+    
+    def requestReceived(self, m):
+        pass
+    
+    def notificationReceived(self, m):
+        pass
+    
+    def blockReceived(self, m):
+        pass

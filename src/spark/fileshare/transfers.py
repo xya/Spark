@@ -20,59 +20,8 @@
 
 import types
 from datetime import datetime, timedelta
-from spark.async import Delegate
 
-class FileShare(object):
-    """ Base class for interacting with Spark file shares. """
-    
-    Requests = [
-        "create-transfer", "start-transfer", "close-transfer",
-        "list-files", "shutdown"
-    ]
-    
-    Notifications = [
-        "file-added", "file-removed", "transfer-state-changed", "panic"
-    ]
-    
-    def close(self):
-        """ Close the file share, terminating it and freeing resources. """
-        pass
-    
-    def attributeName(self, tag):
-        """ Return the name of the attribute used for the specified tag. """
-        return toCamelCase(tag)
-    
-    def createRequest(self, tag, handler=None):
-        """ Create a request for the specified tag. """
-        name = self.attributeName(tag)
-        if handler is None:
-            def requestHandler(self, params):
-                raise NotImplementedError("The '%s' request handler is not implemented" % tag)
-            handler = types.MethodType(requestHandler, self)
-        setattr(self, name, handler)
-        return name
-    
-    def invokeRequest(self, tag, *args):
-        """ Invoke the request that has the specified tag. """
-        name = self.attributeName(tag)
-        if hasattr(self, name):
-            handler = getattr(self, name)
-            if hasattr(handler, "__call__"):
-                return handler(*args)
-        
-    def createEvent(self, tag):
-        """ Create an event for the specified tag. """
-        name = self.attributeName(tag)
-        setattr(self, name, Delegate())
-        return name
-        
-    def invokeEvent(self, tag, *args):
-        """ Invoke the event that has the specified tag. """
-        name = self.attributeName(tag)
-        if hasattr(self, name):
-            delegate = getattr(self, name)
-            if hasattr(delegate, "__call__"):
-                delegate(*args)
+__all__ = ["TransferInfo"]
 
 class TransferLocation(object):
     LOCAL = 0       # a local file is being sent
