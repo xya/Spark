@@ -21,7 +21,7 @@
 from types import MethodType
 import threading
 from spark.async import Future
-from spark.session import Session
+from spark.messaging import SparkService
 from spark.messaging import MessageDelivery
 from spark.fileshare.common import FileShare
 from spark.fileshare.local import LocalFileShare
@@ -29,7 +29,7 @@ from spark.fileshare.remote import RemoteFileShare
 
 __all__ = ["FileShareSession"]
 
-class FileShareSession(Session, MessageDelivery):
+class FileShareSession(SparkService, MessageDelivery):
     def __init__(self):
         super(FileShareSession, self).__init__()
         self.__shareLock = threading.RLock()

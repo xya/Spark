@@ -28,13 +28,13 @@ import socket
 import logging
 from spark.async import Future, Delegate, BlockingQueue, QueueClosedError, threadedMethod
 from spark.messaging.common import AsyncMessenger
-from spark.messaging import *
+from spark.messaging.protocol import negociateProtocol
 
-__all__ = ["Session", "SessionTask"]
+__all__ = ["SparkService"]
 
-class Session(object):
+class SparkService(object):
     def __init__(self):
-        super(Session, self).__init__()
+        super(SparkService, self).__init__()
         # all attributes except queue are protected by the lock
         # invariants:
         # (1)   'thread != None' means the session has started
