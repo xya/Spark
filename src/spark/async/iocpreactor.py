@@ -40,10 +40,7 @@ class CompletionPortReactor(Reactor):
         self.pending = {}
         self.onClosed = Delegate(self.lock)
         self.active = False
-    
-    def register(self, file):
-        """ Register the file to be used for asynchronous I/O operations. """
-        pass
+        self.cp = CompletionPort()
     
     def read(self, file, size):
         raise NotImplementedError()
@@ -63,7 +60,9 @@ class CompletionPortReactor(Reactor):
     
     def callback(self, fun, *args, **kwargs):
         """ Submit a function to be called back on the reactor's thread. """
-        raise NotImplementedError()
+        if fun is None:
+            raise TypeError("The function must not be None")
+        self.cp.post(fun, *args, **kwargs)
     
     def launch_thread(self):
         """ Start a background I/O thread to run the reactor. """
@@ -95,134 +94,54 @@ class CompletionPortReactor(Reactor):
     
     def close(self):
         """ Close the reactor, terminating all pending operations. """
-        pass
+        with self.lock:
+            if self.active:
+                self.cp.post(None)
     
     def __enter__(self):
         return self
     
     def __exit__(self, type, e, traceback):
         self.close()
-
-from ctypes import windll, WinError, Structure, Union
-from ctypes import cast, byref, sizeof, POINTER, c_void_p, c_uint32
-
-# typedef struct _OVERLAPPED {
-#   ULONG_PTR Internal;
-#   ULONG_PTR InternalHigh;
-#   union {
-#     struct {
-#       DWORD Offset;
-#       DWORD OffsetHigh;
-#     } ;
-#     PVOID Pointer;
-#   } ;
-#   HANDLE    hEvent;
-# }OVERLAPPED, *LPOVERLAPPED;
-class OVERLAPPED_offset(Structure):
-    _fields_ = [("Low", c_uint32), ("High", c_uint32)]
-
-class OVERLAPPED_data(Union):
-    _fields_ = [("Offset", OVERLAPPED_offset), ("Pointer", c_void_p)]
-
-class OVERLAPPED(Structure):
-    _fields_ = [("Internal", POINTER(c_uint32)),
-                ("InternalHigh", POINTER(c_uint32)),
-                ("Data", OVERLAPPED_data),
-                ("hEvent", c_void_p)]
-
-LP_OVERLAPPED = POINTER(OVERLAPPED)
-
-class Win32(object):
-    """ Wrapper for Windows API functions """
-    INVALID_HANDLE_VALUE = c_void_p(-1)
-    MEM_COMMIT = 0x1000
-    MEM_RESERVE = 0x2000
-    PAGE_READWRITE = 0x04
-    MEM_RELEASE = 0x8000
-    HEAP_ZERO_MEMORY = 0x00000008
     
-    def __init__(self):
-        # HANDLE WINAPI CreateIoCompletionPort(
-        # __in      HANDLE FileHandle,
-        # __in_opt  HANDLE ExistingCompletionPort,
-        # __in      ULONG_PTR CompletionKey,
-        # __in      DWORD NumberOfConcurrentThreads
-        # );
-        self.CreateIoCompletionPort = windll.kernel32.CreateIoCompletionPort
-        self.CreateIoCompletionPort.argtypes = [c_void_p, c_void_p,
-                POINTER(c_uint32), c_uint32]
-        self.CreateIoCompletionPort.restype = c_void_p
-        # BOOL WINAPI PostQueuedCompletionStatus(
-        #   __in      HANDLE CompletionPort,
-        #   __in      DWORD dwNumberOfBytesTransferred,
-        #   __in      ULONG_PTR dwCompletionKey,
-        #   __in_opt  LPOVERLAPPED lpOverlapped
-        # );
-        self.PostQueuedCompletionStatus = windll.kernel32.PostQueuedCompletionStatus
-        self.PostQueuedCompletionStatus.argtypes = [c_void_p, c_uint32,
-                POINTER(c_uint32), LP_OVERLAPPED]
-        self.PostQueuedCompletionStatus.restype = c_uint32
-        # BOOL WINAPI GetQueuedCompletionStatus(
-        #   __in   HANDLE CompletionPort,
-        #   __out  LPDWORD lpNumberOfBytes,
-        #   __out  PULONG_PTR lpCompletionKey,
-        #   __out  LPOVERLAPPED *lpOverlapped,
-        #   __in   DWORD dwMilliseconds
-        # );
-        self.GetQueuedCompletionStatus = windll.kernel32.GetQueuedCompletionStatus
-        self.GetQueuedCompletionStatus.argtypes = [c_void_p, POINTER(c_uint32),
-                POINTER(c_void_p), POINTER(LP_OVERLAPPED), c_uint32]
-        self.GetQueuedCompletionStatus.restype = c_uint32
-        #  LPVOID WINAPI VirtualAlloc(
-        #   __in_opt  LPVOID lpAddress,
-        #   __in      SIZE_T dwSize,
-        #   __in      DWORD flAllocationType,
-        #   __in      DWORD flProtect
-        # );
-        self.VirtualAlloc = windll.kernel32.VirtualAlloc
-        self.VirtualAlloc.argtypes = [c_void_p, c_void_p, c_uint32, c_uint32]
-        self.VirtualAlloc.restype = c_void_p
-        # BOOL WINAPI VirtualFree(
-        #  __in  LPVOID lpAddress,
-        #  __in  SIZE_T dwSize,
-        #  __in  DWORD dwFreeType
-        # );
-        self.VirtualFree = windll.kernel32.VirtualFree
-        self.VirtualFree.argtypes = [c_void_p, c_void_p, c_uint32]
-        self.VirtualFree.restype = c_uint32
-        # HANDLE WINAPI GetProcessHeap(void);
-        self.GetProcessHeap = windll.kernel32.GetProcessHeap
-        self.GetProcessHeap.argtypes = []
-        self.GetProcessHeap.restype = c_void_p
-        # LPVOID WINAPI HeapAlloc(
-        #   __in  HANDLE hHeap,
-        #   __in  DWORD dwFlags,
-        #   __in  SIZE_T dwBytes
-        # );
-        self.HeapAlloc = windll.kernel32.HeapAlloc
-        self.HeapAlloc.argtypes = [c_void_p, c_uint32, c_void_p]
-        self.HeapAlloc.restype = c_void_p
-        # BOOL WINAPI HeapFree(
-        #   __in  HANDLE hHeap,
-        #   __in  DWORD dwFlags,
-        #   __in  LPVOID lpMem
-        # );
-        self.HeapFree = windll.kernel32.HeapFree
-        self.HeapFree.argtypes = [c_void_p, c_uint32, c_void_p]
-        self.HeapFree.restype = c_void_p
+    def eventLoop(self):
+        try:
+            while True:
+                self.logger.log(LOG_VERBOSE, "Waiting for GetQueuedCompletionStatus()")
+                op = self.cp.wait()
+                self.logger.log(LOG_VERBOSE, "Woke up from GetQueuedCompletionStatus()")
+                if hasattr(op, 'func'):
+                    self.handleCallback(op)
+                elif hasattr(op, 'tag'):
+                    self.handleIOCompletion(op)
+                else:
+                    break
+        finally:
+            self.cleanup()
     
-    def allocOVERLAPPED(self):
-        size = sizeof(OVERLAPPED)
-        p = self.HeapAlloc(self.GetProcessHeap(), Win32.HEAP_ZERO_MEMORY, size)
-        if p:
-            return cast(p, LP_OVERLAPPED)
-        else:
-            return None
+    def cleanup(self):
+        self.logger.debug("Reactor shutting down")
+        with self.lock:
+            self.active = False
+            self.cp.close()
+            self.cp = None
+        try:
+            self.onClosed()
+        except Exception:
+            self.logger.exception("onClosed() failed")
     
-    def freeOVERLAPPED(self, lpOver):
-        p = cast(lpOver, c_void_p)
-        if not self.HeapFree(self.GetProcessHeap(), 0, p):
-            raise WinError()
+    def handleCallback(self, cb):
+        self.logger.log(LOG_VERBOSE, "Invoking non-I/O callback %i" % cb.id)
+        try:
+            cb.func(*cb.args, **cb.kwargs)
+        except Exception:
+            self.logger.exception("Error in non-I/O callback")
+    
+    def handleIOCompletion(self, op):
+        pass
+
+from spark.async.win32 import *
+from ctypes import cast, byref, POINTER, c_void_p, c_uint32
 
 class CompletionPort(object):
     """ Wrapper for an I/O completion port """
@@ -230,39 +149,38 @@ class CompletionPort(object):
         """ Create a new completion port. """
         self.win32 = Win32()
         self.handle = self.win32.CreateIoCompletionPort(
-            self.win32.INVALID_HANDLE_VALUE, None, None, 0)
-        if not self.handle:
-            raise WinError()
+            Win32.INVALID_HANDLE_VALUE, None, None, 0)
         self.lock = threading.RLock()
         self.callbacks = {}
     
+    def close(self):
+        """ Close the completion port. """
+        if self.handle:
+            self.win32.CloseHandle(self.handle)
+            self.handle = c_void_p(0)
+    
     def register(self, hFile):
         """ Register a file with the completion port and return its tag. """
-        ret = self.win32.CreateIoCompletionPort(hFile, self.handle, hFile, 0)
-        if not self.handle:
-            raise WinError()
+        self.win32.CreateIoCompletionPort(hFile, self.handle, hFile, 0)
     
     def post(self, func, *args, **kwargs):
         """ Post a callback to the completion port. """
+        # wish I could manually increase the refcount, to avoid the lock & dict
         with self.lock:
             cbData = (func, args, kwargs)
             cbID = id(cbData)
             self.callbacks[cbID] = cbData
         lpOver = self.win32.allocOVERLAPPED()
         lpOver.contents.Data.Pointer = cbID
-        ret = self.win32.PostQueuedCompletionStatus(self.handle, 0, None, lpOver)
-        if not ret:
-            raise WinError()
+        self.win32.PostQueuedCompletionStatus(self.handle, 0, None, lpOver)
     
     def wait(self):
         """ Wait for an operation to be finished and return it. """
         bytes = c_uint32()
         tag = c_void_p(0)
         lpOver = cast(0, LP_OVERLAPPED)
-        ret = self.win32.GetQueuedCompletionStatus(self.handle,
+        self.win32.GetQueuedCompletionStatus(self.handle,
             byref(bytes), byref(tag), byref(lpOver), -1)
-        if not ret:
-            raise WinError()
         if bool(tag):
             # IO operation, nothing special to do
             return IOOperation(tag, bytes, lpOver)
@@ -272,7 +190,10 @@ class CompletionPort(object):
             self.win32.freeOVERLAPPED(lpOver)
             with self.lock:
                 cbData = self.callbacks.pop(cbID)
-            return Callback(cbData[0], *cbData[1], **cbData[2])
+            if cbData[0] is None:
+                return ShutdownRequest(cbID)
+            else:
+                return Callback(cbID, cbData[0], *cbData[1], **cbData[2])
 
 class IOOperation(object):
     def __init__(self, tag, bytes, overlapped):
@@ -281,10 +202,12 @@ class IOOperation(object):
         self.overlapped = overlapped
 
 class Callback(object):
-    def __init__(self, func, *args, **kwargs):
+    def __init__(self, id, func, *args, **kwargs):
+        self.id = id
         self.func = func
         self.args = args
         self.kwargs = kwargs
-    
-    def __call__(self):
-        self.func(*self.args, **self.kwargs)
+
+class ShutdownRequest(object):
+    def __init__(self, id):
+        self.id = id

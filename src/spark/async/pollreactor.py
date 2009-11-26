@@ -63,14 +63,6 @@ class PollReactor(Reactor):
         blocking_mode(self.req_r, False)
         blocking_mode(self.req_w, False)
     
-    def register(self, file):
-        """ Register the file to be used for asynchronous I/O operations. """
-        if hasattr(file, "fileno"):
-            fd = file.fileno()
-        else:
-            fd = file
-        blocking_mode(fd, False)
-    
     def read(self, file, size):
         cont = Future()
         op = ReadOperation(self, file, size, cont)
@@ -101,6 +93,8 @@ class PollReactor(Reactor):
     
     def callback(self, fun, *args, **kwargs):
         """ Submit a function to be called back on the reactor's thread. """
+        if fun is None:
+            raise TypeError("The function must not be None")
         op = InvokeOperation(self, fun, args, kwargs)
         self.submit(op)
     

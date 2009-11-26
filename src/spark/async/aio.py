@@ -40,10 +40,6 @@ class Reactor(object):
         """ Close the reactor, terminating all pending operations. """
         raise NotImplementedError()
     
-    def register(self, file):
-        """ Register the file to be used for asynchronous I/O operations. """
-        raise NotImplementedError()
-    
     def read(self, file, size):
         """ Submit a request to perform a read operation on the file. """
         raise NotImplementedError()
