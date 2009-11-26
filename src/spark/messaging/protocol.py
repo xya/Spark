@@ -18,6 +18,7 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+import logging
 from spark.async import Future, coroutine
 from spark.messaging.parser import MessageReader
 from spark.messaging.messages import MessageWriter
@@ -139,6 +140,7 @@ class Negociator(object):
     def asyncRead(self, size=None):
         if hasattr(self.file, "beginRead"):
             return self.file.beginRead(size)
+        logging.warning("Protocol negociation using a file not capable of async I/O")
         try:
             data = self.file.read(size)
             return Future.done(data)
@@ -148,6 +150,7 @@ class Negociator(object):
     def asyncWrite(self, data):
         if hasattr(self.file, "beginWrite"):
             return self.file.beginWrite(data)
+        logging.warning("Protocol negociation using a file not capable of async I/O")
         try:
             self.file.write(data)
             return Future.done()

@@ -23,7 +23,7 @@ from spark.async.queue import *
 from spark.async.aio import *
 from spark.async.pollreactor import *
 
-__all__ = [ "Reactor", "AsyncSocket", "blocking_mode", "PollReactor",
+__all__ = [ "Reactor", "blocking_mode", "PollReactor",
     "BlockingQueue", "QueueClosedError", "Future",
     "FutureFrozenError", "TaskError", "TaskFailedError", "TaskCanceledError",
     "Delegate", "threadedMethod", "coroutine"

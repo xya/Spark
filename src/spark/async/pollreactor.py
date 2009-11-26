@@ -23,6 +23,7 @@ import os
 import select
 import fcntl
 import threading
+import socket
 import logging
 from spark.async import Future, BlockingQueue, QueueClosedError, Delegate
 from spark.async.aio import Reactor
@@ -76,6 +77,10 @@ class PollReactor(Reactor):
         op = WriteOperation(self, file, data, cont)
         self.submit(op)
         return cont
+    
+    def socket(self, family=None, type=None, proto=None):
+        """ Create a socket that uses the reactor to do asynchronous I/O. """
+        return NonBlockingSocket.socket(self, family, type, proto)
     
     def connect(self, socket, address):
         cont = Future()
@@ -263,22 +268,22 @@ class IOOperation(object):
         self.reactor.logger.log(LOG_VERBOSE, "Completed operation %s" % str(self))
         try:
             self.cont.completed(*args)
-        except:
-            self.reactor.logger.error("Error in I/O completed() callback")
+        except Exception:
+            self.reactor.logger.exception("Error in I/O completed() callback")
     
     def raise_failed(self, *args):
         self.reactor.logger.debug("Failed operation of %s" % str(self))
         try:
             self.cont.failed(*args)
-        except:
-            self.reactor.logger.error("Error in I/O failed() callback")
+        except Exception:
+            self.reactor.logger.exception("Error in I/O failed() callback")
     
     def raise_canceled(self):
         self.reactor.logger.debug("Canceled operation of %s" % str(self))
         try:
             self.cont.cancel()
-        except:
-            self.reactor.logger.error("Error in I/O canceled() callback")
+        except Exception:
+            self.reactor.logger.exception("Error in I/O canceled() callback")
     
     def nonblock(self, func, args=(), errno=os.errno.EAGAIN):
         try:
@@ -308,8 +313,8 @@ class InvokeOperation(IOOperation):
         self.reactor.logger.log(LOG_VERBOSE, "Completed operation %s" % str(self))
         try:
             self.fun(*self.args, **self.kwargs)
-        except Exception as e:
-            self.reactor.logger.error("Error in non-I/O callback: %s" % str(e))
+        except Exception:
+            self.reactor.logger.exception("Error in non-I/O callback")
 
 class PipeReadOperation(IOOperation):
     def __init__(self, reactor, fd):
@@ -432,3 +437,52 @@ class AcceptOperation(IOOperation):
     
     def __str__(self):
         return "AcceptOperation(fd=%i)" % (self.fd)
+
+class NonBlockingSocket(object):
+    """ File-like wrapper for a socket. Uses a reactor to perform asynchronous I/O. """
+    def __init__(self, reactor, sock):
+        self.reactor = reactor
+        self.socket = sock
+    
+    @classmethod
+    def socket(cls, reactor, family=None, type=None, proto=None):
+        sock = socket.socket(family, type, proto)
+        sock.setblocking(0)
+        return cls(reactor, sock)
+    
+    def bind(self, address):
+        return self.socket.bind(address)
+    
+    def listen(self, backlog=1):
+        return self.socket.listen(backlog)
+    
+    def beginConnect(self, address):
+        cont = Future()
+        self.reactor.connect(self.socket, address).after(self._endConnect, cont)
+        return cont
+    
+    def _endConnect(self, prev, cont):
+        sock, remoteAddr = prev.results
+        cont.completed(self, remoteAddr)
+    
+    def beginAccept(self):
+        cont = Future()
+        self.reactor.accept(self.socket).after(self._endAccept, cont)
+        return cont
+    
+    def _endAccept(self, prev, cont):
+        conn, remoteAddr = prev.results
+        conn.setblocking(0)
+        cont.completed(NonBlockingSocket(self.reactor, conn), remoteAddr)
+    
+    def beginRead(self, size):
+        return self.reactor.read(self.socket, size)
+    
+    def beginWrite(self, data):
+        return self.reactor.write(self.socket, data)
+    
+    def shutdown(self, how):
+        return self.socket.shutdown(how)
+    
+    def close(self):
+        return self.socket.close()

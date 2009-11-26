@@ -26,7 +26,7 @@ import threading
 import socket
 import logging
 from functools import wraps
-from spark.async import Future, Delegate, coroutine, PollReactor, AsyncSocket
+from spark.async import Future, Delegate, coroutine, PollReactor
 from spark.messaging.common import AsyncMessenger, MessageDelivery
 from spark.messaging.protocol import negociateProtocol
 from spark.messaging.messages import Request, Response, Notification
@@ -156,18 +156,17 @@ class Service(object):
     
     def _startConnection(self, address, initiating):
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
-            sock.setblocking(0)
+            sock = self.reactor.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
             if initiating:
                 self.connState = Service.CONNECTING
-                yield self.reactor.connect(sock, address)
+                yield sock.beginConnect(address)
                 self.conn, self.remoteAddr = sock, address
             else:
                 try:
                     sock.bind(address)
                     sock.listen(1)
                     self.connState = Service.CONNECTING
-                    self.conn, self.remoteAddr = yield self.reactor.accept(sock)
+                    self.conn, self.remoteAddr = yield sock.beginAccept()
                 finally:
                     sock.close()
             self.connState = Service.CONNECTED
@@ -233,11 +232,10 @@ class MessengerService(Service):
         self.messenger = None
     
     def _connected(self, remoteAddr, initiating):
-        f = AsyncSocket(self.conn, self.reactor)
         self.logger.debug("Negociating protocol")
-        negociateProtocol(f, initiating).after(self._protocolNegociated, f)
+        negociateProtocol(self.conn, initiating).after(self._protocolNegociated)
     
-    def _protocolNegociated(self, prev, f):
+    def _protocolNegociated(self, prev):
         try:
             name = prev.result
         except:
@@ -245,7 +243,7 @@ class MessengerService(Service):
             self._closeConnection()
         else:
             self.logger.debug("Negociated protocol '%s'", name)
-            self.messenger = AsyncMessenger(f)
+            self.messenger = AsyncMessenger(self.conn)
             self.sessionStarted()
             self.messenger.receiveMessage().after(self._messageReceived)
     

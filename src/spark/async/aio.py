@@ -18,7 +18,7 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-__all__ = ["Reactor", "AsyncSocket"]
+__all__ = ["Reactor"]
 
 class Reactor(object):
     """
@@ -60,24 +60,10 @@ class Reactor(object):
         """ Submit a request to perform an accept operation on the socket. """
         raise NotImplementedError()
     
+    def socket(self, family=None, type=None, proto=None):
+        """ Create a socket that uses the reactor to do asynchronous I/O. """
+        raise NotImplementedError()
+    
     def invoke(self, fun, *args):
         """ Submit a request to invoke a callable. """
         raise NotImplementedError()
-
-class AsyncSocket(object):
-    """ File-like wrapper for a socket. Uses a reactor to perform asynchronous I/O. """
-    def __init__(self, socket, reactor):
-        self.socket = socket
-        self.reactor = reactor
-    
-    def beginConnect(self, address):
-        return self.reactor.connect(self.socket, address)
-    
-    def beginAccept(self):
-        return self.reactor.accept(self.socket)
-    
-    def beginRead(self, size):
-        return self.reactor.read(self.socket, size)
-    
-    def beginWrite(self, data):
-        return self.reactor.write(self.socket, data)
