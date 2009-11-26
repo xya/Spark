@@ -48,6 +48,7 @@ class PollReactor(Reactor):
             self.lock = threading.RLock()
         self.queue = BlockingQueue(64, lock=self.lock)
         self.pending = {}
+        self.joinList = None
         self.active = False
         self.req_r, self.req_w = os.pipe()
         blocking_mode(self.req_r, False)
@@ -95,6 +96,7 @@ class PollReactor(Reactor):
         with self.lock:
             if self.active is False:
                 self.active = True
+                self.joinList = []
                 t = threading.Thread(target=self.eventLoop, name="I/O thread")
                 t.daemon = True
                 t.start()
@@ -107,6 +109,7 @@ class PollReactor(Reactor):
         with self.lock:
             if self.active is False:
                 self.active = True
+                self.joinList = []
             else:
                 return
         self.eventLoop()
@@ -127,6 +130,16 @@ class PollReactor(Reactor):
                 self.req_w = None
         self.queue.close()
     
+    def join(self):
+        """ Return a future that will be completed when the reactor is shut down. """
+        with self.lock:
+            if self.joinList is not None:
+                cont = Future()
+                self.joinList.append(cont)
+                return cont
+            else:
+                return Future.done()
+    
     def __enter__(self):
         return self
     
@@ -146,6 +159,12 @@ class PollReactor(Reactor):
                 op.canceled()
         self.pending = {}
         with self.lock:
+            for future in self.joinList:
+                try:
+                    future.completed()
+                except Exception:
+                    traceback.print_exc()
+            self.joinList = []
             self.active = False
     
     def eventLoop(self):

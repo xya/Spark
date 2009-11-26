@@ -52,18 +52,17 @@ class Service(object):
     
     # The service has not been started yet.
     UNSTARTED = 0
-    # The service has been started, but is not connected to any peer.
+    # The service has been started
+    RUNNING = 1
+    # The service has terminated executing and released its resources.
+    TERMINATED = 2
+    
+    # The service is not connected to any peer.
     DISCONNECTED = 1
-    # The service has been started, and has been requested to establish a connection.
-    CONNECT_REQUESTED = 2
-    # The service has been started, and is waiting for a connection to be established.
+    # The service has been requested to establish a connection.
     CONNECTING = 3
-    # The service has been started, and is connected to a peer.
+    # The service is connected to a peer.
     CONNECTED = 4
-    # The service has been started and connected, and has been requested to close its connection.
-    DISCONNECT_REQUESTED = 5
-    # The service has finished executing and released its resources.
-    FINISHED = 6
     
     def __init__(self):
         super(Service, self).__init__()
@@ -71,75 +70,86 @@ class Service(object):
         self.reactor = PollReactor(self.lock)
         self.state = Service.UNSTARTED
         self.conn = None
+        self.connState = Service.DISCONNECTED
     
     def start(self):
         """
         Execute the service on the current thread. This method blocks until
         the service has finished executing.
         """
-        self._swapState(Service.UNSTARTED, Service.DISCONNECTED)
+        self._setExecuting()
         self.reactor.run()
+        with self.lock:
+            self.state = Service.TERMINATED
     
     def startThread(self):
         """
         Execute the service on a new thread. This method returns immediatly.
         """
-        self._swapState(Service.UNSTARTED, Service.DISCONNECTED)
+        self._setExecuting()
         self.reactor.launch_thread()
+        self.reactor.join().after(self._terminated)
+    
+    def terminate(self):
+        """ Request the service to terminate. """
+        with self.lock:
+            if self.state == Service.UNSTARTED:
+                raise Exception("The service has not been started yet")
+            elif self.state == Service.RUNNING:
+                self.reactor.close()
+    
+    def join(self):
+        """ Return a future that will be completed when the service has terminated executing. """
+        with self.lock:
+            if self.state == Service.UNSTARTED:
+                raise Exception("The service has not been started yet")
+            elif self.state == Service.TERMINATED:
+                return Future.done()
+            else:
+                return self.reactor.join()
     
     def connect(self, address):
         """ Try to establish a connection with a remote peer with the specified address. """
-        self._swapState(Service.DISCONNECTED, Service.CONNECT_REQUESTED)
         cont = Future()
         self.reactor.callback(self._connectRequest, cont, True, address)
         return cont
     
     def listen(self, address):
         """ Listen on the interface with the specified addres for a connection. """
-        self._swapState(Service.DISCONNECTED, Service.CONNECT_REQUESTED)
         cont = Future()
         self.reactor.callback(self._connectRequest, cont, False, address)
         return cont
     
     def disconnect(self):
-        """
-        Close an established connection. It is possible to call connect()
-        or listen() again after calling this method.
-        """
-        self._swapState(Service.CONNECTED, Service.DISCONNECT_REQUESTED)
+        """ Close an established connection. """
         cont = Future()
         self.reactor.callback(self._disconnectRequest, cont)
         return cont
     
     def _assertExecuting(self):
         with self.lock:
-            state = self.state
-        if (state == Service.UNSTARTED) or (state == Service.FINISHED):
-            raise Exception("The service has to be executing to do the operation")
+            if self.state != Service.RUNNING:
+                raise Exception("The service must be running to do the operation")
     
-    def _assertState(self, state, *otherStates):
+    def _setExecuting(self):
         with self.lock:
-            actualState = self.state
-        if (actualState != state) and (not actualState in otherStates):
-            raise Exception(
-                "The service is in the wrong state (%i) to do the operation" % actualState)
-        else:
-            return actualState
-    
-    def _swapState(self, oldState, newState):
+            if self.state == Service.UNSTARTED:
+                self.state = Service.RUNNING
+            elif self.state == Service.RUNNING:
+                raise Exception("The service is already running")
+            elif self.state == Service.TERMINATED:
+                raise Exception("The service has terminated")
+
+    def _terminated(self, prev):
         with self.lock:
-            if self.state == oldState:
-                self.state = newState
-            else:
-                raise Exception(
-                    "The service is in the wrong state (%i) to do the operation" % self.state)
+            self.state = Service.TERMINATED
 
     def _connectRequest(self, cont, initiating, address):
-        try:
-            self._assertState(Service.CONNECT_REQUESTED)
-            self._startConnection(address, initiating, cont)
-        except Exception:
-            cont.failed()
+        if self.connState == Service.CONNECTED:
+            cont.failed(Exception("The service is already connected"))
+        elif self.connState == Service.CONNECTING:
+            cont.failed(Exception("The service is already trying to connect"))
+        cont.run_coroutine(self._startConnection(address, initiating))
     
     def _disconnectRequest(self, cont):
         try:
@@ -149,52 +159,47 @@ class Service(object):
         else:
             cont.completed()
     
-    @coroutine
-    def _startConnection(self, address, initiating, cont):
+    def _startConnection(self, address, initiating):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
             if initiating:
-                with self.lock:
-                    self.state = Service.CONNECTING
+                self.connState = Service.CONNECTING
                 yield self.reactor.connect(sock, address)
                 self.conn, remoteAddress = sock, address
             else:
                 try:
                     sock.bind(address)
                     sock.listen(1)
-                    with self.lock:
-                        self.state = Service.CONNECTING
+                    self.connState = Service.CONNECTING
                     self.conn, remoteAddress = yield self.reactor.accept(sock)
                 finally:
                     sock.close()
+            self.connState = Service.CONNECTED
             logging.info("Connected to %s", repr(remoteAddress))
+            self.reactor.callback(self.connected, remoteAddress, initiating)
         except:
             self._closeConnection()
-            cont.failed()
-        else:
-            with self.lock:
-                self.state = Service.CONNECTED
-            cont.completed(remoteAddress)
-        self.connected(remoteAddress, initiating)
+            raise
+        yield remoteAddress
     
     def _closeConnection(self):
         """ If there is an active connection, close it. """
-        wasDisconnected = False
-        with self.lock:
-            if self.conn:
-                try:
-                    # force threads blocked on recv (and send?) to return
-                    try:
-                        self.conn.shutdown(socket.SHUT_RDWR)
-                    except Exception:
-                        traceback.print_exc()
-                    self.conn.close()
-                    self.conn = None
-                except Exception:
-                    traceback.print_exc()
-                wasDisconnected = self.state in (Service.CONNECTED,
-                                                 Service.DISCONNECT_REQUESTED)
-            self.state = Service.DISCONNECTED
+        if self.conn:
+            # force threads blocked on recv (and send?) to return
+            try:
+                self.conn.shutdown(socket.SHUT_RDWR)
+            except Exception:
+                 traceback.print_exc()
+            # close the connection
+            try:
+                self.conn.close()
+                self.conn = None
+            except Exception:
+                traceback.print_exc()
+            wasDisconnected = (self.connState == Service.CONNECTED)
+            self.connState = Service.DISCONNECTED
+        else:
+            wasDisconnected = False
         
         if wasDisconnected:
             self.disconnected()
