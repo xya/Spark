@@ -26,9 +26,10 @@ import threading
 import socket
 import logging
 from functools import wraps
-from spark.async import Future, Delegate, threadedMethod, coroutine, PollReactor
+from spark.async import Future, Delegate, coroutine, PollReactor, AsyncSocket
 from spark.messaging.common import AsyncMessenger, MessageDelivery
 from spark.messaging.protocol import negociateProtocol
+from spark.messaging.messages import Request, Response, Notification
 
 __all__ = ["Service", "MessengerService", "serviceMethod"]
 
@@ -64,13 +65,19 @@ class Service(object):
     # The service is connected to a peer.
     CONNECTED = 4
     
-    def __init__(self):
+    def __init__(self, name=None):
         super(Service, self).__init__()
+        self.logger = logging.getLogger(name)
         self.lock = threading.RLock()
-        self.reactor = PollReactor(self.lock)
+        self.reactor = PollReactor(name, self.lock)
+        self.reactor.onClosed += self._terminated
         self.state = Service.UNSTARTED
         self.conn = None
+        self.remoteAddr = None
         self.connState = Service.DISCONNECTED
+        self.onConnected = Delegate(self.lock)
+        self.onDisconnected = Delegate(self.lock)
+        self.onTerminated = Delegate(self.lock)
     
     def start(self):
         """
@@ -79,8 +86,6 @@ class Service(object):
         """
         self._setExecuting()
         self.reactor.run()
-        with self.lock:
-            self.state = Service.TERMINATED
     
     def startThread(self):
         """
@@ -88,7 +93,6 @@ class Service(object):
         """
         self._setExecuting()
         self.reactor.launch_thread()
-        self.reactor.join().after(self._terminated)
     
     def terminate(self):
         """ Request the service to terminate. """
@@ -97,16 +101,6 @@ class Service(object):
                 raise Exception("The service has not been started yet")
             elif self.state == Service.RUNNING:
                 self.reactor.close()
-    
-    def join(self):
-        """ Return a future that will be completed when the service has terminated executing. """
-        with self.lock:
-            if self.state == Service.UNSTARTED:
-                raise Exception("The service has not been started yet")
-            elif self.state == Service.TERMINATED:
-                return Future.done()
-            else:
-                return self.reactor.join()
     
     def connect(self, address):
         """ Try to establish a connection with a remote peer with the specified address. """
@@ -140,9 +134,10 @@ class Service(object):
             elif self.state == Service.TERMINATED:
                 raise Exception("The service has terminated")
 
-    def _terminated(self, prev):
+    def _terminated(self):
         with self.lock:
             self.state = Service.TERMINATED
+        self.onTerminated()
 
     def _connectRequest(self, cont, initiating, address):
         if self.connState == Service.CONNECTED:
@@ -152,6 +147,7 @@ class Service(object):
         cont.run_coroutine(self._startConnection(address, initiating))
     
     def _disconnectRequest(self, cont):
+        self.logger.debug("_disconnectRequest")
         try:
             self._closeConnection()
         except Exception:
@@ -165,22 +161,22 @@ class Service(object):
             if initiating:
                 self.connState = Service.CONNECTING
                 yield self.reactor.connect(sock, address)
-                self.conn, remoteAddress = sock, address
+                self.conn, self.remoteAddr = sock, address
             else:
                 try:
                     sock.bind(address)
                     sock.listen(1)
                     self.connState = Service.CONNECTING
-                    self.conn, remoteAddress = yield self.reactor.accept(sock)
+                    self.conn, self.remoteAddr = yield self.reactor.accept(sock)
                 finally:
                     sock.close()
             self.connState = Service.CONNECTED
-            logging.info("Connected to %s", repr(remoteAddress))
-            self.reactor.callback(self.connected, remoteAddress, initiating)
+            self.logger.info("Connected to %s", repr(self.remoteAddr))
+            self.reactor.callback(self.onConnected, self.remoteAddr, initiating)
         except:
             self._closeConnection()
             raise
-        yield remoteAddress
+        yield self.remoteAddr
     
     def _closeConnection(self):
         """ If there is an active connection, close it. """
@@ -188,62 +184,67 @@ class Service(object):
             # force threads blocked on recv (and send?) to return
             try:
                 self.conn.shutdown(socket.SHUT_RDWR)
+            except socket.error as e:
+                if e.errno != os.errno.ENOTCONN:
+                    raise
             except Exception:
-                 traceback.print_exc()
+                self.logger.exception("socket.shutdown() failed")
             # close the connection
+            self.logger.info("Disconnected from %s" % repr(self.remoteAddr))
             try:
                 self.conn.close()
-                self.conn = None
             except Exception:
-                traceback.print_exc()
+                self.logger.exception("socket.close() failed")
+            self.conn = None
+            self.remoteAddr = None
             wasDisconnected = (self.connState == Service.CONNECTED)
             self.connState = Service.DISCONNECTED
         else:
             wasDisconnected = False
         
         if wasDisconnected:
-            self.disconnected()
-    
-    def connected(self, remoteAddr, initiating):
-        """
-        Called when a connection is established to the peer at 'remoteAddr'.
-        'initiating' is True if connect() was used, or False if it was listen().
-        """
-        pass
-    
-    def disconnected(self):
-        """ Called after a connection is terminated. """
-        pass
+            self.onDisconnected()
+
+def toCamelCase(tag):
+    """ Convert the tag to camel case (e.g. "create-transfer" becomes "createTransfer"). """
+    words = tag.split("-")
+    first = words.pop(0)
+    words = [word.capitalize() for word in words]
+    words.insert(0, first)
+    return "".join(words)
+
+def toPascalCase(tag):
+    """ Convert the tag to Pascal case (e.g. "create-transfer" becomes "CreateTransfer"). """
+    return "".join([word.capitalize() for word in tag.split("-")])
 
 class MessengerService(Service):
     """
     Base class for long-running tasks which can comunicate using messages.
     """
-    def __init__(self):
-        super(MessengerService, self).__init__()
+    def __init__(self, name=None):
+        super(MessengerService, self).__init__(name)
+        self.onConnected += self._connected
+        self.onDisconnected += self._disconnected
         self.delivery = MessageDelivery()
         self.delivery.sendMessage = self.sendMessage
         self.delivery.messageReceived += self.messageReceived
         self.delivery.requestReceived += self._requestReceived
         self.delivery.notificationReceived += self._notificationReceived
         self.messenger = None
-        self.recvOp = None
     
-    def connected(self, remoteAddr, initiating):
-        f = SocketFile(conn)
+    def _connected(self, remoteAddr, initiating):
+        f = AsyncSocket(self.conn, self.reactor)
+        self.logger.debug("Negociating protocol")
         negociateProtocol(f, initiating).after(self._protocolNegociated, f)
     
     def _protocolNegociated(self, prev, f):
         name = prev.result
-        logging.debug("Negociated protocol '%s'", name)
+        self.logger.debug("Negociated protocol '%s'", name)
         self.messenger = AsyncMessenger(f)
-        self.recvOp = self.messenger.receiveMessage()
         self.sessionStarted()
-        self.recvOp.after(self._messageReceived)
+        self.messenger.receiveMessage().after(self._messageReceived)
     
-    def disconnected(self):
-        if self.recvOp:
-            self.recvOp.cancel()
+    def _disconnected(self):
         if hasattr(self.messenger, "close"):
             self.messenger.close()
         self.messenger = None
@@ -254,23 +255,28 @@ class MessengerService(Service):
         """ Send a message to the connected peer if there is an active session. """
         if not self.isSessionActive:
             raise Exception("A session has be active for sending messages.")
+        self.logger.debug("Sending message: %s", message)
         return self.messenger.sendMessage(message)
     
     def _messageReceived(self, prev):
+        if self.messenger is None:
+            # spurious message after we disconnected
+            return
+        
         try:
             message = prev.result
         except:
             message = None
-            traceback.print_exc()
+            self.logger.exception("Error while receiving a message")
         
         if message is None:
             # we have been disconnected
+            self.logger.debug("Received None")
             self._closeConnection()
         else:
-            logging.debug("Received message: %s", message)
+            self.logger.debug("Received message: %s", message)
             self.delivery.deliverMessage(message)
-            self.recvOp = self.messenger.receiveMessage()
-            self.recvOp.after(self._messageReceived)
+            self.messenger.receiveMessage().after(self._messageReceived)
     
     def _requestReceived(self, req):
         """ Invoke the relevant request handler and send back the results.  """
@@ -278,8 +284,11 @@ class MessengerService(Service):
         if hasattr(self, methodName):
             method = getattr(self, methodName)
             try:
+                self.logger.debug("Executing request handler '%s'" % req.tag)
                 results = method(req)
+                assert not isinstance(results, Future), "Request handler returned a future"
             except Exception as e:
+                self.logger.exception("Error while executing request handler")
                 self._sendErrorReponse(req, e)
             else:
                 self.delivery.sendResponse(req, results)
@@ -346,31 +355,3 @@ class MessengerService(Service):
         response or notification) is received.
         """
         pass
-
-class SocketFile(object):
-    def __init__(self, socket):
-        self.socket = socket
-    
-    def read(self, size):
-        try:
-            return self.socket.recv(size)
-        except socket.error as e:
-            if e.errno == os.errno.ECONNRESET:
-                return ""
-            else:
-                raise
-    
-    beginRead = threadedMethod(read)
-    
-    def beginWrite(self, data):
-        cont = Future()
-        try:
-            self.write(data)
-        except:
-            return Future.failed()
-        else:
-            return Future.done()
-    
-    def write(self, data):
-        #FIXME: check how many bytes have been sent
-        self.socket.send(data)

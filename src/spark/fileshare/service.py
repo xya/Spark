@@ -29,8 +29,8 @@ NOT_FILE_REMOVED = "file-removed"
 
 class FileShare(MessengerService):
     """ Service that shares files over a network. """
-    def __init__(self):
-        super(FileShare, self).__init__()
+    def __init__(self, name=None):
+        super(FileShare, self).__init__(name)
         self.fileAdded = Delegate()
         self.fileRemoved = Delegate()
         self.remoteNotifications = False
@@ -38,7 +38,7 @@ class FileShare(MessengerService):
     @serviceMethod
     def files(self):
         """ Return the current file table, which maps file IDs to files. """
-        return {}
+        return {"123abc" : {"id": "123abc", "name": "Report.pdf", "size": 3145728, "last-modified": "20090619T173529.000Z"}}
     
     @serviceMethod
     def addFile(self, path):
@@ -68,11 +68,12 @@ class FileShare(MessengerService):
         if (isinstance(req.params, dict)
             and req.params.has_key("register") and req.params["register"] is True):
             self.remoteNotifications = True
-        return self.files()
+        return {"123abc" : {"id": "123abc", "name": "Report.pdf", "size": 3145728, "last-modified": "20090619T173529.000Z"}}
     
     def responselistFiles(self, prev):
         """ The remote peer responded to our 'list-files' request. """
         files = prev.result
+        print repr(files)
         # TODO: do something with the file table
     
     def notificationFileAdded(self, n):

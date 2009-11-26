@@ -23,11 +23,13 @@ import os
 import select
 import fcntl
 import threading
-import traceback
-from spark.async import Future, BlockingQueue, QueueClosedError
+import logging
+from spark.async import Future, BlockingQueue, QueueClosedError, Delegate
 from spark.async.aio import Reactor
 
 __all__ = ["blocking_mode", "PollReactor"]
+
+LOG_VERBOSE = 5
 
 def blocking_mode(fd, blocking=None):
     flag = os.O_NONBLOCK
@@ -41,14 +43,15 @@ def blocking_mode(fd, blocking=None):
     return (old_mode & flag) == 0
 
 class PollReactor(Reactor):
-    def __init__(self, lock=None):
+    def __init__(self, name=None, lock=None):
+        self.logger = logging.getLogger(name)
         if lock:
             self.lock = lock
         else:
             self.lock = threading.RLock()
         self.queue = BlockingQueue(64, lock=self.lock)
         self.pending = {}
-        self.joinList = None
+        self.onClosed = Delegate(self.lock)
         self.active = False
         self.req_r, self.req_w = os.pipe()
         blocking_mode(self.req_r, False)
@@ -64,25 +67,25 @@ class PollReactor(Reactor):
     
     def read(self, file, size):
         cont = Future()
-        op = ReadOperation(file, size, cont)
+        op = ReadOperation(self, file, size, cont)
         self.submit(op)
         return cont
     
     def write(self, file, data):
         cont = Future()
-        op = WriteOperation(file, data, cont)
+        op = WriteOperation(self, file, data, cont)
         self.submit(op)
         return cont
     
     def connect(self, socket, address):
         cont = Future()
-        op = ConnectOperation(socket, address, cont)
+        op = ConnectOperation(self, socket, address, cont)
         self.submit(op)
         return cont
     
     def accept(self, socket):
         cont = Future()
-        op = AcceptOperation(socket, cont)
+        op = AcceptOperation(self, socket, cont)
         self.submit(op)
         return cont
     
@@ -96,7 +99,6 @@ class PollReactor(Reactor):
         with self.lock:
             if self.active is False:
                 self.active = True
-                self.joinList = []
                 t = threading.Thread(target=self.eventLoop, name="I/O thread")
                 t.daemon = True
                 t.start()
@@ -109,7 +111,6 @@ class PollReactor(Reactor):
         with self.lock:
             if self.active is False:
                 self.active = True
-                self.joinList = []
             else:
                 return
         self.eventLoop()
@@ -119,6 +120,7 @@ class PollReactor(Reactor):
         Submit an I/O request to be performed asynchronously.
         Requests are not processed before either run() or launch_thread() is called.
         """
+        self.logger.log(LOG_VERBOSE, "Submitting operation %s" % str(op))
         self.queue.put(op)
         os.write(self.req_w, '\0')
     
@@ -130,16 +132,6 @@ class PollReactor(Reactor):
                 self.req_w = None
         self.queue.close()
     
-    def join(self):
-        """ Return a future that will be completed when the reactor is shut down. """
-        with self.lock:
-            if self.joinList is not None:
-                cont = Future()
-                self.joinList.append(cont)
-                return cont
-            else:
-                return Future.done()
-    
     def __enter__(self):
         return self
     
@@ -147,6 +139,7 @@ class PollReactor(Reactor):
         self.close()
     
     def cleanup(self):
+        self.logger.debug("Reactor shutting down")
         with self.lock:
             os.close(self.req_r)
             self.req_r = None
@@ -159,17 +152,15 @@ class PollReactor(Reactor):
                 op.canceled()
         self.pending = {}
         with self.lock:
-            for future in self.joinList:
-                try:
-                    future.completed()
-                except Exception:
-                    traceback.print_exc()
-            self.joinList = []
             self.active = False
+        try:
+            self.onClosed()
+        except Exception:
+            self.logger.exception("onClosed() failed")
     
     def eventLoop(self):
         self.poll = select.poll()
-        self.queue.put(PipeReadOperation(self.req_r, self))
+        self.queue.put(PipeReadOperation(self, self.req_r))
         self.empty_queue()
         try:
             while True:
@@ -243,6 +234,9 @@ class PollReactor(Reactor):
             del self.pending[op.fd]
 
 class IOOperation(object):
+    def __init__(self, reactor):
+        self.reactor = reactor
+        
     def complete(self, event=None):
         raise NotImplementedError()
     
@@ -263,22 +257,25 @@ class IOOperation(object):
         self.raise_completed()
     
     def raise_completed(self, *args):
+        self.reactor.logger.log(LOG_VERBOSE, "Completed operation %s" % str(self))
         try:
             self.cont.completed(*args)
         except:
-            traceback.print_exc()
+            self.reactor.logger.error("Error in I/O completed() callback")
     
     def raise_failed(self, *args):
+        self.reactor.logger.log(LOG_VERBOSE, "Failed operation of %s" % str(self))
         try:
             self.cont.failed(*args)
         except:
-            traceback.print_exc()
+            self.reactor.logger.error("Error in I/O failed() callback")
     
     def raise_canceled(self):
+        self.reactor.logger.log(LOG_VERBOSE, "Canceled operation of %s" % str(self))
         try:
             self.cont.cancel()
         except:
-            traceback.print_exc()
+            self.reactor.logger.error("Error in I/O canceled() callback")
     
     def nonblock(self, func, args=(), errno=os.errno.EAGAIN):
         try:
@@ -293,22 +290,29 @@ class IOOperation(object):
 
 class NoOperation(IOOperation):
     def __init__(self, reactor, fun, args, kwargs):
-        self.reactor = reactor
+        super(NoOperation, self).__init__(reactor)
         self.fun = fun
         self.args = args
         self.kwargs = kwargs
+    
+    def __str__(self):
+        return "NoOperation(args=%s, kw=%s)" % (repr(self.args), repr(self.kwargs))
     
     def complete(self, event=None):
         return True
     
     def completed(self):
-        self.fun(*self.args, **self.kwargs)
+        self.reactor.logger.log(LOG_VERBOSE, "Completed operation %s" % str(self))
+        try:
+            self.fun(*self.args, **self.kwargs)
+        except Exception as e:
+            self.reactor.logger.error("Error in non-I/O callback: %s" % str(e))
 
 class PipeReadOperation(IOOperation):
-    def __init__(self, fd, reactor):
+    def __init__(self, reactor, fd):
+        super(PipeReadOperation, self).__init__(reactor)
         self.fd = fd
         self.event = select.POLLIN
-        self.reactor = reactor
     
     def complete(self, event=None):
         while True:
@@ -328,9 +332,11 @@ class PipeReadOperation(IOOperation):
         pass
 
 class ReadOperation(IOOperation):
-    def __init__(self, file, size, cont):
+    def __init__(self, reactor, file, size, cont):
+        super(ReadOperation, self).__init__(reactor)
         self.event = select.POLLIN
         self.init_file(file)
+        self.size = size
         self.data = []
         self.left = size
         self.cont = cont
@@ -349,11 +355,16 @@ class ReadOperation(IOOperation):
     
     def completed(self):
         self.raise_completed("".join(self.data))
+    
+    def __str__(self):
+        return "ReadOperation(fd=%i, size=%i)" % (self.fd, self.size)
 
 class WriteOperation(IOOperation):
-    def __init__(self, file, data, cont):
+    def __init__(self, reactor, file, data, cont):
+        super(WriteOperation, self).__init__(reactor)
         self.event = select.POLLOUT
         self.init_file(file)
+        self.size = len(data)
         self.data = data
         self.left = len(data)
         self.cont = cont
@@ -366,9 +377,13 @@ class WriteOperation(IOOperation):
             return self.left == 0
         else:
             return False
+    
+    def __str__(self):
+        return "WriteOperation(fd=%i, size=%i)" % (self.fd, self.size)
 
 class ConnectOperation(IOOperation):
-    def __init__(self, socket, address, cont):
+    def __init__(self, reactor, socket, address, cont):
+        super(ConnectOperation, self).__init__(reactor)
         self.fd = socket.fileno()
         self.event = select.POLLOUT
         self.socket = socket
@@ -382,9 +397,13 @@ class ConnectOperation(IOOperation):
     
     def completed(self):
         self.raise_completed(self.socket, self.address)
+    
+    def __str__(self):
+        return "ConnectOperation(fd=%i, addr=%s)" % (self.fd, repr(self.address))
 
 class AcceptOperation(IOOperation):
-    def __init__(self, socket, cont):
+    def __init__(self, reactor, socket, cont):
+        super(AcceptOperation, self).__init__(reactor)
         self.fd = socket.fileno()
         self.event = select.POLLIN
         self.socket = socket
@@ -400,3 +419,6 @@ class AcceptOperation(IOOperation):
     
     def completed(self):
         self.raise_completed(self.conn, self.address)
+    
+    def __str__(self):
+        return "AcceptOperation(fd=%i)" % (self.fd)

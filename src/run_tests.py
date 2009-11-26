@@ -21,6 +21,7 @@
 
 import sys
 import unittest
+import logging
 import spark
 from spark.tests import *
 
@@ -44,4 +45,5 @@ if __name__ == '__main__':
         verbosity = 2
     else:
         verbosity = 1
+    #logging.basicConfig(level=logging.DEBUG)
     unittest.TextTestRunner(verbosity=verbosity).run(allTests())

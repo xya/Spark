@@ -49,29 +49,39 @@ class BasicIntegrationTest(unittest.TestCase):
     def client(self, cont):
         try:
             remoteAddr = (BIND_ADDRESS, BIND_PORT)
-            s = FileShare()
+            s = FileShare("client")
             s.startThread()
             s.connect(remoteAddr).wait(1.0)
             response = s.files().wait(1.0)[0]
+            import time
+            time.sleep(0.2)
+            
+            print "got response, disconnecting"
             s.disconnect().wait(1.0)
+            s.terminate()
             cont.completed(response)
         except:
             cont.failed()
     
     def server(self, listenCont, discCont):
-        try:
-            s = FileShare()
-            s.startThread()
-            cont = s.listen(("", 4550))
-            listenCont.completed()
-            cont.wait(1.0)[0]
-            s.join().wait(1.0)
+        def disconnected():
+            print "server disconnected"
             discCont.completed()
+        try:
+            s = FileShare("server")
+            s.onDisconnected += disconnected
+            s.startThread()
+            s.listen(("", 4550))
+            listenCont.completed()
         except:
             if listenCont.pending:
                 listenCont.failed()
             discCont.failed()
 
 if __name__ == '__main__':
-    import sys
-    unittest.main(argv=sys.argv)
+    import logging
+    logging.basicConfig(level=logging.DEBUG)
+    b = BasicIntegrationTest("test")
+    b.test()
+    #import sys
+    #unittest.main(argv=sys.argv)
