@@ -44,7 +44,7 @@ class BasicIntegrationTest(unittest.TestCase):
         response = clientDone.wait(1.0)[0]
         serverDone.wait(1.0)
         self.assertTrue(isinstance(response, dict))
-        self.assertEqual(0, len(response))
+        self.assertEqual(1, len(response))
     
     def client(self, cont):
         try:
@@ -53,23 +53,15 @@ class BasicIntegrationTest(unittest.TestCase):
             s.startThread()
             s.connect(remoteAddr).wait(1.0)
             response = s.files().wait(1.0)[0]
-            import time
-            time.sleep(0.2)
-            
-            print "got response, disconnecting"
             s.disconnect().wait(1.0)
-            s.terminate()
             cont.completed(response)
         except:
             cont.failed()
     
     def server(self, listenCont, discCont):
-        def disconnected():
-            print "server disconnected"
-            discCont.completed()
         try:
             s = FileShare("server")
-            s.onDisconnected += disconnected
+            s.onDisconnected += discCont.completed
             s.startThread()
             s.listen(("", 4550))
             listenCont.completed()

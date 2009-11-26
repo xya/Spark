@@ -91,7 +91,7 @@ class PollReactor(Reactor):
     
     def callback(self, fun, *args, **kwargs):
         """ Submit a function to be called back on the reactor's thread. """
-        op = NoOperation(self, fun, args, kwargs)
+        op = InvokeOperation(self, fun, args, kwargs)
         self.submit(op)
     
     def launch_thread(self):
@@ -164,7 +164,9 @@ class PollReactor(Reactor):
         self.empty_queue()
         try:
             while True:
+                self.logger.log(LOG_VERBOSE, "Waiting for poll()")
                 events = self.poll.poll()
+                self.logger.log(LOG_VERBOSE, "Woke up from poll()")
                 for fd, event in events:
                      self.perform_io(fd, event)
         except QueueClosedError:
@@ -198,7 +200,8 @@ class PollReactor(Reactor):
     def perform_io(self, fd, event):
         hangup = (event & select.POLLHUP) != 0
         error = (event & select.POLLERR) != 0
-        if hangup or error:
+        invalid = (event & select.POLLNVAL) != 0
+        if hangup or error or invalid:
             for op in self.pending[fd]:
                 try:
                     op.complete(event)
@@ -264,14 +267,14 @@ class IOOperation(object):
             self.reactor.logger.error("Error in I/O completed() callback")
     
     def raise_failed(self, *args):
-        self.reactor.logger.log(LOG_VERBOSE, "Failed operation of %s" % str(self))
+        self.reactor.logger.debug("Failed operation of %s" % str(self))
         try:
             self.cont.failed(*args)
         except:
             self.reactor.logger.error("Error in I/O failed() callback")
     
     def raise_canceled(self):
-        self.reactor.logger.log(LOG_VERBOSE, "Canceled operation of %s" % str(self))
+        self.reactor.logger.debug("Canceled operation of %s" % str(self))
         try:
             self.cont.cancel()
         except:
@@ -288,15 +291,15 @@ class IOOperation(object):
             else:
                 raise
 
-class NoOperation(IOOperation):
+class InvokeOperation(IOOperation):
     def __init__(self, reactor, fun, args, kwargs):
-        super(NoOperation, self).__init__(reactor)
+        super(InvokeOperation, self).__init__(reactor)
         self.fun = fun
         self.args = args
         self.kwargs = kwargs
     
     def __str__(self):
-        return "NoOperation(args=%s, kw=%s)" % (repr(self.args), repr(self.kwargs))
+        return "InvokeOperation(args=%s, kw=%s)" % (repr(self.args), repr(self.kwargs))
     
     def complete(self, event=None):
         return True
@@ -336,17 +339,20 @@ class ReadOperation(IOOperation):
         super(ReadOperation, self).__init__(reactor)
         self.event = select.POLLIN
         self.init_file(file)
-        self.size = size
         self.data = []
         self.left = size
         self.cont = cont
     
     def complete(self, event=None):
         success, data = self.nonblock(os.read, (self.fd, self.left, ))
-        if success and (len(data) > 0):
-            self.data.append(data)
-            self.left -= len(data)
-            return self.left == 0
+        if success:
+            if len(data) > 0:
+                self.data.append(data)
+                self.left -= len(data)
+                return self.left == 0
+            else:
+                # end of file or we got disconnected
+                return True
         else:
             return False
     
@@ -357,7 +363,11 @@ class ReadOperation(IOOperation):
         self.raise_completed("".join(self.data))
     
     def __str__(self):
-        return "ReadOperation(fd=%i, size=%i)" % (self.fd, self.size)
+        if self.left:
+            return "ReadOperation(fd=%i, to_read=%i)" % (self.fd, self.left)
+        else:
+            read = sum(len(chunk) for chunk in self.data)
+            return "ReadOperation(fd=%i, read=%i)" % (self.fd, read)
 
 class WriteOperation(IOOperation):
     def __init__(self, reactor, file, data, cont):

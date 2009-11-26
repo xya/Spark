@@ -115,7 +115,10 @@ class Negociator(object):
     
     @coroutine
     def readMessage(self):
-        size = int((yield self.asyncRead(4)), 16)
+        sizeText = yield self.asyncRead(4)
+        if len(sizeText) == 0:
+            raise EOFError()
+        size = int(sizeText, 16)
         data = yield self.asyncRead(size)
         if len(data) == 0:
             raise EOFError()

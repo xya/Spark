@@ -147,7 +147,6 @@ class Service(object):
         cont.run_coroutine(self._startConnection(address, initiating))
     
     def _disconnectRequest(self, cont):
-        self.logger.debug("_disconnectRequest")
         try:
             self._closeConnection()
         except Exception:
@@ -158,6 +157,7 @@ class Service(object):
     def _startConnection(self, address, initiating):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
+            sock.setblocking(0)
             if initiating:
                 self.connState = Service.CONNECTING
                 yield self.reactor.connect(sock, address)
@@ -238,11 +238,16 @@ class MessengerService(Service):
         negociateProtocol(f, initiating).after(self._protocolNegociated, f)
     
     def _protocolNegociated(self, prev, f):
-        name = prev.result
-        self.logger.debug("Negociated protocol '%s'", name)
-        self.messenger = AsyncMessenger(f)
-        self.sessionStarted()
-        self.messenger.receiveMessage().after(self._messageReceived)
+        try:
+            name = prev.result
+        except:
+            self.logger.exception("Error while negociating protocol")
+            self._closeConnection()
+        else:
+            self.logger.debug("Negociated protocol '%s'", name)
+            self.messenger = AsyncMessenger(f)
+            self.sessionStarted()
+            self.messenger.receiveMessage().after(self._messageReceived)
     
     def _disconnected(self):
         if hasattr(self.messenger, "close"):
@@ -271,7 +276,6 @@ class MessengerService(Service):
         
         if message is None:
             # we have been disconnected
-            self.logger.debug("Received None")
             self._closeConnection()
         else:
             self.logger.debug("Received message: %s", message)
