@@ -199,6 +199,10 @@ class MockFile(object):
     def __init__(self):
         self.readBuffer = ""
         self.writeBuffer = ""
+        
+    def beginRead(self, count):
+        data = self.read(count)
+        return Future.done(data)
     
     def read(self, count):
         if (count is None) or (count <= 0):
@@ -208,6 +212,10 @@ class MockFile(object):
             return data
         else:
             raise EOFError("Read would have blocked forever")
+    
+    def beginWrite(self, data):
+        self.write(data)
+        return Future.done()
     
     def write(self, data):
         self.writeBuffer += data
