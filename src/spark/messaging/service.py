@@ -18,7 +18,6 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-from __future__ import print_function
 import sys
 import os
 import traceback
@@ -26,11 +25,22 @@ import types
 import threading
 import socket
 import logging
+from functools import wraps
 from spark.async import Future, Delegate, threadedMethod, coroutine, PollReactor
-from spark.messaging.common import AsyncMessenger
+from spark.messaging.common import AsyncMessenger, MessageDelivery
 from spark.messaging.protocol import negociateProtocol
 
-__all__ = ["Service", "MessengerService"]
+__all__ = ["Service", "MessengerService", "serviceMethod"]
+
+def serviceMethod(func):
+    """ Decorator which invokes the function on the service's thread. """
+    @wraps(func)
+    def invoker(self, *args, **kwargs):
+        self._assertExecuting()
+        cont = Future()
+        self.reactor.callback(cont.run, func, self, *args, **kwargs)
+        return cont
+    return invoker
 
 class Service(object):
     """
@@ -101,11 +111,18 @@ class Service(object):
         self.reactor.callback(self._disconnectRequest, cont)
         return cont
     
+    def _assertExecuting(self):
+        with self.lock:
+            state = self.state
+        if (state == Service.UNSTARTED) or (state == Service.FINISHED):
+            raise Exception("The service has to be executing to do the operation")
+    
     def _assertState(self, state, *otherStates):
         with self.lock:
-            actualState = state
+            actualState = self.state
         if (actualState != state) and (not actualState in otherStates):
-            raise Exception("The service is in the wrong state to do the operation")
+            raise Exception(
+                "The service is in the wrong state (%i) to do the operation" % actualState)
         else:
             return actualState
     
@@ -114,7 +131,8 @@ class Service(object):
             if self.state == oldState:
                 self.state = newState
             else:
-                raise Exception("The service is in the wrong state to do the operation")
+                raise Exception(
+                    "The service is in the wrong state (%i) to do the operation" % self.state)
 
     def _connectRequest(self, cont, initiating, address):
         try:
@@ -125,8 +143,7 @@ class Service(object):
     
     def _disconnectRequest(self, cont):
         try:
-            self._assertState(Service.DISCONNECT_REQUESTED)
-            self._endConnection()
+            self._closeConnection()
         except Exception:
             cont.failed()
         else:
@@ -137,37 +154,48 @@ class Service(object):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
             if initiating:
+                with self.lock:
+                    self.state = Service.CONNECTING
                 yield self.reactor.connect(sock, address)
                 self.conn, remoteAddress = sock, address
             else:
                 try:
                     sock.bind(address)
                     sock.listen(1)
+                    with self.lock:
+                        self.state = Service.CONNECTING
                     self.conn, remoteAddress = yield self.reactor.accept(sock)
                 finally:
                     sock.close()
             logging.info("Connected to %s", repr(remoteAddress))
         except:
+            self._closeConnection()
             cont.failed()
         else:
+            with self.lock:
+                self.state = Service.CONNECTED
             cont.completed(remoteAddress)
         self.connected(remoteAddress, initiating)
     
-    def _endConnection(self):
-        """ Close the connection and free all session-related resources. """
+    def _closeConnection(self):
+        """ If there is an active connection, close it. """
         wasDisconnected = False
         with self.lock:
-            if self.state in (Service.DISCONNECT_REQUESTED, Service.CONNECTED):
-                # force threads blocked on recv (and send?) to return
+            if self.conn:
                 try:
-                    self.conn.shutdown(socket.SHUT_RDWR)
-                except:
-                    pass
-                self.conn.close()
-                self.conn = None
-                self.state = Service.DISCONNECTED
-                wasDisconnected = True
-                
+                    # force threads blocked on recv (and send?) to return
+                    try:
+                        self.conn.shutdown(socket.SHUT_RDWR)
+                    except Exception:
+                        traceback.print_exc()
+                    self.conn.close()
+                    self.conn = None
+                except Exception:
+                    traceback.print_exc()
+                wasDisconnected = self.state in (Service.CONNECTED,
+                                                 Service.DISCONNECT_REQUESTED)
+            self.state = Service.DISCONNECTED
+        
         if wasDisconnected:
             self.disconnected()
     
@@ -184,10 +212,15 @@ class Service(object):
 
 class MessengerService(Service):
     """
-    Base class for long-running tasks which can comunicate with messages.
+    Base class for long-running tasks which can comunicate using messages.
     """
     def __init__(self):
         super(MessengerService, self).__init__()
+        self.delivery = MessageDelivery()
+        self.delivery.sendMessage = self.sendMessage
+        self.delivery.messageReceived += self.messageReceived
+        self.delivery.requestReceived += self._requestReceived
+        self.delivery.notificationReceived += self._notificationReceived
         self.messenger = None
         self.recvOp = None
     
@@ -204,10 +237,12 @@ class MessengerService(Service):
         self.recvOp.after(self._messageReceived)
     
     def disconnected(self):
-        self.recvOp.cancel()
+        if self.recvOp:
+            self.recvOp.cancel()
         if hasattr(self.messenger, "close"):
             self.messenger.close()
         self.messenger = None
+        self.delivery.resetDelivery()
         self.sessionEnded()
     
     def sendMessage(self, message):
@@ -225,18 +260,65 @@ class MessengerService(Service):
         
         if message is None:
             # we have been disconnected
-            self._endConnection()
+            self._closeConnection()
         else:
             logging.debug("Received message: %s", message)
-            self.onMessageReceived(message)
+            self.delivery.deliverMessage(message)
             self.recvOp = self.messenger.receiveMessage()
             self.recvOp.after(self._messageReceived)
+    
+    def _requestReceived(self, req):
+        """ Invoke the relevant request handler and send back the results.  """
+        methodName = "request" + toPascalCase(req.tag)
+        if hasattr(self, methodName):
+            method = getattr(self, methodName)
+            try:
+                results = method(req)
+            except Exception as e:
+                self._sendErrorReponse(req, e)
+            else:
+                self.delivery.sendResponse(req, results)
+        else:
+            self._sendErrorReponse(req, NotImplementedError())
+    
+    def sendRequest(self, tag, params=None):
+        """
+        Send a request to the connected peer. When the peer answers,
+        invoke the relevant response handler.
+        """
+        req = Request(tag, params)
+        self.delivery.sendRequest(req).after(self._responseReceived, tag)
+    
+    def _responseReceived(self, prev, tag):
+        """ Invoke the relevant response handler.  """
+        methodName = "response" + toPascalCase(tag)
+        if hasattr(self, methodName):
+            method = getattr(self, methodName)
+            method(prev)
+    
+    def _sendErrorReponse(self, req, e):
+        """ Send a response indicating the request failed because of the exception. """
+        self.delivery.sendResponse(req, {"error":
+            {"type": e.__class__.__name__, "message": str(e)}
+        })
+    
+    def sendNotification(self, tag, params=None):
+        """ Send a notification to the connected peer. """
+        self.delivery.sendNotification(Notification(tag, params))
+    
+    def _notificationReceived(self, n):
+        """ Invoke the relevant notification handler. """
+        methodName = "notification" + toPascalCase(n.tag)
+        if hasattr(self, methodName):
+            method = getattr(self, methodName)
+            method(n)
     
     @property
     def isSessionActive(self):
         """
         Indicate whether a session is currently active,
-        i.e. messages can be sent and received """
+        i.e. messages can be sent and received
+        """
         return self.messenger is not None
     
     def sessionStarted(self):
@@ -254,7 +336,10 @@ class MessengerService(Service):
         pass
     
     def messageReceived(self, message):
-        """ This method is called when a message is received. """
+        """
+        This method is called when a message (other than a request,
+        response or notification) is received.
+        """
         pass
 
 class SocketFile(object):

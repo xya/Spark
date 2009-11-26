@@ -34,20 +34,20 @@ class MockSender(Messenger, MessageDelivery):
 
 class MessageDeliveryTest(unittest.TestCase):
     def setUp(self):
+        self.messages = []
         self.requests = []
         self.notifications = []
-        self.blocks = []
         self.responses = []
         self.delivery = MockSender()
+        self.delivery.messageReceived += self.messages.append
         self.delivery.requestReceived += self.requests.append
         self.delivery.notificationReceived += self.notifications.append
-        self.delivery.blockReceived += self.blocks.append
     
-    def assertMessageCount(self, requests, responses, notifications, blocks):
+    def assertMessageCount(self, requests, responses, notifications, messages):
         self.assertEqual(requests, len(self.requests))
         self.assertEqual(responses, len(self.responses))
         self.assertEqual(notifications, len(self.notifications))
-        self.assertEqual(blocks, len(self.blocks))
+        self.assertEqual(messages, len(self.messages))
     
     def assertMessagesEqual(self, expected, actual):
         if expected is None:
@@ -82,11 +82,11 @@ class MessageDeliveryTest(unittest.TestCase):
         self.assertMessagesEqual(notif, self.notifications[0])
     
     def testDeliverBlock(self):
-        """ Receiving a block should emit the blockReceived event. """
+        """ Receiving a block should emit the messageReceived event. """
         block = testBlock()
         self.delivery.deliverMessage(block)
         self.assertMessageCount(0, 0, 0, 1)
-        self.assertMessagesEqual(block, self.blocks[0])
+        self.assertMessagesEqual(block, self.messages[0])
     
     def testDeliverResponse(self):
         """ Receiving a response matching a previous request should deliver it to the sender. """

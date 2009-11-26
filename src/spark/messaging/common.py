@@ -51,9 +51,9 @@ class MessageDelivery(object):
     def __init__(self):
         super(MessageDelivery, self).__init__()
         self.__lock = threading.Lock()
+        self.messageReceived = Delegate(self.__lock)
         self.requestReceived = Delegate(self.__lock)
         self.notificationReceived = Delegate(self.__lock)
-        self.blockReceived = Delegate(self.__lock)
         self.nextID = 0
         self.pendingRequests = {}
     
@@ -112,8 +112,8 @@ class MessageDelivery(object):
                 self.requestReceived(m)
             elif m.type == TextMessage.NOTIFICATION:
                 self.notificationReceived(m)
-        elif hasattr(m, "blockID"):
-            self.blockReceived(m)
+        else:
+            self.messageReceived(m)
 
 class AsyncMessenger(Messenger):
     def __init__(self, file):
