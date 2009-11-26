@@ -79,6 +79,17 @@ class PollReactor(Reactor):
         """ Create a socket that uses the reactor to do asynchronous I/O. """
         return NonBlockingSocket.socket(self, family, type, proto)
     
+    def open(self, file, mode=None):
+        """ Open a file that uses the reactor to do asynchronous I/O. """
+        return NonBlockingFile.open(self, file, mode)
+    
+    def pipe(self):
+        """ Create a pipe that uses the reactor to do asynchronous I/O. """
+        r, w = os.pipe()
+        blocking_mode(r, False)
+        blocking_mode(w, False)
+        return NonBlockingFile(self, r), NonBlockingFile(self, w)
+    
     def connect(self, socket, address):
         cont = Future()
         op = ConnectOperation(self, socket, address, cont)
@@ -437,11 +448,65 @@ class AcceptOperation(IOOperation):
     def __str__(self):
         return "AcceptOperation(fd=%i)" % (self.fd)
 
+class NonBlockingFile(object):
+    """ File-like object that uses a reactor to perform asynchronous I/O. """
+    def __init__(self, reactor, fd):
+        self.reactor = reactor
+        self.fd = fd
+    
+    @property
+    def fileno(self):
+        return self.fd
+    
+    @classmethod
+    def open(cls, reactor, file, mode=None):
+        if mode == "w":
+            flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        elif mode == "a":
+            flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+        elif mode == "r+":
+            flags = os.O_RDWR
+        elif mode == "w+":
+            flags = os.O_RDWR | os.O_CREAT | os.O_TRUNC
+        elif mode == "a+":
+            flags = os.O_RDWR | os.O_CREAT | os.O_APPEND
+        else:
+            flags =  os.O_RDONLY
+        fd = os.open(file, flags | os.O_NONBLOCK)
+        return cls(reactor, fd)
+    
+    def beginRead(self, size):
+        return self.reactor.read(self.fd, size)
+    
+    def beginWrite(self, data):
+        return self.reactor.write(self.fd, data)
+    
+    def read(self, size):
+        return self.beginRead(size).result
+    
+    def write(self, data):
+        self.beginWrite(data).wait()
+    
+    def close(self):
+        if self.fd:
+            os.close(self.fd)
+            self.fd = None
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, type, e, traceback):
+        self.close()
+
 class NonBlockingSocket(object):
     """ File-like wrapper for a socket. Uses a reactor to perform asynchronous I/O. """
     def __init__(self, reactor, sock):
         self.reactor = reactor
         self.socket = sock
+    
+    @property
+    def fileno(self):
+        return self.socket.fileno()
     
     @classmethod
     def socket(cls, reactor, family=None, type=None, proto=None):
@@ -485,3 +550,9 @@ class NonBlockingSocket(object):
     
     def close(self):
         return self.socket.close()
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, type, e, traceback):
+        self.close()

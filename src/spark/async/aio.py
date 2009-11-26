@@ -60,6 +60,14 @@ class Reactor(object):
         """ Create a socket that uses the reactor to do asynchronous I/O. """
         raise NotImplementedError()
     
+    def open(self, file, mode=None):
+        """ Open a file that uses the reactor to do asynchronous I/O. """
+        raise NotImplementedError()
+    
+    def pipe(self):
+        """ Create a pip that uses the reactor to do asynchronous I/O. """
+        raise NotImplementedError()
+    
     def invoke(self, fun, *args):
         """ Submit a request to invoke a callable. """
         raise NotImplementedError()

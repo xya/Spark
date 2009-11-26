@@ -40,6 +40,7 @@ class CompletionPortReactor(Reactor):
         self.pending = {}
         self.onClosed = Delegate(self.lock)
         self.active = False
+        self.closed = False
         self.cp = CompletionPort()
     
     def read(self, file, size):
@@ -50,6 +51,14 @@ class CompletionPortReactor(Reactor):
     
     def socket(self, family=None, type=None, proto=None):
         """ Create a socket that uses the reactor to do asynchronous I/O. """
+        raise NotImplementedError()
+    
+    def open(self, file, mode=None):
+        """ Open a file that uses the reactor to do asynchronous I/O. """
+        raise NotImplementedError()
+    
+    def pipe(self):
+        """ Create a pipe that uses the reactor to do asynchronous I/O. """
         raise NotImplementedError()
     
     def connect(self, socket, address):
@@ -68,6 +77,8 @@ class CompletionPortReactor(Reactor):
         """ Start a background I/O thread to run the reactor. """
         with self.lock:
             if self.active is False:
+                if self.closed:
+                    raise Exception("The reactor has been closed")
                 self.active = True
                 t = threading.Thread(target=self.eventLoop, name="I/O thread")
                 t.daemon = True
@@ -81,6 +92,8 @@ class CompletionPortReactor(Reactor):
         with self.lock:
             if self.active is False:
                 self.active = True
+            elif self.closed:
+                raise Exception("The reactor has been closed")
             else:
                 return
         self.eventLoop()
@@ -124,7 +137,7 @@ class CompletionPortReactor(Reactor):
         with self.lock:
             self.active = False
             self.cp.close()
-            self.cp = None
+            self.closed = True
         try:
             self.onClosed()
         except Exception:

@@ -54,7 +54,7 @@ class MessageReader(object):
                 yield self.parse(data.lstrip())
     
     def parse(self, data):
-        if data[0] == '\x00':
+        if unicode(data[0]) == u'\x00':
             return self.parseBlob(data)
         else:
             return self.parseTextMessage(data.rstrip())

@@ -22,10 +22,12 @@
 import unittest
 import copy
 import sys
+import os
 from spark.async import Future, TaskFailedError, coroutine
 from spark.messaging import *
 from StringIO import StringIO
 
+TestFile = os.path.join(os.path.dirname(__file__), 'ProtocolTest.log')
 TestText = """0023 > list-files 0 {"register": true}
 007d < list-files 0 {"<guid>": {"id": "<guid>", "last-modified": "20090619T173529.000Z", "name": "Report.pdf", "size": 3145728}}
 007c ! file-added 55 {"id": "<guid>", "last-modified": "20090619T173529.000Z", "name": "SeisRoX-2.0.9660.exe", "size": 3145728}
@@ -117,11 +119,18 @@ class ProtocolTest(unittest.TestCase):
                     yield messages
         return messageLoop().wait(0.1)[0]
     
-    def testParseText(self):
-        """ Ensure that messageReader() can read messages from a text file """
+    def testParseTextString(self):
+        """ Ensure that messageReader() can read messages from a text string """
         p = messageReader(AsyncWrapper(StringIO(TestText)))
         actualItems = self.readAllMessages(p)
         self.assertSeqsEqual(TestItems, actualItems)
+    
+    def testParseTextFile(self):
+        """ Ensure that messageReader() can read messages from a text file """
+        with open(TestFile, "r") as f:
+            p = messageReader(AsyncWrapper(f))
+            actualItems = self.readAllMessages(p)
+            self.assertSeqsEqual(TestItems, actualItems)
     
     def testReadWriteSync(self):
         """ Ensure that messages written by messageWriter() can be read by messageReader() """

@@ -23,27 +23,43 @@ import unittest
 import os
 from spark.async import Future, PollReactor
 
+TestFile = os.path.join(os.path.dirname(__file__), 'ProtocolTest.log')
+
 class ReactorTest(unittest.TestCase):
     def testAsyncRead(self):
+        """ beginRead() should be able to read from a file. """
         results = []
         def read_complete(prev):
             results.append(prev.result)
-        r, w = os.pipe()
-        rea = PollReactor()
-        try:
+        with PollReactor() as rea:
             rea.launch_thread()
-            rea.register(r)
-            f = rea.read(r, 3)
-            f.after(read_complete)
-            os.write(w, "foo")
-            f.wait(1.0)
-            # TODO: make it thread-safe
-            self.assertEqual(1, len(results))
-            self.assertEqual("foo", results[0])
-        finally:
-            rea.close()
-            os.close(r)
-            os.close(w)
+            with rea.open(TestFile) as file:
+                f = file.beginRead(19)
+                f.after(read_complete)
+                f.wait(1.0)
+                # TODO: make it thread-safe
+                self.assertEqual(1, len(results))
+                self.assertEqual("0023 > list-files 0", results[0])
+    
+    def testAsyncPipe(self):
+        """ beginRead() should be able to read what was written on a pipe. """
+        results = []
+        def read_complete(prev):
+            results.append(prev.result)
+        with PollReactor() as rea:
+            r, w = rea.pipe()
+            try:
+                rea.launch_thread()
+                f = r.beginRead(3)
+                f.after(read_complete)
+                w.write("foo")
+                f.wait(1.0)
+                # TODO: make it thread-safe
+                self.assertEqual(1, len(results))
+                self.assertEqual("foo", results[0])
+            finally:
+                r.close()
+                w.close()
 
 if __name__ == '__main__':
     import sys
