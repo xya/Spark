@@ -18,13 +18,11 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+# TODO: refactor this
 from spark.async.tasks import *
 from spark.async.queue import *
 from spark.async.aio import *
-from spark.async.pollreactor import *
 
-__all__ = [ "Reactor", "blocking_mode", "PollReactor",
-    "BlockingQueue", "QueueClosedError", "Future",
-    "FutureFrozenError", "TaskError", "TaskFailedError", "TaskCanceledError",
-    "Delegate", "threadedMethod", "coroutine"
-]
+__all__ = []
+for module in (tasks, queue, aio):
+    __all__.extend(module.__all__)

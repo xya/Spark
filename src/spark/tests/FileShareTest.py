@@ -21,13 +21,16 @@
 
 import unittest
 import os
+import functools
 from spark.async import Future
 from spark.fileshare import FileShare
+from spark.tests.AioTest import runReactors
 
 class FileShareTest(unittest.TestCase):
-    def testAddFile(self):
+    @runReactors
+    def testAddFile(self, rea):
         """ Files added through addFile() should be retrievable with files() """
-        s = FileShare()
+        s = FileShare(rea)
         self.assertEqual(0, len(s.files()))
         id = s.addFile("FileShareTest.py")
         files = s.files()
@@ -36,35 +39,39 @@ class FileShareTest(unittest.TestCase):
         self.assertEqual("FileShareTest.py", file.name)
         self.assertEqual(id, file.id)
     
-    def testRemoveExistingFile(self):
+    @runReactors
+    def testRemoveExistingFile(self, rea):
         """ removeFile should remove the file with the specified ID from the list """
-        s = FileShare()
+        s = FileShare(rea)
         id = s.addFile("FileShareTest.py")
         s.removeFile(id)
         self.assertEqual(0, len(s.listFiles()))
     
-    def testRemoveInvalidFile(self):
+    @runReactors
+    def testRemoveInvalidFile(self, rea):
         """ removeFile should fail if the given ID doesn't match any file """
-        s = FileShare()
+        s = FileShare(rea)
         id = s.addFile("FileShareTest.py")
         self.assertRaises(Exception, s.removeFile, "foo")
     
-    def testAddNotification(self):
+    @runReactors
+    def testAddNotification(self, rea):
         """ Notifications should be sent when a file is added to the list """
         notifications = []
         def fileAdded(file):
             notifications.append(file)
-        s = FileShare()
+        s = FileShare(rea)
         s.fileAdded += fileAdded
         s.addFile("FileShareTest.py")
         self.assertEqual(1, len(notifications))
 
-    def testRemoveNotification(self):
+    @runReactors
+    def testRemoveNotification(self, rea):
         """ Notifications should be sent when a file is removed from the list """
         notifications = []
         def fileRemoved(file):
             notifications.append(file)
-        s = FileShare()
+        s = FileShare(rea)
         s.fileRemoved += fileRemoved
         id = s.addFile("FileShareTest.py")
         s.removeFile(id)

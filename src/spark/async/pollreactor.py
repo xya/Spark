@@ -20,6 +20,7 @@
 
 import sys
 import os
+import fcntl
 import select
 import threading
 import socket
@@ -31,22 +32,16 @@ __all__ = ["blocking_mode", "PollReactor"]
 
 LOG_VERBOSE = 5
 
-try:
-    import fcntl
-except ImportError:
-    def blocking_mode(fd, blocking=None):
-        raise Exception("The 'fcntl' module is not available on this system")
-else:
-    def blocking_mode(fd, blocking=None):
-        flag = os.O_NONBLOCK
-        old_mode = fcntl.fcntl(fd, fcntl.F_GETFL, flag)
-        if blocking is not None:
-            if blocking:
-                new_mode = (old_mode & ~flag)
-            else:
-                new_mode = (old_mode | flag)
-            fcntl.fcntl(fd, fcntl.F_SETFL, new_mode)
-        return (old_mode & flag) == 0
+def blocking_mode(fd, blocking=None):
+    flag = os.O_NONBLOCK
+    old_mode = fcntl.fcntl(fd, fcntl.F_GETFL, flag)
+    if blocking is not None:
+        if blocking:
+            new_mode = (old_mode & ~flag)
+        else:
+            new_mode = (old_mode | flag)
+        fcntl.fcntl(fd, fcntl.F_SETFL, new_mode)
+    return (old_mode & flag) == 0
 
 class PollReactor(Reactor):
     def __init__(self, name=None, lock=None):

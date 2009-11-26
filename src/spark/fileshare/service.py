@@ -29,8 +29,8 @@ NOT_FILE_REMOVED = "file-removed"
 
 class FileShare(MessengerService):
     """ Service that shares files over a network. """
-    def __init__(self, name=None):
-        super(FileShare, self).__init__(name)
+    def __init__(self, reactor, name=None):
+        super(FileShare, self).__init__(reactor, name)
         self.fileAdded = Delegate()
         self.fileRemoved = Delegate()
         self.remoteNotifications = False

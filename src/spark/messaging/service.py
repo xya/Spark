@@ -26,7 +26,7 @@ import threading
 import socket
 import logging
 from functools import wraps
-from spark.async import Future, Delegate, coroutine, PollReactor
+from spark.async import Future, Delegate, coroutine
 from spark.messaging.common import AsyncMessenger, MessageDelivery
 from spark.messaging.protocol import negociateProtocol
 from spark.messaging.messages import Request, Response, Notification
@@ -65,11 +65,11 @@ class Service(object):
     # The service is connected to a peer.
     CONNECTED = 4
     
-    def __init__(self, name=None):
+    def __init__(self, reactor, name=None):
         super(Service, self).__init__()
         self.logger = logging.getLogger(name)
         self.lock = threading.RLock()
-        self.reactor = PollReactor(name, self.lock)
+        self.reactor = reactor
         self.reactor.onClosed += self._terminated
         self.state = Service.UNSTARTED
         self.conn = None
@@ -220,8 +220,8 @@ class MessengerService(Service):
     """
     Base class for long-running tasks which can comunicate using messages.
     """
-    def __init__(self, name=None):
-        super(MessengerService, self).__init__(name)
+    def __init__(self, reactor, name=None):
+        super(MessengerService, self).__init__(reactor, name)
         self.onConnected += self._connected
         self.onDisconnected += self._disconnected
         self.delivery = MessageDelivery()

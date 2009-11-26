@@ -20,46 +20,87 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 import unittest
+import functools
 import os
-from spark.async import Future, PollReactor
+from spark.async import Future
+
+Reactors = []
+
+try:
+    from spark.async.pollreactor import PollReactor
+    Reactors.append(PollReactor)
+except ImportError:
+    pass
+    
+try:
+    from spark.async.iocpreactor import CompletionPortReactor
+    Reactors.append(CompletionPortReactor)
+except ImportError:
+    pass
 
 TestFile = os.path.join(os.path.dirname(__file__), 'ProtocolTest.log')
 
+def runReactors(testMethod):
+    """ Run the test with all available reactors. """
+    @functools.wraps(testMethod)
+    def wrapper(self):
+        for reactor in Reactors:
+            with reactor() as rea:
+                rea.launch_thread()
+                testMethod(self, rea)
+    return wrapper
+
+def runReactorTypes(testMethod):
+    """ Run the test with all available reactor types. """
+    @functools.wraps(testMethod)
+    def wrapper(self):
+        for reactor in Reactors:
+            testMethod(self, reactor)
+    return wrapper
+
 class ReactorTest(unittest.TestCase):
-    def testAsyncRead(self):
+    @runReactors
+    def testAsyncCallback(self, rea):
+        """ callback() should invoke the callback asynchronously """
+        cont = Future()
+        def complete(arg):
+            cont.completed(arg)
+        rea.callback(complete, "foo")
+        result = cont.wait(1.0)[0]
+        self.assertEqual("foo", result)
+
+    @runReactors
+    def testAsyncRead(self, rea):
         """ beginRead() should be able to read from a file. """
         results = []
         def read_complete(prev):
             results.append(prev.result)
-        with PollReactor() as rea:
-            rea.launch_thread()
-            with rea.open(TestFile) as file:
-                f = file.beginRead(19)
-                f.after(read_complete)
-                f.wait(1.0)
-                # TODO: make it thread-safe
-                self.assertEqual(1, len(results))
-                self.assertEqual("0023 > list-files 0", results[0])
+        with rea.open(TestFile) as file:
+            f = file.beginRead(19)
+            f.after(read_complete)
+            f.wait(1.0)
+            # TODO: make it thread-safe
+            self.assertEqual(1, len(results))
+            self.assertEqual("0023 > list-files 0", results[0])
     
-    def testAsyncPipe(self):
+    @runReactors
+    def testAsyncPipe(self, rea):
         """ beginRead() should be able to read what was written on a pipe. """
         results = []
         def read_complete(prev):
             results.append(prev.result)
-        with PollReactor() as rea:
-            r, w = rea.pipe()
-            try:
-                rea.launch_thread()
-                f = r.beginRead(3)
-                f.after(read_complete)
-                w.write("foo")
-                f.wait(1.0)
-                # TODO: make it thread-safe
-                self.assertEqual(1, len(results))
-                self.assertEqual("foo", results[0])
-            finally:
-                r.close()
-                w.close()
+        r, w = rea.pipe()
+        try:
+            f = r.beginRead(3)
+            f.after(read_complete)
+            w.write("foo")
+            f.wait(1.0)
+            # TODO: make it thread-safe
+            self.assertEqual(1, len(results))
+            self.assertEqual("foo", results[0])
+        finally:
+            r.close()
+            w.close()
 
 if __name__ == '__main__':
     import sys

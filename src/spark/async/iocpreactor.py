@@ -153,28 +153,27 @@ class CompletionPortReactor(Reactor):
     def handleIOCompletion(self, op):
         pass
 
-from spark.async.win32 import *
+from spark.async import win32
 from ctypes import cast, byref, POINTER, c_void_p, c_uint32
 
 class CompletionPort(object):
     """ Wrapper for an I/O completion port """
     def __init__(self):
         """ Create a new completion port. """
-        self.win32 = Win32()
-        self.handle = self.win32.CreateIoCompletionPort(
-            Win32.INVALID_HANDLE_VALUE, None, None, 0)
+        self.handle = win32.CreateIoCompletionPort(
+            win32.INVALID_HANDLE_VALUE, None, None, 0)
         self.lock = threading.RLock()
         self.callbacks = {}
     
     def close(self):
         """ Close the completion port. """
         if self.handle:
-            self.win32.CloseHandle(self.handle)
+            win32.CloseHandle(self.handle)
             self.handle = c_void_p(0)
     
     def register(self, hFile):
         """ Register a file with the completion port and return its tag. """
-        self.win32.CreateIoCompletionPort(hFile, self.handle, hFile, 0)
+        win32.CreateIoCompletionPort(hFile, self.handle, hFile, 0)
     
     def post(self, func, *args, **kwargs):
         """ Post a callback to the completion port. """
@@ -183,30 +182,31 @@ class CompletionPort(object):
             cbData = (func, args, kwargs)
             cbID = id(cbData)
             self.callbacks[cbID] = cbData
-        lpOver = self.win32.allocOVERLAPPED()
+        lpOver = win32.allocOVERLAPPED()
         lpOver.contents.Data.Pointer = cbID
-        self.win32.PostQueuedCompletionStatus(self.handle, 0, None, lpOver)
+        win32.PostQueuedCompletionStatus(self.handle,
+            0, win32.INVALID_HANDLE_VALUE, lpOver)
     
     def wait(self):
         """ Wait for an operation to be finished and return it. """
         bytes = c_uint32()
         tag = c_void_p(0)
-        lpOver = cast(0, LP_OVERLAPPED)
-        self.win32.GetQueuedCompletionStatus(self.handle,
+        lpOver = cast(0, win32.LP_OVERLAPPED)
+        win32.GetQueuedCompletionStatus(self.handle,
             byref(bytes), byref(tag), byref(lpOver), -1)
-        if bool(tag):
-            # IO operation, nothing special to do
-            return IOOperation(tag, bytes, lpOver)
-        else:
+        if tag.value == win32.INVALID_HANDLE_VALUE.value:
             # callback, need to free the OVERLAPPED struct
             cbID = lpOver.contents.Data.Pointer
-            self.win32.freeOVERLAPPED(lpOver)
+            win32.freeOVERLAPPED(lpOver)
             with self.lock:
                 cbData = self.callbacks.pop(cbID)
             if cbData[0] is None:
                 return ShutdownRequest(cbID)
             else:
                 return Callback(cbID, cbData[0], *cbData[1], **cbData[2])
+        else:
+            # IO operation, nothing special to do
+            return IOOperation(tag, bytes, lpOver)
 
 class IOOperation(object):
     def __init__(self, tag, bytes, overlapped):
