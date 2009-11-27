@@ -74,12 +74,16 @@ class PollReactor(Reactor):
         blocking_mode(w, False)
         return NonBlockingFile(self, r), NonBlockingFile(self, w)
     
-    def callback(self, fun, *args, **kwargs):
-        """ Submit a function to be called back on the reactor's thread. """
+    def post(self, fun, *args, **kwargs):
+        """ Invoke a callable on the reactor's thread. """
         if fun is None:
             raise TypeError("The function must not be None")
-        op = InvokeOperation(self, fun, args, kwargs)
-        self.submit(op)
+        with self.lock:
+            invokeDirectly = (self.thread == threading.currentThread())
+        if invokeDirectly:
+            fun(*args, **kwargs)
+        else:
+            self.submit(InvokeOperation(self, fun, args, kwargs))
     
     def launch_thread(self):
         """ Start a background I/O thread to run the reactor. """

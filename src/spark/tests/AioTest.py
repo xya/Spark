@@ -61,11 +61,11 @@ def runReactorTypes(testMethod):
 class ReactorTest(unittest.TestCase):
     @runReactors
     def testAsyncCallback(self, rea):
-        """ callback() should invoke the callback asynchronously """
+        """ post() should invoke the callable asynchronously """
         cont = Future()
         def complete(arg):
             cont.completed(arg)
-        rea.callback(complete, "foo")
+        rea.post(complete, "foo")
         result = cont.wait(1.0)[0]
         self.assertEqual("foo", result)
 

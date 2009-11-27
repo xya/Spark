@@ -37,8 +37,9 @@ def serviceMethod(func):
     """ Decorator which invokes the function on the service's thread. """
     @wraps(func)
     def invoker(self, *args, **kwargs):
+        #return self.reactor.send(func, self, *args, **kwargs)
         cont = Future()
-        self.reactor.callback(cont.run, func, self, *args, **kwargs)
+        self.reactor.post(cont.run, func, self, *args, **kwargs)
         return cont
     return invoker
 
@@ -70,19 +71,19 @@ class Service(object):
     def connect(self, address):
         """ Try to establish a connection with a remote peer at the specified address. """
         cont = Future()
-        self.reactor.callback(self._connectRequest, cont, True, address)
+        self.reactor.post(self._connectRequest, cont, True, address)
         return cont
     
     def listen(self, address):
         """ Listen on the interface with the specified addres for a connection. """
         cont = Future()
-        self.reactor.callback(self._connectRequest, cont, False, address)
+        self.reactor.post(self._connectRequest, cont, False, address)
         return cont
     
     def disconnect(self):
         """ Close an established connection. """
         cont = Future()
-        self.reactor.callback(self._disconnectRequest, cont)
+        self.reactor.post(self._disconnectRequest, cont)
         return cont
     
     def _connectRequest(self, cont, initiating, address):
@@ -117,7 +118,7 @@ class Service(object):
                     sock.close()
             self.connState = Service.CONNECTED
             self.logger.info("Connected to %s", repr(self.remoteAddr))
-            self.reactor.callback(self.onConnected, self.remoteAddr, initiating)
+            self.reactor.post(self.onConnected, self.remoteAddr, initiating)
         except:
             self._closeConnection()
             raise

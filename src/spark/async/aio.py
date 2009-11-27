@@ -52,6 +52,16 @@ class Reactor(object):
         """ Create a pipe that uses the reactor to do asynchronous I/O. """
         raise NotImplementedError()
     
-    def invoke(self, fun, *args):
-        """ Submit a request to invoke a callable. """
+    def send(self, fun, *args, **kwargs):
+        """
+        Invoke a callable on the reactor's thread and return its result through a future.
+        """
+        raise NotImplementedError()
+    
+    def post(self, fun, *args, **kwargs):
+        """
+        Invoke a callable on the reactor's thread.
+        
+        Unlike send(), this method doesn't return a future.
+        """
         raise NotImplementedError()

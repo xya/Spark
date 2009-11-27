@@ -32,7 +32,7 @@ __all__ = ["CompletionPortReactor"]
 
 LOG_VERBOSE = 5
 
-OP_CALLBACK = 0
+OP_INVOKE = 0
 OP_READ = 1
 OP_WRITE = 2
 OP_CONNECT = 3
@@ -63,11 +63,11 @@ class CompletionPortReactor(Reactor):
         """ Create a pipe that uses the reactor to do asynchronous I/O. """
         raise NotImplementedError()
     
-    def callback(self, fun, *args, **kwargs):
-        """ Submit a function to be called back on the reactor's thread. """
+    def post(self, fun, *args, **kwargs):
+        """" Invoke a callable on the reactor's thread. """
         if fun is None:
             raise TypeError("The function must not be None")
-        self.cp.post(OP_CALLBACK, fun, args, kwargs)
+        self.cp.post(OP_INVOKE, fun, args, kwargs)
     
     def launch_thread(self):
         """ Start a background I/O thread to run the reactor. """
@@ -121,7 +121,7 @@ class CompletionPortReactor(Reactor):
                 self.logger.log(LOG_VERBOSE, "Woke up from GetQueuedCompletionStatus()")
                 if len(data) == 0:
                     break
-                elif data[0] == OP_CALLBACK:
+                elif data[0] == OP_INVOKE:
                     self.handleCallback(id, data[1], data[2], data[3])
                 else:
                     self.handleIOCompletion(id, tag, bytes, data)
