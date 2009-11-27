@@ -56,7 +56,6 @@ class BasicIntegrationTest(unittest.TestCase):
             rea = reactorType("client")
             rea.launch_thread()
             s = FileShare(rea, "client")
-            s.startThread()
             s.connect(remoteAddr).wait(1.0)
             response = s.files().wait(1.0)[0]
             s.disconnect().wait(1.0)
@@ -70,7 +69,6 @@ class BasicIntegrationTest(unittest.TestCase):
             rea.launch_thread()
             s = FileShare(rea, "server")
             s.onDisconnected += discCont.completed
-            s.startThread()
             s.listen(("", 4550))
             listenCont.completed()
         except:

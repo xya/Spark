@@ -37,7 +37,6 @@ def serviceMethod(func):
     """ Decorator which invokes the function on the service's thread. """
     @wraps(func)
     def invoker(self, *args, **kwargs):
-        self._assertExecuting()
         cont = Future()
         self.reactor.callback(cont.run, func, self, *args, **kwargs)
         return cont
@@ -51,59 +50,25 @@ class Service(object):
     for all perations (I/O and non-I/O), so that the service runs on a single thread.
     """
     
-    # The service has not been started yet.
-    UNSTARTED = 0
-    # The service has been started
-    RUNNING = 1
-    # The service has terminated executing and released its resources.
-    TERMINATED = 2
-    
     # The service is not connected to any peer.
-    DISCONNECTED = 1
+    DISCONNECTED = 0
     # The service has been requested to establish a connection.
-    CONNECTING = 3
+    CONNECTING = 1
     # The service is connected to a peer.
-    CONNECTED = 4
+    CONNECTED = 2
     
     def __init__(self, reactor, name=None):
         super(Service, self).__init__()
         self.logger = logging.getLogger(name)
-        self.lock = threading.RLock()
         self.reactor = reactor
-        self.reactor.onClosed += self._terminated
-        self.state = Service.UNSTARTED
         self.conn = None
         self.remoteAddr = None
         self.connState = Service.DISCONNECTED
-        self.onConnected = Delegate(self.lock)
-        self.onDisconnected = Delegate(self.lock)
-        self.onTerminated = Delegate(self.lock)
-    
-    def start(self):
-        """
-        Execute the service on the current thread. This method blocks until
-        the service has finished executing.
-        """
-        self._setExecuting()
-        self.reactor.run()
-    
-    def startThread(self):
-        """
-        Execute the service on a new thread. This method returns immediatly.
-        """
-        self._setExecuting()
-        self.reactor.launch_thread()
-    
-    def terminate(self):
-        """ Request the service to terminate. """
-        with self.lock:
-            if self.state == Service.UNSTARTED:
-                raise Exception("The service has not been started yet")
-            elif self.state == Service.RUNNING:
-                self.reactor.close()
+        self.onConnected = Delegate()
+        self.onDisconnected = Delegate()
     
     def connect(self, address):
-        """ Try to establish a connection with a remote peer with the specified address. """
+        """ Try to establish a connection with a remote peer at the specified address. """
         cont = Future()
         self.reactor.callback(self._connectRequest, cont, True, address)
         return cont
@@ -120,25 +85,6 @@ class Service(object):
         self.reactor.callback(self._disconnectRequest, cont)
         return cont
     
-    def _assertExecuting(self):
-        with self.lock:
-            if self.state != Service.RUNNING:
-                raise Exception("The service must be running to do the operation")
-    
-    def _setExecuting(self):
-        with self.lock:
-            if self.state == Service.UNSTARTED:
-                self.state = Service.RUNNING
-            elif self.state == Service.RUNNING:
-                raise Exception("The service is already running")
-            elif self.state == Service.TERMINATED:
-                raise Exception("The service has terminated")
-
-    def _terminated(self):
-        with self.lock:
-            self.state = Service.TERMINATED
-        self.onTerminated()
-
     def _connectRequest(self, cont, initiating, address):
         if self.connState == Service.CONNECTED:
             cont.failed(Exception("The service is already connected"))

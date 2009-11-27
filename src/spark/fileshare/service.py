@@ -73,7 +73,6 @@ class FileShare(MessengerService):
     def responselistFiles(self, prev):
         """ The remote peer responded to our 'list-files' request. """
         files = prev.result
-        print repr(files)
         # TODO: do something with the file table
     
     def notificationFileAdded(self, n):

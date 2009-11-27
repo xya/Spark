@@ -516,10 +516,10 @@ class NonBlockingSocket(object):
         return cont
     
     def beginRead(self, size):
-        return _beginRead(self.reactor, self.socket.fileno, size)
+        return _beginRead(self.reactor, self.socket.fileno(), size)
     
     def beginWrite(self, data):
-        return _beginWrite(self.reactor, self.socket.fileno, data)
+        return _beginWrite(self.reactor, self.socket.fileno(), data)
     
     def shutdown(self, how):
         return self.socket.shutdown(how)
