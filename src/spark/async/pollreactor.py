@@ -54,6 +54,7 @@ class PollReactor(Reactor):
         self.pending = {}
         self.onClosed = Delegate(self.lock)
         self.active = False
+        self.thread = None
         self.req_r, self.req_w = os.pipe()
         blocking_mode(self.req_r, False)
         blocking_mode(self.req_w, False)
@@ -78,16 +79,16 @@ class PollReactor(Reactor):
         if fun is None:
             raise TypeError("The function must not be None")
         op = InvokeOperation(self, fun, args, kwargs)
-        self.submit(op)
+        self.submit(op, False)
     
     def launch_thread(self):
         """ Start a background I/O thread to run the reactor. """
         with self.lock:
             if self.active is False:
                 self.active = True
-                t = threading.Thread(target=self.eventLoop, name="I/O thread")
-                t.daemon = True
-                t.start()
+                self.thread = threading.Thread(target=self.eventLoop, name="I/O thread")
+                self.thread.daemon = True
+                self.thread.start()
                 return True
             else:
                 return False
@@ -97,15 +98,27 @@ class PollReactor(Reactor):
         with self.lock:
             if self.active is False:
                 self.active = True
+                self.thread = threading.currentThread()
             else:
                 return
         self.eventLoop()
     
-    def submit(self, op):
+    def submit(self, op, preexec=True):
         """
-        Submit an I/O request to be performed asynchronously.
-        Requests are not processed before either run() or launch_thread() is called.
+        Submit an I/O request to be performed asynchronously. If preexec is true,
+        the operation will be started immediatly; otherwise it will be started
+        when it gets dequeued in the main loop.
         """
+        if preexec and op.complete():
+            # the operation finished without blocking
+            self.logger.log(LOG_VERBOSE, "Pre-exec'd %s" % str(op))
+            with self.lock:
+                invokeDirectly = (self.thread == threading.currentThread())
+            if invokeDirectly:
+                op.completed()
+                return
+            else:
+                op = InvokeOperation(self, op.completed, (), {})
         self.logger.log(LOG_VERBOSE, "Submitting operation %s" % str(op))
         self.queue.put(op)
         os.write(self.req_w, '\0')
@@ -139,20 +152,21 @@ class PollReactor(Reactor):
         self.pending = {}
         with self.lock:
             self.active = False
+            self.thread = None
         try:
             self.onClosed()
         except Exception:
             self.logger.exception("onClosed() failed")
     
     def eventLoop(self):
-        self.poll = select.poll()
-        self.queue.put(PipeReadOperation(self, self.req_r))
-        self.empty_queue()
         try:
+            self.poll = select.poll()
+            self.queue.put(PipeReadOperation(self, self.req_r))
+            self.empty_queue()
             while True:
                 self.logger.log(LOG_VERBOSE, "Waiting for poll()")
                 events = self.poll.poll()
-                self.logger.log(LOG_VERBOSE, "Woke up from poll()")
+                self.logger.log(LOG_VERBOSE, "Woke up from poll() with %s" % repr(events))
                 for fd, event in events:
                      self.perform_io(fd, event)
         except QueueClosedError:
