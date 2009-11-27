@@ -55,29 +55,14 @@ class CompletionPortReactor(Reactor):
             handle = file.fileno()
         else:
             handle = file
-        cont = Future()
-        buffer = create_string_buffer(size)
-        lpOver = self.cp.overlapped(OP_READ, buffer, cont)
-        ret = win32.ReadFile(handle, buffer, size, None, lpOver)
-        if not ret:
-            error = win32.GetLastError()
-            if error != win32.ERROR_IO_PENDING:
-                raise WinError(error)
-        return cont
+        return _asyncRead(self.cp, handle, size, 0)
     
     def write(self, file, data):
         if hasattr(file, "fileno"):
             handle = file.fileno()
         else:
             handle = file
-        cont = Future()
-        lpOver = self.reactor.cp.overlapped(OP_WRITE, cont)
-        ret = win32.WriteFile(handle, data, len(data), None, lpOver)
-        if not ret:
-            error = win32.GetLastError()
-            if error != win32.ERROR_IO_PENDING:
-                raise WinError(error)
-        return cont
+        return _asyncWrite(self.cp, handle, data, 0);
     
     def socket(self, family=None, type=None, proto=None):
         """ Create a socket that uses the reactor to do asynchronous I/O. """
@@ -189,6 +174,33 @@ class CompletionPortReactor(Reactor):
             op, cont = data
             cont.completed()
 
+def _asyncRead(cp, handle, size, position):
+    cont = Future()
+    buffer = create_string_buffer(size)
+    lpOver = cp.overlapped(OP_READ, buffer, cont)
+    _setOffset(lpOver.contents, position)
+    ret = win32.ReadFile(handle, buffer, size, None, lpOver)
+    if not ret:
+        error = win32.GetLastError()
+        if error != win32.ERROR_IO_PENDING:
+            raise WinError(error)
+    return cont
+
+def _asyncWrite(cp, handle, data, position):
+    cont = Future()
+    lpOver = cp.overlapped(OP_WRITE, cont)
+    _setOffset(lpOver.contents, position)
+    ret = win32.WriteFile(handle, data, len(data), None, lpOver)
+    if not ret:
+        error = win32.GetLastError()
+        if error != win32.ERROR_IO_PENDING:
+            raise WinError(error)
+    return cont
+
+def _setOffset(overlapped, offset):
+    overlapped.Data.Offset.Low = offset & 0x00000000ffffffff
+    overlapped.Data.Offset.High = offset & 0xffffffff00000000
+
 class OverlappedFile(object):
     """ File-like object that uses a reactor to perform asynchronous I/O. """
     def __init__(self, reactor, handle):
@@ -205,7 +217,7 @@ class OverlappedFile(object):
             access = win32.GENERIC_WRITE
             creation = win32.CREATE_ALWAYS
         elif mode == "a":
-            access = win32.GENERIC_WRITE
+            access = win32.FILE_APPEND_DATA
             creation = win32.OPEN_ALWAYS
         elif mode == "r+":
             access = win32.GENERIC_READ | win32.GENERIC_WRITE
@@ -224,17 +236,17 @@ class OverlappedFile(object):
         reactor.cp.register(handle)
         return cls(reactor, handle)
     
-    def beginRead(self, size):
-        return self.reactor.read(self.handle, size)
+    def beginRead(self, size, position=0):
+        return _asyncRead(self.reactor.cp, self.handle, size, position)
     
-    def beginWrite(self, data):
-        return self.reactor.write(self.handle, data)
+    def beginWrite(self, data, position=0):
+        return _asyncWrite(self.reactor.cp, self.handle, data, position)
     
-    def read(self, size):
-        raise NotImplementedError()
+    def read(self, size, position=0):
+        return self.beginRead(size, position).result
     
-    def write(self, data):
-        raise NotImplementedError()
+    def write(self, data, position=0):
+        return self.beginWrite(data, position).result
     
     def close(self):
         if self.handle:
