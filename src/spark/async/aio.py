@@ -40,23 +40,7 @@ class Reactor(object):
         """ Close the reactor, terminating all pending operations. """
         raise NotImplementedError()
     
-    def read(self, file, size):
-        """ Submit a request to perform a read operation on the file. """
-        raise NotImplementedError()
-    
-    def write(self, file, data):
-        """ Submit a request to perform a write operation on the file. """
-        raise NotImplementedError()
-    
-    def connect(self, socket, address):
-        """ Submit a request to perform a connect operation on the socket. """
-        raise NotImplementedError()
-    
-    def accept(self, socket):
-        """ Submit a request to perform an accept operation on the socket. """
-        raise NotImplementedError()
-    
-    def socket(self, family=None, type=None, proto=None):
+    def socket(self, family, type, proto):
         """ Create a socket that uses the reactor to do asynchronous I/O. """
         raise NotImplementedError()
     
@@ -65,7 +49,7 @@ class Reactor(object):
         raise NotImplementedError()
     
     def pipe(self):
-        """ Create a pip that uses the reactor to do asynchronous I/O. """
+        """ Create a pipe that uses the reactor to do asynchronous I/O. """
         raise NotImplementedError()
     
     def invoke(self, fun, *args):

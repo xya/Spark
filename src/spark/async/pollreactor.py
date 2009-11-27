@@ -58,19 +58,7 @@ class PollReactor(Reactor):
         blocking_mode(self.req_r, False)
         blocking_mode(self.req_w, False)
     
-    def read(self, file, size):
-        cont = Future()
-        op = ReadOperation(self, file, size, cont)
-        self.submit(op)
-        return cont
-    
-    def write(self, file, data):
-        cont = Future()
-        op = WriteOperation(self, file, data, cont)
-        self.submit(op)
-        return cont
-    
-    def socket(self, family=None, type=None, proto=None):
+    def socket(self, family, type, proto):
         """ Create a socket that uses the reactor to do asynchronous I/O. """
         return NonBlockingSocket.socket(self, family, type, proto)
     
@@ -84,18 +72,6 @@ class PollReactor(Reactor):
         blocking_mode(r, False)
         blocking_mode(w, False)
         return NonBlockingFile(self, r), NonBlockingFile(self, w)
-    
-    def connect(self, socket, address):
-        cont = Future()
-        op = ConnectOperation(self, socket, address, cont)
-        self.submit(op)
-        return cont
-    
-    def accept(self, socket):
-        cont = Future()
-        op = AcceptOperation(self, socket, cont)
-        self.submit(op)
-        return cont
     
     def callback(self, fun, *args, **kwargs):
         """ Submit a function to be called back on the reactor's thread. """
@@ -245,6 +221,18 @@ class PollReactor(Reactor):
         if len(op_queue) == 0:
             self.poll.unregister(op.fd)
             del self.pending[op.fd]
+
+def _beginRead(reactor, fd, size):
+    cont = Future()
+    op = ReadOperation(reactor, fd, size, cont)
+    reactor.submit(op)
+    return cont
+
+def _beginWrite(reactor, fd, data):
+    cont = Future()
+    op = WriteOperation(reactor, fd, data, cont)
+    reactor.submit(op)
+    return cont
 
 class IOOperation(object):
     def __init__(self, reactor):
@@ -402,43 +390,43 @@ class WriteOperation(IOOperation):
         return "WriteOperation(fd=%i, size=%i)" % (self.fd, self.size)
 
 class ConnectOperation(IOOperation):
-    def __init__(self, reactor, socket, address, cont):
+    def __init__(self, reactor, nbsock, address, cont):
         super(ConnectOperation, self).__init__(reactor)
-        self.fd = socket.fileno()
+        self.fd = nbsock.fileno
         self.event = select.POLLOUT
-        self.socket = socket
+        self.nbsock = nbsock
         self.address = address
         self.cont = cont
 
     def complete(self, event=None):
-        success, result = self.nonblock(self.socket.connect, (self.address, ),
-            os.errno.EINPROGRESS)
+        success, result = self.nonblock(self.nbsock.socket.connect,
+            (self.address, ), os.errno.EINPROGRESS)
         return success
     
     def completed(self):
-        self.raise_completed(self.socket, self.address)
+        self.raise_completed(self.nbsock, self.address)
     
     def __str__(self):
         return "ConnectOperation(fd=%i, addr=%s)" % (self.fd, repr(self.address))
 
 class AcceptOperation(IOOperation):
-    def __init__(self, reactor, socket, cont):
+    def __init__(self, reactor, nbsock, cont):
         super(AcceptOperation, self).__init__(reactor)
-        self.fd = socket.fileno()
+        self.fd = nbsock.fileno
         self.event = select.POLLIN
-        self.socket = socket
+        self.nbsock = nbsock
         self.conn = None
         self.address = None
         self.cont = cont
     
     def complete(self, event=None):
-        success, result = self.nonblock(self.socket.accept)
+        success, result = self.nonblock(self.nbsock.socket.accept)
         if success:
             self.conn, self.address = result
         return success
     
     def completed(self):
-        self.raise_completed(self.conn, self.address)
+        self.raise_completed(NonBlockingSocket(self.reactor, self.conn), self.address)
     
     def __str__(self):
         return "AcceptOperation(fd=%i)" % (self.fd)
@@ -471,10 +459,10 @@ class NonBlockingFile(object):
         return cls(reactor, fd)
     
     def beginRead(self, size):
-        return self.reactor.read(self.fd, size)
+        return _beginRead(self.reactor, self.fd, size)
     
     def beginWrite(self, data):
-        return self.reactor.write(self.fd, data)
+        return _beginWrite(self.reactor, self.fd, data)
     
     def read(self, size):
         return self.beginRead(size).result
@@ -498,15 +486,15 @@ class NonBlockingSocket(object):
     def __init__(self, reactor, sock):
         self.reactor = reactor
         self.socket = sock
+        sock.setblocking(0)
     
     @property
     def fileno(self):
         return self.socket.fileno()
     
     @classmethod
-    def socket(cls, reactor, family=None, type=None, proto=None):
+    def socket(cls, reactor, family, type, proto):
         sock = socket.socket(family, type, proto)
-        sock.setblocking(0)
         return cls(reactor, sock)
     
     def bind(self, address):
@@ -517,28 +505,21 @@ class NonBlockingSocket(object):
     
     def beginConnect(self, address):
         cont = Future()
-        self.reactor.connect(self.socket, address).after(self._endConnect, cont)
+        op = ConnectOperation(self.reactor, self, address, cont)
+        self.reactor.submit(op)
         return cont
-    
-    def _endConnect(self, prev, cont):
-        sock, remoteAddr = prev.results
-        cont.completed(self, remoteAddr)
     
     def beginAccept(self):
         cont = Future()
-        self.reactor.accept(self.socket).after(self._endAccept, cont)
+        op = AcceptOperation(self.reactor, self, cont)
+        self.reactor.submit(op)
         return cont
     
-    def _endAccept(self, prev, cont):
-        conn, remoteAddr = prev.results
-        conn.setblocking(0)
-        cont.completed(NonBlockingSocket(self.reactor, conn), remoteAddr)
-    
     def beginRead(self, size):
-        return self.reactor.read(self.socket, size)
+        return _beginRead(self.reactor, self.socket.fileno, size)
     
     def beginWrite(self, data):
-        return self.reactor.write(self.socket, data)
+        return _beginWrite(self.reactor, self.socket.fileno, data)
     
     def shutdown(self, how):
         return self.socket.shutdown(how)

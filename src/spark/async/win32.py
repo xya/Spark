@@ -18,8 +18,7 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-from ctypes import windll, WinError, Structure, Union
-from ctypes import cast, byref, sizeof, POINTER, c_void_p, c_uint32, c_wchar_p
+from ctypes import *
 
 # typedef struct _OVERLAPPED {
 #   ULONG_PTR Internal;
@@ -148,7 +147,41 @@ HeapFree.restype = _errorIfNull
 
 GENERIC_READ = 0x80000000
 GENERIC_WRITE = 0x40000000
-# FILE_APPEND_DATA = ?
+
+FILE_ADD_FILE = 0x0002
+FILE_ADD_SUBDIRECTORY = 0x0004
+FILE_APPEND_DATA = 0x0004
+FILE_CREATE_PIPE_INSTANCE = 0x0004
+FILE_DELETE_CHILD = 0x0040
+FILE_EXECUTE = 0x0020
+FILE_LIST_DIRECTORY = 0x0001
+FILE_READ_ATTRIBUTES = 0x0080
+FILE_READ_DATA = 0x0001
+FILE_READ_EA = 0x0008
+FILE_TRAVERSE = 0x0020
+FILE_WRITE_ATTRIBUTES = 0x0100
+FILE_WRITE_DATA = 0x0002
+FILE_WRITE_EA = 0x0010
+
+READ_CONTROL = 0x00020000L
+SYNCHRONIZE = 0x00100000L
+
+STANDARD_RIGHTS_READ = READ_CONTROL
+STANDARD_RIGHTS_WRITE = READ_CONTROL
+STANDARD_RIGHTS_EXECUTE = READ_CONTROL
+
+FILE_GENERIC_READ = (FILE_READ_ATTRIBUTES
+                     | FILE_READ_DATA
+                     | FILE_READ_EA
+                     | STANDARD_RIGHTS_READ
+                     | SYNCHRONIZE)
+
+FILE_GENERIC_WRITE = (FILE_WRITE_ATTRIBUTES
+                      | FILE_WRITE_DATA
+                      | FILE_WRITE_EA
+                      | STANDARD_RIGHTS_WRITE
+                      | SYNCHRONIZE
+                      | FILE_APPEND_DATA)
 
 CREATE_NEW = 1
 CREATE_ALWAYS = 2
@@ -196,3 +229,91 @@ ReadFile.restype = c_uint32
 WriteFile = kernel32.WriteFile
 WriteFile.argtypes = [c_void_p, c_void_p, c_uint32, POINTER(c_uint32), LP_OVERLAPPED]
 WriteFile.restype = c_uint32
+
+# Socket functions
+
+class sockaddr_in(Structure):
+    _fields_ = [("sin_family", c_int16),
+                ("sin_port", c_uint16),
+                ("sin_addr", c_byte * 4),
+                ("sin_zero", c_char * 8)]
+
+class sockaddr_in6(Structure):
+    _fields_ = [("sin6_family", c_int16),
+                ("sin6_port", c_uint16),
+                ("sin6_flowinfo", c_uint32),
+                ("sin6_addr", c_byte * 16),
+                ("sin6_scope_id", c_uint32)]
+
+LP_OVERLAPPED = POINTER(OVERLAPPED)
+
+# SOCKET WSASocket(
+#   __in  int af,
+#   __in  int type,
+#   __in  int protocol,
+#   __in  LPWSAPROTOCOL_INFO lpProtocolInfo,
+#   __in  GROUP g,
+#   __in  DWORD dwFlags
+# );
+
+# int WSAIoctl(
+#   __in   SOCKET s,
+#   __in   DWORD dwIoControlCode,
+#   __in   LPVOID lpvInBuffer,
+#   __in   DWORD cbInBuffer,
+#   __out  LPVOID lpvOutBuffer,
+#   __in   DWORD cbOutBuffer,
+#   __out  LPDWORD lpcbBytesReturned,
+#   __in   LPWSAOVERLAPPED lpOverlapped,
+#   __in   LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
+# );
+
+# BOOL PASCAL ConnectEx(
+#   __in      SOCKET s,
+#   __in      const struct sockaddr *name,
+#   __in      int namelen,
+#   __in_opt  PVOID lpSendBuffer,
+#   __in      DWORD dwSendDataLength,
+#   __out     LPDWORD lpdwBytesSent,
+#   __in      LPOVERLAPPED lpOverlapped
+# );
+# ConnectEx = windll.Mswsock.ConnectEx
+# ConnectEx.argtypes = [c_void_p, c_void_p,  c_uint32,
+#                      c_void_p, c_uint32, POINTER(c_uint32), LP_OVERLAPPED]
+# ConnectEx.restype = c_uint32
+
+# BOOL AcceptEx(
+#   __in   SOCKET sListenSocket,
+#   __in   SOCKET sAcceptSocket,
+#   __in   PVOID lpOutputBuffer,
+#   __in   DWORD dwReceiveDataLength,
+#   __in   DWORD dwLocalAddressLength,
+#   __in   DWORD dwRemoteAddressLength,
+#   __out  LPDWORD lpdwBytesReceived,
+#   __in   LPOVERLAPPED lpOverlapped
+# );
+AcceptEx = windll.Mswsock.AcceptEx
+AcceptEx.argtypes = [c_void_p, c_void_p, c_void_p,
+                     c_uint32, c_uint32, c_uint32,
+                     POINTER(c_uint32), LP_OVERLAPPED]
+AcceptEx.restype = c_uint32
+
+# int WSARecv(
+#   __in     SOCKET s,
+#   __inout  LPWSABUF lpBuffers,
+#   __in     DWORD dwBufferCount,
+#   __out    LPDWORD lpNumberOfBytesRecvd,
+#   __inout  LPDWORD lpFlags,
+#   __in     LPWSAOVERLAPPED lpOverlapped,
+#   __in     LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
+# );
+
+# int WSASend(
+#   __in   SOCKET s, 
+#   __in   LPWSABUF lpBuffers,
+#   __in   DWORD dwBufferCount,
+#   __out  LPDWORD lpNumberOfBytesSent,
+#   __in   DWORD dwFlags,
+#   __in   LPWSAOVERLAPPED lpOverlapped,
+#   __in   LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine
+# );

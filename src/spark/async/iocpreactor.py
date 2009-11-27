@@ -23,7 +23,7 @@ import os
 import threading
 import socket
 import logging
-from ctypes import WinError, cast, byref, POINTER, c_void_p, c_uint32, create_string_buffer
+from ctypes import WinError, cast, byref, POINTER, c_void_p, c_uint32, sizeof, create_string_buffer
 from spark.async import Future, Delegate
 from spark.async.aio import Reactor
 from spark.async import win32
@@ -50,23 +50,10 @@ class CompletionPortReactor(Reactor):
         self.closed = False
         self.cp = CompletionPort()
     
-    def read(self, file, size):
-        if hasattr(file, "fileno"):
-            handle = file.fileno()
-        else:
-            handle = file
-        return _asyncRead(self.cp, handle, size, 0)
-    
-    def write(self, file, data):
-        if hasattr(file, "fileno"):
-            handle = file.fileno()
-        else:
-            handle = file
-        return _asyncWrite(self.cp, handle, data, 0);
-    
-    def socket(self, family=None, type=None, proto=None):
+    def socket(self, family, type, proto):
         """ Create a socket that uses the reactor to do asynchronous I/O. """
-        raise NotImplementedError()
+        sock = socket.socket(family, type, protocol)
+        return OverlappedSocket(self, sock)
     
     def open(self, file, mode=None):
         """ Open a file that uses the reactor to do asynchronous I/O. """
@@ -74,12 +61,6 @@ class CompletionPortReactor(Reactor):
     
     def pipe(self):
         """ Create a pipe that uses the reactor to do asynchronous I/O. """
-        raise NotImplementedError()
-    
-    def connect(self, socket, address):
-        raise NotImplementedError()
-    
-    def accept(self, socket):
         raise NotImplementedError()
     
     def callback(self, fun, *args, **kwargs):
@@ -171,8 +152,16 @@ class CompletionPortReactor(Reactor):
             op, buffer, cont = data
             cont.completed(buffer.raw)
         elif op == OP_WRITE:
-            op, cont = data
+            op, buffer, cont = data
             cont.completed()
+        elif op == OP_ACCEPT:
+            op, addrpair, conn, cont = data
+            remoteAddr = _sockaddr_in_to_tuple(addrpair[1])
+            cont.completed(conn, remoteAddr)
+        elif op == OP_CONNECT:
+            op, sockaddr, conn, cont = data
+            remoteAddr = _sockaddr_in_to_tuple(sockaddr)
+            cont.completed(conn, remoteAddr)
 
 def _asyncRead(cp, handle, size, position):
     cont = Future()
@@ -183,23 +172,39 @@ def _asyncRead(cp, handle, size, position):
     if not ret:
         error = win32.GetLastError()
         if error != win32.ERROR_IO_PENDING:
+            self.reactor.cp.freeOverlapped(lpOver)
             raise WinError(error)
     return cont
 
 def _asyncWrite(cp, handle, data, position):
     cont = Future()
-    lpOver = cp.overlapped(OP_WRITE, cont)
+    lpOver = cp.overlapped(OP_WRITE, data, cont)
     _setOffset(lpOver.contents, position)
     ret = win32.WriteFile(handle, data, len(data), None, lpOver)
     if not ret:
         error = win32.GetLastError()
         if error != win32.ERROR_IO_PENDING:
+            self.reactor.cp.freeOverlapped(lpOver)
             raise WinError(error)
     return cont
 
 def _setOffset(overlapped, offset):
     overlapped.Data.Offset.Low = offset & 0x00000000ffffffff
     overlapped.Data.Offset.High = offset & 0xffffffff00000000
+
+def _tuple_to_sockaddr_in(family, t):
+    sockaddr = win32.sockaddr_in()
+    sockaddr.sin_family = family
+    sockaddr.sin_port = socket.htons(t[1])
+    for i, c in enumerate(socket.inet_aton(t[0])):
+        sockaddr.sin_addr[i] = ord(c)
+    return sockaddr
+
+def _sockaddr_in_to_tuple(sockaddr):
+    port = socket.ntohs(sockaddr.sin_port)
+    packed = "".join(chr(v) for v in sockaddr.sin_addr)
+    address = socket.inet_ntoa(packed)
+    return address, port
 
 class OverlappedFile(object):
     """ File-like object that uses a reactor to perform asynchronous I/O. """
@@ -259,6 +264,73 @@ class OverlappedFile(object):
     def __exit__(self, type, e, traceback):
         self.close()
 
+class OverlappedSocket(object):
+    """ File-like wrapper for a socket. Uses a reactor to perform asynchronous I/O. """
+    def __init__(self, reactor, family, type, proto):
+        self.reactor = reactor
+        self.family = family
+        self.type = type
+        self.proto = proto
+        self.socket = socket.socket(self.family, self.type, self.proto)
+        reactor.cp.register(self.socket.fileno())
+    
+    @property
+    def fileno(self):
+        return self.socket.fileno()
+    
+    def bind(self, address):
+        return self.socket.bind(address)
+    
+    def listen(self, backlog=1):
+        return self.socket.listen(backlog)
+    
+    def beginAccept(self):
+        if self.family != socket.AF_INET:
+            raise NotImplementedError("Only IPv4 is supported for now")
+        cont = Future()
+        conn = OverlappedSocket(self.family, self.type, self.proto)
+        addrpair = (win32.sockaddr_in * 2)()
+        addrpair[0] = _tuple_to_sockaddr_in(self.family, self.socket.getsockname())
+        addrpair[1] = _tuple_to_sockaddr_in(self.family, self.conn.getsockname())
+        lpOver = self.reactor.cp.overlapped(OP_ACCEPT, addrpair, conn, cont)
+        ret = win32.AcceptEx(self.fileno, conn.fileno, byref(addrpair),
+            0, sizeof(addrpair[0]), sizeof(addrpair[1]), None, lpOver)
+        if not ret:
+            self.reactor.cp.freeOverlapped(lpOver)
+            raise WinError(error)
+        return cont
+    
+    def beginConnect(self, address):
+        if self.family != socket.AF_INET:
+            raise NotImplementedError("Only IPv4 is supported for now")
+        cont = Future()
+        sockaddr = _tuple_to_sockaddr_in(self.family, address)
+        lpOver = self.reactor.cp.overlapped(OP_CONNECT, sockaddr, self, cont)
+        ret = win32.ConnectEx(self.fileno, byref(sockaddr), sizeof(sockaddr),
+            None, 0, None, lpOver)
+        if not ret:
+            self.reactor.cp.freeOverlapped(lpOver)
+            raise WinError(error)
+        return cont
+    
+    def beginRead(self, size):
+        return _asyncRead(self.reactor.cp, self.socket.fileno, size, 0)
+    
+    def beginWrite(self, data):
+        return _asyncWrite(self.reactor.cp, self.socket.fileno, data, 0)
+    
+    def shutdown(self, how):
+        return self.socket.shutdown(how)
+    
+    def close(self):
+        return self.socket.close()
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, type, e, traceback):
+        self.close()
+
 class CompletionPort(object):
     """ Wrapper for an I/O completion port """
     def __init__(self):
@@ -295,6 +367,17 @@ class CompletionPort(object):
         lpOver = win32.allocOVERLAPPED()
         lpOver.contents.UserData = refID
         return lpOver
+    
+    def freeOverlapped(self, lpOver):
+        """ Free the OVERLAPPED structure when wait() will not be called
+        (e.g. the asynchronous call failed), and return the wrapped objects. """
+        refID = lpOver.contents.UserData
+        win32.freeOVERLAPPED(lpOver)
+        if refID > 0:
+            with self.lock:
+                return self.refs.pop(refID)
+        else:
+            return ()
     
     def post(self, *objs):
         """ Directly post the objects to the completion port. """
