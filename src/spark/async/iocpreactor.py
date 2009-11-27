@@ -30,6 +30,12 @@ __all__ = ["CompletionPortReactor"]
 
 LOG_VERBOSE = 5
 
+OP_CALLBACK = 0
+OP_READ = 1
+OP_WRITE = 2
+OP_CONNECT = 3
+OP_ACCEPT = 4
+
 class CompletionPortReactor(Reactor):
     def __init__(self, name=None, lock=None):
         self.logger = logging.getLogger(name)
@@ -37,7 +43,6 @@ class CompletionPortReactor(Reactor):
             self.lock = lock
         else:
             self.lock = threading.RLock()
-        self.pending = {}
         self.onClosed = Delegate(self.lock)
         self.active = False
         self.closed = False
@@ -55,7 +60,7 @@ class CompletionPortReactor(Reactor):
     
     def open(self, file, mode=None):
         """ Open a file that uses the reactor to do asynchronous I/O. """
-        raise NotImplementedError()
+        return OverlappedFile.open(self, file, mode)
     
     def pipe(self):
         """ Create a pipe that uses the reactor to do asynchronous I/O. """
@@ -71,7 +76,7 @@ class CompletionPortReactor(Reactor):
         """ Submit a function to be called back on the reactor's thread. """
         if fun is None:
             raise TypeError("The function must not be None")
-        self.cp.post(fun, *args, **kwargs)
+        self.cp.post(OP_CALLBACK, fun, args, kwargs)
     
     def launch_thread(self):
         """ Start a background I/O thread to run the reactor. """
@@ -109,7 +114,7 @@ class CompletionPortReactor(Reactor):
         """ Close the reactor, terminating all pending operations. """
         with self.lock:
             if self.active:
-                self.cp.post(None)
+                self.cp.post()
     
     def __enter__(self):
         return self
@@ -121,14 +126,14 @@ class CompletionPortReactor(Reactor):
         try:
             while True:
                 self.logger.log(LOG_VERBOSE, "Waiting for GetQueuedCompletionStatus()")
-                op = self.cp.wait()
+                id, tag, bytes, data = self.cp.wait()
                 self.logger.log(LOG_VERBOSE, "Woke up from GetQueuedCompletionStatus()")
-                if hasattr(op, 'func'):
-                    self.handleCallback(op)
-                elif hasattr(op, 'tag'):
-                    self.handleIOCompletion(op)
-                else:
+                if len(data) == 0:
                     break
+                elif data[0] == OP_CALLBACK:
+                    self.handleCallback(id, data[1], data[2], data[3])
+                else:
+                    self.handleIOCompletion(id, tag, bytes, data)
         finally:
             self.cleanup()
     
@@ -143,18 +148,97 @@ class CompletionPortReactor(Reactor):
         except Exception:
             self.logger.exception("onClosed() failed")
     
-    def handleCallback(self, cb):
-        self.logger.log(LOG_VERBOSE, "Invoking non-I/O callback %i" % cb.id)
+    def handleCallback(self, id, func, args, kwargs):
+        self.logger.log(LOG_VERBOSE, "Invoking non-I/O callback %s" % hex(id))
         try:
-            cb.func(*cb.args, **cb.kwargs)
+            func(*args, **kwargs)
         except Exception:
-            self.logger.exception("Error in non-I/O callback")
+            self.logger.exception("Error in non-I/O callback %s" % hex(id))
     
-    def handleIOCompletion(self, op):
-        pass
+    def handleIOCompletion(self, id, tag, bytes, data):
+        op = data[0]
+        if op == OP_READ:
+            op, buffer, cont = data
+            cont.completed(buffer.raw)
+        elif op == OP_WRITE:
+            op, cont = data
+            cont.completed()
 
 from spark.async import win32
-from ctypes import cast, byref, POINTER, c_void_p, c_uint32
+from ctypes import WinError, cast, byref, POINTER, c_void_p, c_uint32, create_string_buffer
+
+class OverlappedFile(object):
+    """ File-like object that uses a reactor to perform asynchronous I/O. """
+    def __init__(self, reactor, handle):
+        self.reactor = reactor
+        self.handle = handle
+    
+    @property
+    def fileno(self):
+        return self.handle
+    
+    @classmethod
+    def open(cls, reactor, file, mode=None):
+        if mode == "w":
+            access = win32.GENERIC_WRITE
+            creation = win32.CREATE_ALWAYS
+        elif mode == "a":
+            access = win32.GENERIC_WRITE
+            creation = win32.OPEN_ALWAYS
+        elif mode == "r+":
+            access = win32.GENERIC_READ | win32.GENERIC_WRITE
+            creation = win32.OPEN_EXISTING
+        elif mode == "w+":
+            access = win32.GENERIC_READ | win32.GENERIC_WRITE
+            creation =  win32.CREATE_ALWAYS
+        elif mode == "a+":
+            access = win32.GENERIC_READ | win32.GENERIC_WRITE
+            creation = win32.OPEN_ALWAYS
+        else:
+            access = win32.GENERIC_READ
+            creation = win32.OPEN_EXISTING
+        flags = win32.FILE_FLAG_OVERLAPPED | win32.FILE_ATTRIBUTE_NORMAL
+        handle = win32.CreateFile(file, access, 0, None, creation, flags, None)
+        reactor.cp.register(handle)
+        return cls(reactor, handle)
+    
+    def beginRead(self, size):
+        cont = Future()
+        buffer = create_string_buffer(size)
+        lpOver = self.reactor.cp.overlapped(OP_READ, buffer, cont)
+        ret = win32.ReadFile(self.handle, buffer, size, None, lpOver)
+        if not ret:
+            error = win32.GetLastError()
+            if error != win32.ERROR_IO_PENDING:
+                raise WinError(error)
+        return cont
+    
+    def beginWrite(self, data):
+        cont = Future()
+        lpOver = self.reactor.cp.overlapped(OP_WRITE, cont)
+        ret = win32.WriteFile(self.handle, data, len(data), None, lpOver)
+        if not ret:
+            error = win32.GetLastError()
+            if error != win32.ERROR_IO_PENDING:
+                raise WinError(error)
+        return cont
+    
+    def read(self, size):
+        raise NotImplementedError()
+    
+    def write(self, data):
+        raise NotImplementedError()
+    
+    def close(self):
+        if self.handle:
+            win32.CloseHandle(self.handle)
+            self.handle = None
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, type, e, traceback):
+        self.close()
 
 class CompletionPort(object):
     """ Wrapper for an I/O completion port """
@@ -163,7 +247,7 @@ class CompletionPort(object):
         self.handle = win32.CreateIoCompletionPort(
             win32.INVALID_HANDLE_VALUE, None, None, 0)
         self.lock = threading.RLock()
-        self.callbacks = {}
+        self.refs = {}
     
     def close(self):
         """ Close the completion port. """
@@ -175,52 +259,44 @@ class CompletionPort(object):
         """ Register a file with the completion port and return its tag. """
         win32.CreateIoCompletionPort(hFile, self.handle, hFile, 0)
     
-    def post(self, func, *args, **kwargs):
-        """ Post a callback to the completion port. """
+    def overlapped(self, *objs):
+        """
+        Create an OVERLAPPED struct, eventually wrapping some objects,
+        and return a pointer to the struct. The objects will be returned,
+        and the structure freed by wait().
+        """
         # wish I could manually increase the refcount, to avoid the lock & dict
-        with self.lock:
-            cbData = (func, args, kwargs)
-            cbID = id(cbData)
-            self.callbacks[cbID] = cbData
+        if len(objs) > 0:
+            with self.lock:
+                refData = tuple(objs)
+                refID = id(refData)
+                self.refs[refID] = refData
+        else:
+            refID = 0
         lpOver = win32.allocOVERLAPPED()
-        lpOver.contents.Data.Pointer = cbID
+        lpOver.contents.UserData = refID
+        return lpOver
+    
+    def post(self, *objs):
+        """ Directly post the objects to the completion port. """
         win32.PostQueuedCompletionStatus(self.handle,
-            0, win32.INVALID_HANDLE_VALUE, lpOver)
+            0, win32.INVALID_HANDLE_VALUE, self.overlapped(*objs))
     
     def wait(self):
-        """ Wait for an operation to be finished and return it. """
+        """
+        Wait for an operation to be finished and return a (ID, tag, bytes, objs)
+        tuple containing the result. The OVERLAPPED structure is also freed. 
+        """
         bytes = c_uint32()
         tag = c_void_p(0)
         lpOver = cast(0, win32.LP_OVERLAPPED)
         win32.GetQueuedCompletionStatus(self.handle,
             byref(bytes), byref(tag), byref(lpOver), -1)
-        if tag.value == win32.INVALID_HANDLE_VALUE.value:
-            # callback, need to free the OVERLAPPED struct
-            cbID = lpOver.contents.Data.Pointer
-            win32.freeOVERLAPPED(lpOver)
+        refID = lpOver.contents.UserData
+        win32.freeOVERLAPPED(lpOver)
+        if refID > 0:
             with self.lock:
-                cbData = self.callbacks.pop(cbID)
-            if cbData[0] is None:
-                return ShutdownRequest(cbID)
-            else:
-                return Callback(cbID, cbData[0], *cbData[1], **cbData[2])
+                userData = self.refs.pop(refID)
         else:
-            # IO operation, nothing special to do
-            return IOOperation(tag, bytes, lpOver)
-
-class IOOperation(object):
-    def __init__(self, tag, bytes, overlapped):
-        self.tag = tag
-        self.bytes = bytes
-        self.overlapped = overlapped
-
-class Callback(object):
-    def __init__(self, id, func, *args, **kwargs):
-        self.id = id
-        self.func = func
-        self.args = args
-        self.kwargs = kwargs
-
-class ShutdownRequest(object):
-    def __init__(self, id):
-        self.id = id
+            userData = ()
+        return refID, tag.value, bytes.value, userData

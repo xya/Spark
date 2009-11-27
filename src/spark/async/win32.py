@@ -43,7 +43,8 @@ class OVERLAPPED(Structure):
     _fields_ = [("Internal", POINTER(c_uint32)),
                 ("InternalHigh", POINTER(c_uint32)),
                 ("Data", OVERLAPPED_data),
-                ("hEvent", c_void_p)]
+                ("hEvent", c_void_p),
+                ("UserData", c_void_p)]
 
 LP_OVERLAPPED = POINTER(OVERLAPPED)
 
@@ -106,12 +107,19 @@ GetQueuedCompletionStatus = kernel32.GetQueuedCompletionStatus
 GetQueuedCompletionStatus.argtypes = [c_void_p, POINTER(c_uint32),
     POINTER(c_void_p), POINTER(LP_OVERLAPPED), c_uint32]
 GetQueuedCompletionStatus.restype = _errorIfNull
+
+
 # BOOL WINAPI CloseHandle(
 #   __in  HANDLE hObject
 # );
 CloseHandle = kernel32.CloseHandle
 CloseHandle.argtypes = [c_void_p]
 CloseHandle.restype = _errorIfNull
+
+# DWORD WINAPI GetLastError(void);
+GetLastError = kernel32.GetLastError
+GetLastError.argtypes = []
+GetLastError.restype = c_uint32
 
 # Heap functions
 
@@ -138,6 +146,18 @@ HeapFree.restype = _errorIfNull
 
 # File I/O functions
 
+GENERIC_READ = 0x80000000
+GENERIC_WRITE = 0x40000000
+
+CREATE_NEW = 1
+CREATE_ALWAYS = 2
+OPEN_EXISTING = 3
+OPEN_ALWAYS = 4
+TRUNCATE_EXISTING = 5
+
+FILE_ATTRIBUTE_NORMAL = 0x80
+FILE_FLAG_OVERLAPPED = 0x40000000
+
 # HANDLE WINAPI CreateFile(
 #   __in      LPCTSTR lpFileName,
 #   __in      DWORD dwDesiredAccess,
@@ -151,3 +171,27 @@ CreateFile = kernel32.CreateFileW
 CreateFile.argtypes = [c_wchar_p, c_uint32, c_uint32, c_void_p,
                        c_uint32, c_uint32, c_void_p]
 CreateFile.restype = _errorIfInvalid
+
+ERROR_IO_PENDING = 997
+
+# BOOL WINAPI ReadFile(
+#   __in         HANDLE hFile,
+#   __out        LPVOID lpBuffer,
+#   __in         DWORD nNumberOfBytesToRead,
+#   __out_opt    LPDWORD lpNumberOfBytesRead,
+#   __inout_opt  LPOVERLAPPED lpOverlapped
+# );
+ReadFile = kernel32.ReadFile
+ReadFile.argtypes = [c_void_p, c_void_p, c_uint32, POINTER(c_uint32), LP_OVERLAPPED]
+ReadFile.restype = c_uint32
+
+# BOOL WINAPI WriteFile(
+#   __in         HANDLE hFile,
+#   __in         LPCVOID lpBuffer,
+#   __in         DWORD nNumberOfBytesToWrite,
+#   __out_opt    LPDWORD lpNumberOfBytesWritten,
+#   __inout_opt  LPOVERLAPPED lpOverlapped
+# );
+WriteFile = kernel32.WriteFile
+WriteFile.argtypes = [c_void_p, c_void_p, c_uint32, POINTER(c_uint32), LP_OVERLAPPED]
+WriteFile.restype = c_uint32
