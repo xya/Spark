@@ -79,7 +79,7 @@ class PollReactor(Reactor):
         if fun is None:
             raise TypeError("The function must not be None")
         op = InvokeOperation(self, fun, args, kwargs)
-        self.submit(op, False)
+        self.submit(op)
     
     def launch_thread(self):
         """ Start a background I/O thread to run the reactor. """
@@ -103,25 +103,22 @@ class PollReactor(Reactor):
                 return
         self.eventLoop()
     
-    def submit(self, op, preexec=True):
+    def submit(self, op):
         """
-        Submit an I/O request to be performed asynchronously. If preexec is true,
-        the operation will be started immediatly; otherwise it will be started
-        when it gets dequeued in the main loop.
+        Submit an I/O request to be performed asynchronously. If submit() is
+        called on the reactor's thread the operation will be started immediatly;
+        otherwise it will be started when it gets dequeued by the reactor's thread.
         """
-        if preexec and op.complete():
+        with self.lock:
+            invokeDirectly = (self.thread == threading.currentThread())
+        if invokeDirectly and op.complete():
             # the operation finished without blocking
-            self.logger.log(LOG_VERBOSE, "Pre-exec'd %s" % str(op))
-            with self.lock:
-                invokeDirectly = (self.thread == threading.currentThread())
-            if invokeDirectly:
-                op.completed()
-                return
-            else:
-                op = InvokeOperation(self, op.completed, (), {})
-        self.logger.log(LOG_VERBOSE, "Submitting operation %s" % str(op))
-        self.queue.put(op)
-        os.write(self.req_w, '\0')
+            self.logger.log(LOG_VERBOSE, "Directly invoked %s" % str(op))
+            op.completed()
+        else:
+            self.logger.log(LOG_VERBOSE, "Submitting operation %s" % str(op))
+            self.queue.put(op)
+            os.write(self.req_w, '\0')
     
     def close(self):
         """ Close the reactor, terminating all pending operations. """
