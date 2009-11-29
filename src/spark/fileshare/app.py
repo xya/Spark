@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
 # Copyright (C) 2009 Pierre-André Saulais <pasaulais@free.fr>
@@ -19,9 +18,22 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-if __name__ == "__main__":
-    from spark.gui.main import MainView
-    from spark.fileshare import SparkApplication
-    app = SparkApplication()
-    view = MainView(app)
-    view.show()
+from spark.fileshare import FileShare
+from spark.async.pollreactor import PollReactor
+
+__all__ = ["SparkApplication", "Session"]
+
+class SparkApplication(object):
+    """ Hold the state of the whole application. """
+    def __init__(self):
+        self.reactor = PollReactor()
+        self.reactor.launch_thread()
+        self.session = Session(self.reactor)
+
+class Session(object):
+    """
+    Represent one session of file sharing. An user can share files with only
+    one user per session.
+    """
+    def __init__(self, reactor):
+        self.share = FileShare(reactor)

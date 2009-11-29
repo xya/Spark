@@ -20,6 +20,7 @@
 
 from spark.async import Future, Delegate
 from spark.messaging import MessengerService, serviceMethod
+from spark.fileshare import SharedFile
 
 __all__ = ["FileShare"]
 
@@ -37,8 +38,9 @@ class FileShare(MessengerService):
     
     @serviceMethod
     def files(self):
-        """ Return the current file table, which maps file IDs to files. """
-        return {"123abc" : {"id": "123abc", "name": "Report.pdf", "size": 3145728, "last-modified": "20090619T173529.000Z"}}
+        """ Return a copy of the current file table, which maps file IDs to files. """
+        dummy = SharedFile("Report.pdf", 3145728, "20090619T173529.000Z", "gnome-mime-application-pdf", None, "123abc")
+        return {dummy.ID: dummy}
     
     @serviceMethod
     def addFile(self, path):
@@ -68,7 +70,7 @@ class FileShare(MessengerService):
         if (isinstance(req.params, dict)
             and req.params.has_key("register") and req.params["register"] is True):
             self.remoteNotifications = True
-        return {"123abc" : {"id": "123abc", "name": "Report.pdf", "size": 3145728, "last-modified": "20090619T173529.000Z"}}
+        return self.files()
     
     def responselistFiles(self, prev):
         """ The remote peer responded to our 'list-files' request. """

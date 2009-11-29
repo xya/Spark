@@ -22,7 +22,8 @@
 from spark.fileshare.files import *
 from spark.fileshare.transfers import *
 from spark.fileshare.service import *
+from spark.fileshare.app import *
 
 __all__ = []
-for module in (files, transfers, service):
+for module in (files, transfers, service, app):
     __all__.extend(module.__all__)

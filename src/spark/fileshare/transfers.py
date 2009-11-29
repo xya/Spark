@@ -21,7 +21,7 @@
 import types
 from datetime import datetime, timedelta
 
-__all__ = ["TransferInfo"]
+__all__ = ["TransferInfo", "TransferLocation"]
 
 class TransferLocation(object):
     LOCAL = 0       # a local file is being sent
