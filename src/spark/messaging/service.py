@@ -37,10 +37,7 @@ def serviceMethod(func):
     """ Decorator which invokes the function on the service's thread. """
     @wraps(func)
     def invoker(self, *args, **kwargs):
-        #return self.reactor.send(func, self, *args, **kwargs)
-        cont = Future()
-        self.reactor.post(cont.run, func, self, *args, **kwargs)
-        return cont
+        return self.reactor.send(func, self, *args, **kwargs)
     return invoker
 
 class Service(object):
@@ -82,9 +79,7 @@ class Service(object):
     
     def disconnect(self):
         """ Close an established connection. """
-        cont = Future()
-        self.reactor.post(self._disconnectRequest, cont)
-        return cont
+        return self.reactor.send(self._closeConnection)
     
     def _connectRequest(self, cont, initiating, address):
         if self.connState == Service.CONNECTED:
@@ -92,14 +87,6 @@ class Service(object):
         elif self.connState == Service.CONNECTING:
             cont.failed(Exception("The service is already trying to connect"))
         cont.run_coroutine(self._startConnection(address, initiating))
-    
-    def _disconnectRequest(self, cont):
-        try:
-            self._closeConnection()
-        except Exception:
-            cont.failed()
-        else:
-            cont.completed()
     
     def _startConnection(self, address, initiating):
         try:
@@ -187,7 +174,7 @@ class MessengerService(Service):
             name = prev.result
         except:
             self.logger.exception("Error while negociating protocol")
-            self._closeConnection()
+            self.disconnect()
         else:
             self.logger.debug("Negociated protocol '%s'", name)
             self.messenger = AsyncMessenger(self.conn)
@@ -221,7 +208,7 @@ class MessengerService(Service):
         
         if message is None:
             # we have been disconnected
-            self._closeConnection()
+            self.disconnect()
         else:
             self.logger.debug("Received message: %s", message)
             self.delivery.deliverMessage(message)

@@ -60,7 +60,7 @@ class Reactor(object):
     
     def post(self, fun, *args, **kwargs):
         """
-        Invoke a callable on the reactor's thread.
+        Submit a callable to be invoked on the reactor's thread later.
         
         Unlike send(), this method doesn't return a future.
         """

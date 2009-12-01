@@ -74,16 +74,24 @@ class PollReactor(Reactor):
         blocking_mode(w, False)
         return NonBlockingFile(self, r), NonBlockingFile(self, w)
     
-    def post(self, fun, *args, **kwargs):
-        """ Invoke a callable on the reactor's thread. """
+    def send(self, fun, *args, **kwargs):
+        """ Invoke a callable on the reactor's thread and return its result through a future. """
         if fun is None:
-            raise TypeError("The function must not be None")
+            raise TypeError("The callable must not be None")
+        cont = Future()
         with self.lock:
             invokeDirectly = (self.thread == threading.currentThread())
         if invokeDirectly:
-            fun(*args, **kwargs)
+            cont.run(fun, *args, **kwargs)
         else:
-            self.submit(InvokeOperation(self, fun, args, kwargs))
+            self.submit(InvokeOperation(self, cont, fun, args, kwargs))
+        return cont
+    
+    def post(self, fun, *args, **kwargs):
+        """ Submit a callable to be invoked on the reactor's thread later. """
+        if fun is None:
+            raise TypeError("The callable must not be None")
+        self.submit(InvokeOperation(self, None, fun, args, kwargs), True)
     
     def launch_thread(self):
         """ Start a background I/O thread to run the reactor. """
@@ -107,7 +115,7 @@ class PollReactor(Reactor):
                 return
         self.eventLoop()
     
-    def submit(self, op):
+    def submit(self, op, forceAsync=False):
         """
         Submit an I/O request to be performed asynchronously. If submit() is
         called on the reactor's thread the operation will be started immediatly;
@@ -115,7 +123,7 @@ class PollReactor(Reactor):
         """
         with self.lock:
             invokeDirectly = (self.thread == threading.currentThread())
-        if invokeDirectly and op.complete():
+        if not forceAsync and invokeDirectly and op.complete():
             # the operation finished without blocking
             self.logger.log(LOG_VERBOSE, "Directly invoked %s" % str(op))
             op.completed()
@@ -305,8 +313,9 @@ class IOOperation(object):
                 raise
 
 class InvokeOperation(IOOperation):
-    def __init__(self, reactor, fun, args, kwargs):
+    def __init__(self, reactor, cont, fun, args, kwargs):
         super(InvokeOperation, self).__init__(reactor)
+        self.cont = cont
         self.fun = fun
         self.args = args
         self.kwargs = kwargs
@@ -319,10 +328,13 @@ class InvokeOperation(IOOperation):
     
     def completed(self):
         self.reactor.logger.log(LOG_VERBOSE, "Completed operation %s" % str(self))
-        try:
-            self.fun(*self.args, **self.kwargs)
-        except Exception:
-            self.reactor.logger.exception("Error in non-I/O callback")
+        if self.cont is None:
+            try:
+                self.fun(*self.args, **self.kwargs)
+            except Exception:
+                self.reactor.logger.exception("Error in non-I/O callback")
+        else:
+            self.cont.run(self.fun, *self.args, **self.kwargs)
 
 class PipeReadOperation(IOOperation):
     def __init__(self, reactor, fd):

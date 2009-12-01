@@ -63,11 +63,19 @@ class CompletionPortReactor(Reactor):
         """ Create a pipe that uses the reactor to do asynchronous I/O. """
         raise NotImplementedError()
     
-    def post(self, fun, *args, **kwargs):
-        """" Invoke a callable on the reactor's thread. """
+    def send(self, fun, *args, **kwargs):
+        """ Invoke a callable on the reactor's thread and return its result through a future. """
         if fun is None:
-            raise TypeError("The function must not be None")
-        self.cp.post(OP_INVOKE, fun, args, kwargs)
+            raise TypeError("The callable must not be None")
+        cont = Future()
+        self.cp.post(OP_INVOKE, cont, fun, args, kwargs)
+        return cont
+    
+    def post(self, fun, *args, **kwargs):
+        """ Submit a callable to be invoked on the reactor's thread later. """
+        if fun is None:
+            raise TypeError("The callable must not be None")
+        self.cp.post(OP_INVOKE, None, fun, args, kwargs)
     
     def launch_thread(self):
         """ Start a background I/O thread to run the reactor. """
@@ -94,13 +102,6 @@ class CompletionPortReactor(Reactor):
                 return
         self.eventLoop()
     
-    def submit(self, op):
-        """
-        Submit an I/O request to be performed asynchronously.
-        Requests are not processed before either run() or launch_thread() is called.
-        """
-        pass
-    
     def close(self):
         """ Close the reactor, terminating all pending operations. """
         with self.lock:
@@ -122,7 +123,7 @@ class CompletionPortReactor(Reactor):
                 if len(data) == 0:
                     break
                 elif data[0] == OP_INVOKE:
-                    self.handleCallback(id, data[1], data[2], data[3])
+                    self.handleCallback(id, *data[1:])
                 else:
                     self.handleIOCompletion(id, tag, bytes, data)
         finally:
@@ -139,12 +140,15 @@ class CompletionPortReactor(Reactor):
         except Exception:
             self.logger.exception("onClosed() failed")
     
-    def handleCallback(self, id, func, args, kwargs):
+    def handleCallback(self, id, cont, func, args, kwargs):
         self.logger.log(LOG_VERBOSE, "Invoking non-I/O callback %s" % hex(id))
-        try:
-            func(*args, **kwargs)
-        except Exception:
-            self.logger.exception("Error in non-I/O callback %s" % hex(id))
+        if cont is None:
+            try:
+                func(*args, **kwargs)
+            except Exception:
+                self.logger.exception("Error in non-I/O callback %s" % hex(id))
+        else:
+            cont.run(func, *args, **kwargs)
     
     def handleIOCompletion(self, id, tag, bytes, data):
         op = data[0]

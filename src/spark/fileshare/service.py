@@ -70,7 +70,7 @@ class FileShare(MessengerService):
         if (isinstance(req.params, dict)
             and req.params.has_key("register") and req.params["register"] is True):
             self.remoteNotifications = True
-        return self.files()
+        return self.files().result
     
     def responselistFiles(self, prev):
         """ The remote peer responded to our 'list-files' request. """
