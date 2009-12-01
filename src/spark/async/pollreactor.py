@@ -280,17 +280,17 @@ class IOOperation(object):
     def completed(self):
         self.raise_completed()
     
-    def raise_completed(self, *args):
+    def raise_completed(self, result=None):
         self.reactor.logger.log(LOG_VERBOSE, "Completed operation %s" % str(self))
         try:
-            self.cont.completed(*args)
+            self.cont.completed(result)
         except Exception:
             self.reactor.logger.exception("Error in I/O completed() callback")
     
-    def raise_failed(self, *args):
+    def raise_failed(self):
         self.reactor.logger.debug("Failed operation of %s" % str(self))
         try:
-            self.cont.failed(*args)
+            self.cont.failed()
         except Exception:
             self.reactor.logger.exception("Error in I/O failed() callback")
     
@@ -431,7 +431,7 @@ class ConnectOperation(IOOperation):
         return success
     
     def completed(self):
-        self.raise_completed(self.nbsock, self.address)
+        self.raise_completed((self.nbsock, self.address))
     
     def __str__(self):
         return "ConnectOperation(fd=%i, addr=%s)" % (self.fd, repr(self.address))
@@ -453,7 +453,7 @@ class AcceptOperation(IOOperation):
         return success
     
     def completed(self):
-        self.raise_completed(NonBlockingSocket(self.reactor, self.conn), self.address)
+        self.raise_completed((NonBlockingSocket(self.reactor, self.conn), self.address))
     
     def __str__(self):
         return "AcceptOperation(fd=%i)" % (self.fd)

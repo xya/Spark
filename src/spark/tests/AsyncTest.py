@@ -26,10 +26,9 @@ class FutureTest(unittest.TestCase):
     def testCompleted(self):
         f = Future()
         self.assertTrue(f.pending)
-        f.completed("spam", "eggs")
+        f.completed(("spam", "eggs"))
         self.assertFalse(f.pending)
-        self.assertEqual(("spam", "eggs"), f.results)
-        self.assertEqual("spam", f.result)
+        self.assertEqual(("spam", "eggs"), f.result)
     
     def testFailedSimple(self):
         f = Future()
@@ -37,8 +36,8 @@ class FutureTest(unittest.TestCase):
         f.failed()
         self.assertFalse(f.pending)
         try:
-            r = f.results
-            self.fail("results didn't raise an exception")
+            r = f.result
+            self.fail("result didn't raise an exception")
         except:
             pass
     
@@ -50,16 +49,16 @@ class FutureTest(unittest.TestCase):
             f.failed()
 
         try:
-            r = f.results
-            self.fail("results didn't raise an exception")
+            r = f.result
+            self.fail("result didn't raise an exception")
         except TaskError:
             pass
     
     def testCompletedTwice(self):
         """ completed() should raise an exception the second time """
         f = Future()
-        f.completed("spam", "eggs")
-        self.assertRaises(Exception, f.completed, "eggs", "spam")
+        f.completed(("spam", "eggs"))
+        self.assertRaises(Exception, f.completed, ("eggs", "spam"))
     
     def testCompletedAfterFailed(self):
         """ completed() should raise an exception after failed() is called """
@@ -76,17 +75,17 @@ class FutureTest(unittest.TestCase):
     def testFailedAfterCompleted(self):
         """ failedd() should raise an exception after completed() is called """
         f = Future()
-        f.completed("eggs", "spam")
+        f.completed(("eggs", "spam"))
         self.assertRaises(Exception, f.failed)
     
     def testCallback(self):
         """ The callback should be invoked with the right arguments (result plus positional args). """
         result = []
         def bar(prev, *args):
-            result.append(prev.results + args)
+            result.append(prev.result + args)
         f = Future()
         f.after(bar, 1, 2, 3)
-        f.completed("spam", "eggs")
+        f.completed(("spam", "eggs"))
         self.assertEqual(1, len(result))
         self.assertEqual(("spam", "eggs", 1, 2, 3), result[0])
     
@@ -94,9 +93,9 @@ class FutureTest(unittest.TestCase):
         """ The callback should be invoked even when after() is called after completion. """
         result = []
         def bar(prev, *args):
-            result.append(prev.results + args)
+            result.append(prev.result + args)
         f = Future()
-        f.completed("spam", "eggs")
+        f.completed(("spam", "eggs"))
         f.after(bar, 1, 2, 3)
         self.assertEqual(1, len(result))
         self.assertEqual(("spam", "eggs", 1, 2, 3), result[0])
@@ -107,56 +106,13 @@ class FutureTest(unittest.TestCase):
             def __init__(self):
                 self.result = []
             def bar(self, f):
-                self.result.append(f.results)
+                self.result.append(f.result)
         foo = Foo()
         f = Future()
         f.after(foo.bar)
-        f.completed("spam", "eggs")
+        f.completed(("spam", "eggs"))
         self.assertEqual(1, len(foo.result))
         self.assertEqual(("spam", "eggs"), foo.result[0])
-    
-    def testForkOK(self):
-        result = []
-        error = []
-        def bar(*args):
-            result.append(args)
-        def foo(*args):
-            error.append(args)
-        f = Future()
-        f.fork(bar, foo, 1, 2, 3)
-        f.completed("spam", "eggs")
-        self.assertEqual(1, len(result))
-        self.assertEqual(0, len(error))
-        self.assertEqual(("spam", "eggs", 1, 2, 3), result[0])
-        
-        fOK, fFail, f2 = Future(), Future(), Future()
-        f2.fork(fOK, fFail, 1, 2, 3)
-        f2.completed("spam", "eggs")
-        self.assertEqual(False, fOK.pending)
-        self.assertEqual(True, fFail.pending)
-        self.assertEqual(("spam", "eggs", 1, 2, 3), fOK.results)
-    
-    def testForkFail(self):
-        """ wait() should throw an exception if the operation fails """
-        result = []
-        error = []
-        def bar(*args):
-            result.append(args)
-        def foo(*args):
-            error.append(args)
-        f = Future()
-        f.fork(bar, foo, 1, 2, 3)
-        f.failed(KeyError())
-        self.assertEqual(0, len(result))
-        self.assertEqual(1, len(error))
-        self.assertEqual((1, 2, 3), error[0])
-        
-        fOK, fFail, f2 = Future(), Future(), Future()
-        f2.fork(fOK, fFail, 1, 2, 3)
-        f2.failed(KeyError())
-        self.assertEqual(True, fOK.pending)
-        self.assertEqual(False, fFail.pending)
-        self.assertRaises(Exception, fFail.wait)
     
     def testRunCoroutine(self):
         readers = []

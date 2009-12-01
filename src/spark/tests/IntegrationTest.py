@@ -45,7 +45,7 @@ class BasicIntegrationTest(unittest.TestCase):
         clientThread = threading.Thread(target=self.client, args=(reactorType, clientDone))
         clientThread.daemon = True
         clientThread.start()
-        response = clientDone.wait(1.0)[0]
+        response = clientDone.wait(1.0)
         serverDone.wait(1.0)
         self.assertTrue(isinstance(response, dict))
         self.assertEqual(1, len(response))
@@ -57,7 +57,7 @@ class BasicIntegrationTest(unittest.TestCase):
             rea.launch_thread()
             s = FileShare(rea, "client")
             s.connect(remoteAddr).wait(1.0)
-            response = s.files().wait(1.0)[0]
+            response = s.files().wait(1.0)
             s.disconnect().wait(1.0)
             cont.completed(response)
         except:

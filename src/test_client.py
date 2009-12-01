@@ -11,7 +11,7 @@ remoteAddr = ("127.0.0.1", 4550)
 s = FileShareSession()
 s.connect(remoteAddr).wait(1.0)
 try:
-    response = s.remoteShare.listFiles({}).wait(1.0)[0]
+    response = s.remoteShare.listFiles({}).wait(1.0)
 except:
     traceback.print_exc()
 s.disconnect().wait(1.0)

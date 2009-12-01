@@ -114,7 +114,7 @@ class MainWindow(QMainWindow):
     
     def updateTransferList(self):
         self.transferList.clear()
-        files = self.app.session.share.files().wait(0.2)[0] # FIXME
+        files = self.app.session.share.files().wait(0.2) # FIXME
         self.sharedFiles = files
         self.fileIDs = files.keys()
         for file in (self.sharedFiles[ID] for ID in self.fileIDs):

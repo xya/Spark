@@ -64,7 +64,7 @@ class ReactorTest(unittest.TestCase):
         """ send() should invoke the callable asynchronously and return the result """
         def bar(arg):
             return (arg, "bar")
-        result = rea.send(bar, "foo").wait(1.0)[0]
+        result = rea.send(bar, "foo").wait(1.0)
         self.assertEqual(("foo", "bar"), result)
     
     @runReactors
@@ -74,7 +74,7 @@ class ReactorTest(unittest.TestCase):
         def complete(arg1, arg2):
             cont.completed((arg1, arg2))
         rea.post(complete, "foo", "bar")
-        result = cont.wait(1.0)[0]
+        result = cont.wait(1.0)
         self.assertEqual(("foo", "bar"), result)
 
     @runReactors

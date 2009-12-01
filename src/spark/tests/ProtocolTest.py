@@ -117,7 +117,7 @@ class ProtocolTest(unittest.TestCase):
                     messages.append(message)
                 else:
                     yield messages
-        return messageLoop().wait(0.1)[0]
+        return messageLoop().wait(0.1)
     
     def testParseTextString(self):
         """ Ensure that messageReader() can read messages from a text string """
@@ -139,7 +139,7 @@ class ProtocolTest(unittest.TestCase):
             f = AsyncWrapper(StringIO())
             messageWriter(f).write(item).wait(0.1)
             f.seek(0)
-            actual = messageReader(f).read().wait(0.1)[0]
+            actual = messageReader(f).read().wait(0.1)
             self.assertMessagesEqual(item, actual)
         
         # then a stream of messages
@@ -296,7 +296,7 @@ class ProtocolNegociationTest(unittest.TestCase):
         """ Negociation should work out if there is at last one supported protocol. """
         supported = ["SPARKv2", "SPARKv1"]
         f = ClientSocket(supported)
-        name = negociateProtocol(f, False).wait(1.0)[0]
+        name = negociateProtocol(f, False).wait(1.0)
         self.assertTrue(name in supported)
     
     def testServerNegociationNotSupported(self):
@@ -304,7 +304,7 @@ class ProtocolNegociationTest(unittest.TestCase):
         supported = ["SPARKv2"]
         f = ClientSocket(supported)
         try:
-            name = negociateProtocol(f, False).wait(1.0)[0]
+            name = negociateProtocol(f, False).wait(1.0)
             self.fail("Protocol negociation should have failed, no supported protocol")
         except TaskFailedError as e:
             type, val, tb = e.inner()
@@ -317,7 +317,7 @@ class ProtocolNegociationTest(unittest.TestCase):
         """ Negociation should work out if there is at last one supported protocol. """
         supported = ["SPARKv2", "SPARKv1"]
         f = ServerSocket(supported)
-        name = negociateProtocol(f, True).wait(1.0)[0]
+        name = negociateProtocol(f, True).wait(1.0)
         self.assertTrue(name in supported)
     
     def testClientNegociationNotSupported(self):
@@ -325,7 +325,7 @@ class ProtocolNegociationTest(unittest.TestCase):
         supported = ["SPARKv2"]
         f = ServerSocket(supported)
         try:
-            name = negociateProtocol(f, True).wait(1.0)[0]
+            name = negociateProtocol(f, True).wait(1.0)
             self.fail("Protocol negociation should have failed, no supported protocol")
         except NegociationError:
             pass

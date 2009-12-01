@@ -161,11 +161,11 @@ class CompletionPortReactor(Reactor):
         elif op == OP_ACCEPT:
             op, addrpair, conn, cont = data
             remoteAddr = _sockaddr_in_to_tuple(addrpair[1])
-            cont.completed(conn, remoteAddr)
+            cont.completed((conn, remoteAddr))
         elif op == OP_CONNECT:
             op, sockaddr, conn, cont = data
             remoteAddr = _sockaddr_in_to_tuple(sockaddr)
-            cont.completed(conn, remoteAddr)
+            cont.completed((conn, remoteAddr))
 
 def _asyncRead(cp, handle, size, position):
     cont = Future()

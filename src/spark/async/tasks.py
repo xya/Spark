@@ -66,12 +66,12 @@ class Future(object):
         self.__wait = threading.Condition(self.__lock)
     
     @classmethod
-    def done(cls, *args):
+    def done(cls, result=None):
         """
         Create a future whose operation is already done (e.g. completed synchronously without blocking).
         """
         f = cls()
-        f.completed(*args)
+        f.completed(result)
         return f
     
     @classmethod
@@ -98,8 +98,12 @@ class Future(object):
                     self.__args = args
                 else:
                     raise Exception("The continuation has already been set")
-        self._invoke(result, callback, args)
-        return result is not None
+        # don't invoke the callback with the lock held
+        if result is not None:
+            callback(*args)
+            return True
+        else:
+            return False
     
     @property
     def pending(self):
@@ -121,30 +125,21 @@ class Future(object):
             else:
                 while self.__result is None:
                     self.__wait.wait()
-            r = self.__result
-            if isinstance(r, tuple):
-                return r
-            elif isinstance(r, BaseException):
-                raise r
+            success, result = self.__result
+            if success:
+                return result
+            elif isinstance(result, BaseException):
+                raise result
             else:
                 raise StandardError("The task failed for an unknown reason")
     
     @property
-    def results(self):
+    def result(self):
         """
-        Access the results of the task. If no result is available yet, block until there are.
+        Access the result of the task. If no result is available yet, block until there is.
         May raise an exception if the task failed or was canceled.
         """
-        return self.wait()   
-    
-    @property
-    def result(self):
-        """ Convenience property for accessing the first element of result. See results. """
-        results = self.results
-        if len(results) >= 1:
-            return results[0]
-        else:
-            return None
+        return self.wait()
     
     def run(self, func, *args, **kw):
         """
@@ -158,33 +153,25 @@ class Future(object):
         else:
             self.completed(result)
     
-    def _assignResult(self, result):
+    def _assignResult(self, success, result):
         """ Set the result and invoke the callback, if any. """
         callback = None
         args = None
         with self.__lock:
             if self.__result is None:
-                self.__result = result
+                self.__result = (success, result)
                 self.__wait.notifyAll()
                 callback = self.__callback
                 args = self.__args
-            elif isinstance(self.__result, TaskCanceledError):
-                raise TaskCanceledError(self.__result.tb)
             else:
-                raise FutureFrozenError("The result of the task has already been set")
+                if isinstance(self.__result[1], TaskCanceledError):
+                    raise TaskCanceledError(self.__result[1].tb)
+                else:
+                    raise FutureFrozenError("The result of the task has already been set")
         
         # don't invoke the callback with the lock held
-        self._invoke(result, callback, args)
-    
-    def _invoke(self, result, callback, args):
-        if hasattr(callback, "__call__"):
-            if result is not None:
-                callback(*args)
-        elif isinstance(callback, Future):
-            if isinstance(result, tuple):
-                callback.completed(*args)
-            elif isinstance(result, BaseException):
-                callback.failed()
+        if callback is not None:
+            callback(*args)
     
     def _makeCallback(self, continuation):
         if hasattr(continuation, "__call__"):
@@ -193,14 +180,12 @@ class Future(object):
                 return types.MethodType(lambda f, *args: continuation(f, *args), self)
             else:
                 return types.MethodType(continuation, self)
-        if isinstance(continuation, Future):
-            return continuation
         else:
-            raise ValueError("'continuation' should be a callable or a Future")
+            raise ValueError("'continuation' should be a callable")
     
-    def completed(self, *args):
+    def completed(self, result=None):
         """ Provide the result of the task. """
-        self._assignResult(args)
+        self._assignResult(True, result)
     
     def failed(self, e=None):
         """ Indicate that the task failed, maybe because of an exception. """
@@ -215,29 +200,12 @@ class Future(object):
                 error = TaskFailedError(e.__class__, e, tb)
         else:
             error = TaskFailedError(type, val, tb)
-        self._assignResult(error)
+        self._assignResult(False, error)
     
     def cancel(self):
         """ Cancel the task, making it impossible to complete. """
         tb = traceback.extract_stack()[:-1]
-        self._assignResult(TaskCanceledError(tb))
-    
-    def fork(self, completeCont, failCont, *args):
-        """ Run one of two continuations, depending on the success of the operation. """
-        def handler(prev):
-            try:
-                results = prev.results + args
-            except:
-                if hasattr(failCont, "failed"):
-                    failCont.failed()
-                elif hasattr(failCont, "__call__"):
-                    failCont(*args)
-            else:
-                if hasattr(completeCont, "completed"):
-                    completeCont.completed(*results)
-                elif hasattr(completeCont, "__call__"):
-                    completeCont(*results)
-        self.after(handler)
+        self._assignResult(False, TaskCanceledError(tb))
     
     def run_coroutine(self, coroutine):
         """
@@ -272,7 +240,7 @@ class Future(object):
     
     def _coroutine_task_completed(self, prev, coroutine):
         try:
-            result = prev.results
+            result = prev.result
         except:
             # the task failed, propagate the exception to the coroutine
             type, val = sys.exc_info()[0:2]
@@ -289,10 +257,6 @@ class Future(object):
                 self._coroutine_yielded(coroutine, result)
         else:
             # the task succeeded, send the result to the coroutine
-            if len(result) == 0:
-                result = None
-            elif len(result) == 1:
-                result = result[0]
             self._coroutine_send(coroutine, result)
 
 class FutureFrozenError(StandardError):

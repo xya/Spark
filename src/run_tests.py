@@ -45,5 +45,5 @@ if __name__ == '__main__':
         verbosity = 2
     else:
         verbosity = 1
-    #logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.ERROR)
     unittest.TextTestRunner(verbosity=verbosity).run(allTests())
