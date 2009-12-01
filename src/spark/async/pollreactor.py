@@ -122,11 +122,10 @@ class PollReactor(Reactor):
         otherwise it will be started when it gets dequeued by the reactor's thread.
         """
         with self.lock:
-            invokeDirectly = (self.thread == threading.currentThread())
-        if not forceAsync and invokeDirectly and op.complete():
-            # the operation finished without blocking
-            self.logger.log(LOG_VERBOSE, "Directly invoked %s" % str(op))
-            op.completed()
+            executeDirectly = (self.thread == threading.currentThread())
+        if not forceAsync and executeDirectly:
+            self.logger.log(LOG_VERBOSE, "Executing operation %s" % str(op))
+            self.execute(op, False)
         else:
             self.logger.log(LOG_VERBOSE, "Submitting operation %s" % str(op))
             self.queue.put(op)
@@ -185,15 +184,20 @@ class PollReactor(Reactor):
     
     def empty_queue(self):
         for op in self.queue.iter_nowait():
-            try:
-                finished = op.complete()
-            except:
-                op.failed()
-            else:
-                if finished:
-                    op.completed()
-                else:
-                    self.schedule(op)
+            self.execute(op, False)
+    
+    def execute(self, op, scheduled):
+        try:
+            finished = op.complete()
+        except Exception:
+            op.failed()
+        else:
+            if finished:
+                if scheduled:
+                    self.remove_op(op)
+                op.completed()
+            elif not scheduled:
+                self.schedule(op)
     
     def schedule(self, op):
         events = op.event
@@ -212,12 +216,7 @@ class PollReactor(Reactor):
         invalid = (event & select.POLLNVAL) != 0
         if hangup or error or invalid:
             for op in self.pending[fd]:
-                try:
-                    op.complete(event)
-                except:
-                    op.failed()
-                else:
-                    op.canceled()
+                op.canceled(event)
             self.poll.unregister(fd)
             del self.pending[fd]
             if fd == self.req_r:
@@ -229,14 +228,7 @@ class PollReactor(Reactor):
                     found = op
                     break
             if found is not None:
-                try:
-                    finished = found.complete(event)
-                except:
-                    found.failed()
-                else:
-                    if finished:
-                        self.remove_op(found)
-                        found.completed()
+                self.execute(found, True)
     
     def remove_op(self, op):
         op_queue = self.pending[op.fd]
@@ -261,7 +253,7 @@ class IOOperation(object):
     def __init__(self, reactor):
         self.reactor = reactor
         
-    def complete(self, event=None):
+    def complete(self):
         raise NotImplementedError()
     
     def init_file(self, file):
@@ -271,7 +263,7 @@ class IOOperation(object):
         else:
             self.fd = file
     
-    def canceled(self):
+    def canceled(self, event=None):
         self.raise_canceled()
     
     def failed(self):
@@ -321,9 +313,12 @@ class InvokeOperation(IOOperation):
         self.kwargs = kwargs
     
     def __str__(self):
-        return "InvokeOperation(args=%s, kw=%s)" % (repr(self.args), repr(self.kwargs))
+        args = [repr(arg) for arg in self.args]
+        for key, val in self.kwargs:
+            args.append("%s=%s" % (key, repr(val)))
+        return "InvokeOperation(%s)" % ", ".join(args)
     
-    def complete(self, event=None):
+    def complete(self):
         return True
     
     def completed(self):
@@ -342,7 +337,7 @@ class PipeReadOperation(IOOperation):
         self.fd = fd
         self.event = select.POLLIN
     
-    def complete(self, event=None):
+    def complete(self):
         while True:
             success, data = self.nonblock(os.read, (self.fd, 64))
             if not success or (len(data) < 64):
@@ -350,7 +345,7 @@ class PipeReadOperation(IOOperation):
         self.reactor.empty_queue()
         return False
     
-    def canceled(self):
+    def canceled(self, event=None):
         pass
     
     def failed(self):
@@ -368,7 +363,7 @@ class ReadOperation(IOOperation):
         self.left = size
         self.cont = cont
     
-    def complete(self, event=None):
+    def complete(self):
         success, data = self.nonblock(os.read, (self.fd, self.left, ))
         if success:
             if len(data) > 0:
@@ -377,11 +372,13 @@ class ReadOperation(IOOperation):
                 return self.left == 0
             else:
                 # end of file or we got disconnected
+                self.left = 0
                 return True
         else:
             return False
     
-    def canceled(self):
+    def canceled(self, event=None):
+        self.left = 0
         self.raise_completed("")
     
     def completed(self):
@@ -404,7 +401,7 @@ class WriteOperation(IOOperation):
         self.left = len(data)
         self.cont = cont
     
-    def complete(self, event=None):
+    def complete(self):
         success, written = self.nonblock(os.write, (self.fd, self.data, ))
         if success and written > 0:
             self.data = self.data[written:]
@@ -425,7 +422,7 @@ class ConnectOperation(IOOperation):
         self.address = address
         self.cont = cont
 
-    def complete(self, event=None):
+    def complete(self):
         success, result = self.nonblock(self.nbsock.socket.connect,
             (self.address, ), os.errno.EINPROGRESS)
         return success
@@ -446,7 +443,7 @@ class AcceptOperation(IOOperation):
         self.address = None
         self.cont = cont
     
-    def complete(self, event=None):
+    def complete(self):
         success, result = self.nonblock(self.nbsock.socket.accept)
         if success:
             self.conn, self.address = result

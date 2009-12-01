@@ -26,7 +26,7 @@ import threading
 import socket
 import logging
 from functools import wraps
-from spark.async import Future, Delegate, coroutine
+from spark.async import Future, Delegate, coroutine, TaskFailedError
 from spark.messaging.common import AsyncMessenger, MessageDelivery
 from spark.messaging.protocol import negociateProtocol
 from spark.messaging.messages import Request, Response, Notification
@@ -114,6 +114,7 @@ class Service(object):
     def _closeConnection(self):
         """ If there is an active connection, close it. """
         if self.conn:
+            self.logger.info("Disconnecting from %s" % repr(self.remoteAddr))
             # force threads blocked on recv (and send?) to return
             try:
                 self.conn.shutdown(socket.SHUT_RDWR)
@@ -123,7 +124,6 @@ class Service(object):
             except Exception:
                 self.logger.exception("socket.shutdown() failed")
             # close the connection
-            self.logger.info("Disconnected from %s" % repr(self.remoteAddr))
             try:
                 self.conn.close()
             except Exception:
@@ -172,8 +172,10 @@ class MessengerService(Service):
     def _protocolNegociated(self, prev):
         try:
             name = prev.result
-        except:
-            self.logger.exception("Error while negociating protocol")
+        except TaskFailedError as e:
+            type, val, tb = e.inner()
+            if not isinstance(val, EOFError):
+                self.logger.exception("Error while negociating protocol")
             self.disconnect()
         else:
             self.logger.debug("Negociated protocol '%s'", name)
@@ -196,15 +198,13 @@ class MessengerService(Service):
         return self.messenger.sendMessage(message)
     
     def _messageReceived(self, prev):
-        if self.messenger is None:
-            # spurious message after we disconnected
-            return
-        
         try:
             message = prev.result
-        except:
+        except TaskFailedError as e:
+            type, val, tb = e.inner()
+            if not isinstance(val, EOFError):
+                self.logger.exception("Error while receiving a message")
             message = None
-            self.logger.exception("Error while receiving a message")
         
         if message is None:
             # we have been disconnected

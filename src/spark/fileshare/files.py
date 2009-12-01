@@ -39,6 +39,11 @@ class SharedFile(object):
             self.ID = hashlib.md5("%s%d" % (name, size)).hexdigest()
         self.transfer = None
     
+    def __getstate__(self):
+        """ Return the object's state. Used for serialization. """
+        return {"ID": self.ID, "name": self.name, "size": self.size,
+                "lastModified": self.lastModified, "mimeType": self.mimeType}
+    
     @classmethod
     def fromFile(cls, path):
         """ Create a shared file from a file path. """

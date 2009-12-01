@@ -52,7 +52,7 @@ class TextMessage(Message):
     
     def canonical(self):
         return " ".join([self.type, self.tag, str(self.transID),
-            json.dumps(self.params, sort_keys=True)])
+            json.dumps(self.params, sort_keys=True, default=_serializable)])
 
 class Request(TextMessage):
     def __init__(self, tag, params=None, transID=None):
@@ -95,6 +95,12 @@ class Block(Blob):
     def data(self):
         return Block.Header.pack(self.transferID, self.blockID,
                                  len(self.blockData)) + self.blockData
+
+def _serializable(obj):
+    if hasattr(obj, "__getstate__"):
+        return obj.__getstate__()
+    else:
+        return obj.__dict__
 
 class MessageWriter(object):
     def __init__(self, file):
