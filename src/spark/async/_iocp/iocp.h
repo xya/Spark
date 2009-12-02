@@ -10,6 +10,7 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 
 PyMODINIT_FUNC init_iocp(void);
 void iocp_win32error(PyTypeObject *excType, const char *format);
+PyObject *iocp_beginRead(PyObject *self, PyObject *args);
 
 typedef struct
 {
@@ -36,6 +37,7 @@ PyObject * Overlapped_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 int Overlapped_init(Overlapped *self, PyObject *args, PyObject *kwds);
 PyObject * Overlapped_address(Overlapped *self);
 PyObject * Overlapped_setOffset(Overlapped *self, PyObject *args);
+void OVERLAPPED_setOffset(OVERLAPPED *ov, ssize_t offset);
 Overlapped * Overlapped_create(PyObject *args);
 
 void CompletionPort_dealloc(CompletionPort* self);

@@ -157,7 +157,7 @@ class CompletionPortReactor(Reactor):
         op = data[0]
         if op == OP_READ:
             op, buffer, cont = data
-            cont.completed(buffer.raw)
+            cont.completed(buffer[:])
         elif op == OP_WRITE:
             op, buffer, cont = data
             cont.completed()

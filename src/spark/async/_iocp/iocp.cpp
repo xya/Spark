@@ -19,6 +19,7 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 
 static PyMethodDef iocp_Methods[] =
 {
+    {"beginRead", iocp_beginRead, METH_VARARGS, "Start an asynchronous read operation on a file."},
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 
@@ -146,6 +147,61 @@ PyMODINIT_FUNC init_iocp(void)
     PyModule_AddObject(m, "CompletionPort", (PyObject *)&CompletionPortType);
 }
 
+PyObject *iocp_beginRead(PyObject *self, PyObject *args)
+{
+    PyObject *port, *cont, *data, *buffer;
+    Overlapped *over;
+    DWORD opcode, size, error;
+    Py_ssize_t hFile, position, bufferSize;
+    void *pBuffer = 0;
+
+    if(!PyArg_ParseTuple(args, "OlnlnO", &port, &opcode, &hFile, &size, &position, &cont))
+        return NULL;
+    else if(!PyObject_TypeCheck(port, &CompletionPortType))
+    {
+        PyErr_SetString(PyExc_TypeError, "The first argument should be a completion port");
+        return NULL;
+    }
+
+    buffer = PyBuffer_New(size);
+    if(!buffer)
+    {
+        return NULL;
+    }
+    
+    bufferSize = buffer->ob_type->tp_as_buffer->bf_getwritebuffer(buffer, 0, &pBuffer);
+    if(((ssize_t)size > bufferSize) || !pBuffer)
+    {
+        PyErr_SetString(PyExc_Exception, "Couldn't allocate the buffer");
+        Py_DECREF(buffer);
+        return NULL;
+    }
+
+    Py_INCREF(cont);
+    data = Py_BuildValue("(lOO)", opcode, buffer, cont);
+    if(!data)
+    {
+        Py_DECREF(buffer);
+        return NULL;
+    }
+    over = Overlapped_create(data);
+    Py_DECREF(data);
+    OVERLAPPED_setOffset(&over->body.ov, position);
+    if(!ReadFile(hFile, pBuffer, size, NULL, (LPOVERLAPPED)&over->body))
+    {
+        error = GetLastError();
+        if(error != ERROR_IO_PENDING)
+        {
+            Py_DECREF(buffer);
+            Py_DECREF(over);
+            iocp_win32error(PyExc_Exception, "Reading the file failed (%s)");
+            return NULL;
+        }
+    }
+    // don't decrement over's refcount, so it stays alive until wait() returns
+    Py_RETURN_NONE;
+}
+
 void iocp_win32error(PyTypeObject *excType, const char *format)
 {
     char message[512], text[512];
@@ -216,9 +272,14 @@ PyObject * Overlapped_setOffset(Overlapped *self, PyObject *args)
     ssize_t offset = 0;
     if(!PyArg_ParseTuple(args, "n", &offset))
         return NULL;
-    self->body.ov.Offset = (size_t)offset & 0x00000000ffffffff;
-    self->body.ov.OffsetHigh = (size_t)offset & 0xffffffff00000000;
+    OVERLAPPED_setOffset(&self->body.ov, offset);
     Py_RETURN_NONE;
+}
+
+void OVERLAPPED_setOffset(OVERLAPPED *ov, ssize_t offset)
+{
+    ov->Offset = (size_t)offset & 0x00000000ffffffff;
+    ov->OffsetHigh = (size_t)offset & 0xffffffff00000000;
 }
 
 Overlapped * Overlapped_create(PyObject *args)
