@@ -25,6 +25,7 @@ static PyMethodDef iocp_Methods[] =
 static PyMethodDef Overlapped_methods[] =
 {
     {"address", (PyCFunction)Overlapped_address, METH_NOARGS, "Return the address of the OVERLAPPED structure."},
+    {"setOffset", Overlapped_setOffset, METH_VARARGS, "Set the offset inside the OVERLAPPED structure."},
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 
@@ -33,6 +34,7 @@ static PyMethodDef CompletionPort_methods[] =
     {"close",  CompletionPort_close, METH_VARARGS, "Close the completion port."},
     {"register",  CompletionPort_register, METH_VARARGS, "Register a file with the completion port and return its tag."},
     {"post",  CompletionPort_post, METH_VARARGS, "Directly post the objects to the completion port."},
+    {"memorize",  CompletionPort_memorize, METH_VARARGS, "Temporarily-needed stub method."},
     {"wait",  CompletionPort_wait, METH_VARARGS, 
     "Wait for an operation to be finished and return a (ID, tag, bytes, objs) tuple containing the result."},
     {NULL, NULL, 0, NULL}        /* Sentinel */
@@ -209,6 +211,16 @@ PyObject * Overlapped_address(Overlapped *self)
     return Py_BuildValue("n", &self->body.ov);
 }
 
+PyObject * Overlapped_setOffset(Overlapped *self, PyObject *args)
+{
+    ssize_t offset = 0;
+    if(!PyArg_ParseTuple(args, "n", &offset))
+        return NULL;
+    self->body.ov.Offset = (size_t)offset & 0x00000000ffffffff;
+    self->body.ov.OffsetHigh = (size_t)offset & 0xffffffff00000000;
+    Py_RETURN_NONE;
+}
+
 Overlapped * Overlapped_create(PyObject *args)
 {
     Overlapped *over, *ovkw;
@@ -289,6 +301,21 @@ PyObject * CompletionPort_register(CompletionPort *self, PyObject *args)
         return NULL;
     }
     return Py_BuildValue("n", hFile);
+}
+
+PyObject * CompletionPort_memorize(CompletionPort *self, PyObject *args)
+{
+    PyObject *ov;
+    if(!PyArg_ParseTuple(args, "O", &ov))
+    {    
+        return NULL;
+    }
+    else if(!PyObject_TypeCheck(ov, &OverlappedType))
+    {
+        PyErr_SetString(PyExc_TypeError, "The argument should be an overlapped object");
+        return NULL;
+    }
+    Py_RETURN_NONE;
 }
 
 PyObject * CompletionPort_post(CompletionPort *self, PyObject *args)

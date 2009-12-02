@@ -216,7 +216,7 @@ ERROR_IO_PENDING = 997
 #   __inout_opt  LPOVERLAPPED lpOverlapped
 # );
 ReadFile = kernel32.ReadFile
-ReadFile.argtypes = [c_void_p, c_void_p, c_uint32, POINTER(c_uint32), LP_OVERLAPPED]
+ReadFile.argtypes = [c_void_p, c_void_p, c_uint32, POINTER(c_uint32), c_void_p]
 ReadFile.restype = c_uint32
 
 # BOOL WINAPI WriteFile(
@@ -227,7 +227,7 @@ ReadFile.restype = c_uint32
 #   __inout_opt  LPOVERLAPPED lpOverlapped
 # );
 WriteFile = kernel32.WriteFile
-WriteFile.argtypes = [c_void_p, c_void_p, c_uint32, POINTER(c_uint32), LP_OVERLAPPED]
+WriteFile.argtypes = [c_void_p, c_void_p, c_uint32, POINTER(c_uint32), c_void_p]
 WriteFile.restype = c_uint32
 
 # Socket functions

@@ -26,6 +26,10 @@ import logging
 from ctypes import WinError, cast, byref, POINTER, c_void_p, c_uint32, sizeof, create_string_buffer
 from spark.async import Future, Delegate
 from spark.async.aio import Reactor
+try:
+    from spark.async import _iocp as iocp
+except ImportError:
+    from spark.async import iocp
 from spark.async import win32
 
 __all__ = ["CompletionPortReactor"]
@@ -48,12 +52,11 @@ class CompletionPortReactor(Reactor):
         self.onClosed = Delegate(self.lock)
         self.active = False
         self.closed = False
-        self.cp = CompletionPort()
+        self.cp = iocp.CompletionPort()
     
     def socket(self, family, type, proto):
         """ Create a socket that uses the reactor to do asynchronous I/O. """
-        sock = socket.socket(family, type, protocol)
-        return OverlappedSocket(self, sock)
+        return OverlappedSocket(self, family, type, proto)
     
     def open(self, file, mode=None):
         """ Open a file that uses the reactor to do asynchronous I/O. """
@@ -170,31 +173,29 @@ class CompletionPortReactor(Reactor):
 def _asyncRead(cp, handle, size, position):
     cont = Future()
     buffer = create_string_buffer(size)
-    lpOver = cp.overlapped(OP_READ, buffer, cont)
-    _setOffset(lpOver.contents, position)
-    ret = win32.ReadFile(handle, buffer, size, None, lpOver)
+    over = iocp.Overlapped(OP_READ, buffer, cont)
+    over.setOffset(position)
+    cp.memorize(over)
+    ret = win32.ReadFile(handle, buffer, size, None, over.address())
     if not ret:
         error = win32.GetLastError()
         if error != win32.ERROR_IO_PENDING:
-            self.reactor.cp.freeOverlapped(lpOver)
+            over.free()
             raise WinError(error)
     return cont
 
 def _asyncWrite(cp, handle, data, position):
     cont = Future()
-    lpOver = cp.overlapped(OP_WRITE, data, cont)
-    _setOffset(lpOver.contents, position)
-    ret = win32.WriteFile(handle, data, len(data), None, lpOver)
+    over = iocp.Overlapped(OP_WRITE, data, cont)
+    over.setOffset(position)
+    cp.memorize(over)
+    ret = win32.WriteFile(handle, data, len(data), None, over.address())
     if not ret:
         error = win32.GetLastError()
         if error != win32.ERROR_IO_PENDING:
-            self.reactor.cp.freeOverlapped(lpOver)
+            over.free()
             raise WinError(error)
     return cont
-
-def _setOffset(overlapped, offset):
-    overlapped.Data.Offset.Low = offset & 0x00000000ffffffff
-    overlapped.Data.Offset.High = offset & 0xffffffff00000000
 
 def _tuple_to_sockaddr_in(family, t):
     sockaddr = win32.sockaddr_in()
@@ -296,11 +297,12 @@ class OverlappedSocket(object):
         addrpair = (win32.sockaddr_in * 2)()
         addrpair[0] = _tuple_to_sockaddr_in(self.family, self.socket.getsockname())
         addrpair[1] = _tuple_to_sockaddr_in(self.family, self.conn.getsockname())
-        lpOver = self.reactor.cp.overlapped(OP_ACCEPT, addrpair, conn, cont)
+        over = iocp.Overlapped(OP_ACCEPT, addrpair, conn, cont)
+        self.reactor.cp.memorize(over)
         ret = win32.AcceptEx(self.fileno, conn.fileno, byref(addrpair),
-            0, sizeof(addrpair[0]), sizeof(addrpair[1]), None, lpOver)
+            0, sizeof(addrpair[0]), sizeof(addrpair[1]), None, over.address())
         if not ret:
-            self.reactor.cp.freeOverlapped(lpOver)
+            over.free()
             raise WinError(error)
         return cont
     
@@ -309,11 +311,12 @@ class OverlappedSocket(object):
             raise NotImplementedError("Only IPv4 is supported for now")
         cont = Future()
         sockaddr = _tuple_to_sockaddr_in(self.family, address)
-        lpOver = self.reactor.cp.overlapped(OP_CONNECT, sockaddr, self, cont)
+        over = iocp.Overlapped(OP_CONNECT, sockaddr, self, cont)
+        self.reactor.cp.memorize(over)
         ret = win32.ConnectEx(self.fileno, byref(sockaddr), sizeof(sockaddr),
-            None, 0, None, lpOver)
+            None, 0, None, over.address())
         if not ret:
-            self.reactor.cp.freeOverlapped(lpOver)
+            over.free()
             raise WinError(error)
         return cont
     
@@ -334,75 +337,3 @@ class OverlappedSocket(object):
     
     def __exit__(self, type, e, traceback):
         self.close()
-
-class CompletionPort(object):
-    """ Wrapper for an I/O completion port """
-    def __init__(self):
-        """ Create a new completion port. """
-        self.handle = win32.CreateIoCompletionPort(
-            win32.INVALID_HANDLE_VALUE, None, None, 0)
-        self.lock = threading.RLock()
-        self.refs = {}
-    
-    def close(self):
-        """ Close the completion port. """
-        if self.handle:
-            win32.CloseHandle(self.handle)
-            self.handle = c_void_p(0)
-    
-    def register(self, hFile):
-        """ Register a file with the completion port and return its tag. """
-        win32.CreateIoCompletionPort(hFile, self.handle, hFile, 0)
-    
-    def overlapped(self, *objs):
-        """
-        Create an OVERLAPPED struct, eventually wrapping some objects,
-        and return a pointer to the struct. The objects will be returned,
-        and the structure freed by wait().
-        """
-        # wish I could manually increase the refcount, to avoid the lock & dict
-        if len(objs) > 0:
-            with self.lock:
-                refData = tuple(objs)
-                refID = id(refData)
-                self.refs[refID] = refData
-        else:
-            refID = 0
-        lpOver = win32.allocOVERLAPPED()
-        lpOver.contents.UserData = refID
-        return lpOver
-    
-    def freeOverlapped(self, lpOver):
-        """ Free the OVERLAPPED structure when wait() will not be called
-        (e.g. the asynchronous call failed), and return the wrapped objects. """
-        refID = lpOver.contents.UserData
-        win32.freeOVERLAPPED(lpOver)
-        if refID > 0:
-            with self.lock:
-                return self.refs.pop(refID)
-        else:
-            return ()
-    
-    def post(self, *objs):
-        """ Directly post the objects to the completion port. """
-        win32.PostQueuedCompletionStatus(self.handle,
-            0, win32.INVALID_HANDLE_VALUE, self.overlapped(*objs))
-    
-    def wait(self):
-        """
-        Wait for an operation to be finished and return a (ID, tag, bytes, objs)
-        tuple containing the result. The OVERLAPPED structure is also freed. 
-        """
-        bytes = c_uint32()
-        tag = c_void_p(0)
-        lpOver = cast(0, win32.LP_OVERLAPPED)
-        win32.GetQueuedCompletionStatus(self.handle,
-            byref(bytes), byref(tag), byref(lpOver), -1)
-        refID = lpOver.contents.UserData
-        win32.freeOVERLAPPED(lpOver)
-        if refID > 0:
-            with self.lock:
-                userData = self.refs.pop(refID)
-        else:
-            userData = ()
-        return refID, tag.value, bytes.value, userData
