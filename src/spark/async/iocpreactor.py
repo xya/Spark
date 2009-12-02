@@ -170,33 +170,6 @@ class CompletionPortReactor(Reactor):
             remoteAddr = _sockaddr_in_to_tuple(sockaddr)
             cont.completed((conn, remoteAddr))
 
-def _asyncRead(cp, handle, size, position):
-    cont = Future()
-    buffer = create_string_buffer(size)
-    over = iocp.Overlapped(OP_READ, buffer, cont)
-    over.setOffset(position)
-    cp.memorize(over)
-    ret = win32.ReadFile(handle, buffer, size, None, over.address())
-    if not ret:
-        error = win32.GetLastError()
-        if error != win32.ERROR_IO_PENDING:
-            over.free()
-            raise WinError(error)
-    return cont
-
-def _asyncWrite(cp, handle, data, position):
-    cont = Future()
-    over = iocp.Overlapped(OP_WRITE, data, cont)
-    over.setOffset(position)
-    cp.memorize(over)
-    ret = win32.WriteFile(handle, data, len(data), None, over.address())
-    if not ret:
-        error = win32.GetLastError()
-        if error != win32.ERROR_IO_PENDING:
-            over.free()
-            raise WinError(error)
-    return cont
-
 def _tuple_to_sockaddr_in(family, t):
     sockaddr = win32.sockaddr_in()
     sockaddr.sin_family = family
@@ -247,10 +220,14 @@ class OverlappedFile(object):
         return cls(reactor, handle)
     
     def beginRead(self, size, position=0):
-        return _asyncRead(self.reactor.cp, self.handle, size, position)
+        cont = Future()
+        iocp.beginRead(self.reactor.cp, OP_READ, self.handle, size, position, cont)
+        return cont
     
     def beginWrite(self, data, position=0):
-        return _asyncWrite(self.reactor.cp, self.handle, data, position)
+        cont = Future()
+        iocp.beginWrite(self.reactor.cp, OP_WRITE, self.handle, data, position, cont)
+        return cont
     
     def read(self, size, position=0):
         return self.beginRead(size, position).result
@@ -321,10 +298,14 @@ class OverlappedSocket(object):
         return cont
     
     def beginRead(self, size):
-        return _asyncRead(self.reactor.cp, self.socket.fileno, size, 0)
+        cont = Future()
+        iocp.beginRead(self.reactor.cp, OP_READ, self.socket.fileno, size, 0, cont)
+        return cont
     
     def beginWrite(self, data):
-        return _asyncWrite(self.reactor.cp, self.socket.fileno, data, 0)
+        cont = Future()
+        iocp.beginWrite(self.reactor.cp, OP_WRITE, self.socket.fileno, data, 0, cont)
+        return cont
     
     def shutdown(self, how):
         return self.socket.shutdown(how)

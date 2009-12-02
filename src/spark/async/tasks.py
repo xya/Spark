@@ -175,11 +175,8 @@ class Future(object):
     
     def _makeCallback(self, continuation):
         if hasattr(continuation, "__call__"):
-            # bound function?
-            if hasattr(continuation, "__self__"):
-                return types.MethodType(lambda f, *args: continuation(f, *args), self)
-            else:
-                return types.MethodType(continuation, self)
+            # create a function that passes this future as the first parameter
+            return types.MethodType(continuation, self)
         else:
             raise ValueError("'continuation' should be a callable")
     

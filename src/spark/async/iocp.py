@@ -25,7 +25,30 @@ import logging
 from ctypes import WinError, cast, byref, POINTER, c_void_p, c_uint32, sizeof, create_string_buffer
 from spark.async import win32
 
-__all__ = ["CompletionPort", "Overlapped"]
+__all__ = ["CompletionPort", "Overlapped", "beginRead", "beginWrite"]
+
+def beginRead(cp, op, handle, size, position, cont):
+    buffer = create_string_buffer(size)
+    over = Overlapped(op, buffer, cont)
+    over.setOffset(position)
+    cp.memorize(over)
+    ret = win32.ReadFile(handle, buffer, size, None, over.address())
+    if not ret:
+        error = win32.GetLastError()
+        if error != win32.ERROR_IO_PENDING:
+            over.free()
+            raise WinError(error)
+
+def beginWrite(cp, op, handle, data, position, cont):
+    over = Overlapped(op, data, cont)
+    over.setOffset(position)
+    cp.memorize(over)
+    ret = win32.WriteFile(handle, data, len(data), None, over.address())
+    if not ret:
+        error = win32.GetLastError()
+        if error != win32.ERROR_IO_PENDING:
+            over.free()
+            raise WinError(error)
 
 class Overlapped(object):
     """ Wrapper for Windows's OVERLAPPED structure. """
@@ -40,13 +63,13 @@ class Overlapped(object):
     
     def setOffset(self, offset):
         if self.over:
-			self.over.contents.Data.Offset.Low = offset & 0x00000000ffffffff
-			self.over.contents.Data.Offset.High = offset & 0xffffffff00000000
+            self.over.contents.Data.Offset.Low = offset & 0x00000000ffffffff
+            self.over.contents.Data.Offset.High = offset & 0xffffffff00000000
     
     def free(self):
-		if self.over:
-		    win32.freeOVERLAPPED(self.over)
-		    self.over = None
+        if self.over:
+            win32.freeOVERLAPPED(self.over)
+            self.over = None
 
 class CompletionPort(object):
     """ Wrapper for an I/O completion port """
@@ -72,11 +95,11 @@ class CompletionPort(object):
             self.refs[overlapped.id] = overlapped
     
     def recall(self, id):
-		with self.lock:
-		    if id in self.refs:
-				return self.refs.pop(id)
-		    else:
-		        return None
+        with self.lock:
+            if id in self.refs:
+                return self.refs.pop(id)
+            else:
+                return None
     
     def post(self, *objs):
         """ Directly post the objects to the completion port. """
