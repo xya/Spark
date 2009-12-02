@@ -142,7 +142,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				OutputFile="$(OutDir)\_iocp.pyd"
+				OutputFile="$(OutDir)\..\..\_iocp.pyd"
 				LinkIncremental="1"
 				AdditionalLibraryDirectories="C:\Python26\libs"
 				GenerateDebugInformation="true"

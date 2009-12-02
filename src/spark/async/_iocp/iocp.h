@@ -19,24 +19,29 @@ typedef struct
 
 typedef struct
 {
-    PyObject_HEAD
     OVERLAPPED ov;
+    PyObject *id;
     PyObject *self;
     PyObject *data;
+} iocp_OVERLAPPED;
+
+typedef struct
+{
+    PyObject_HEAD
+    iocp_OVERLAPPED body;
 } Overlapped;
 
 void Overlapped_dealloc(Overlapped* self);
 PyObject * Overlapped_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 int Overlapped_init(Overlapped *self, PyObject *args, PyObject *kwds);
 PyObject * Overlapped_address(Overlapped *self);
+Overlapped * Overlapped_create(PyObject *args);
 
 void CompletionPort_dealloc(CompletionPort* self);
 PyObject * CompletionPort_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 int CompletionPort_init(CompletionPort *self, PyObject *args, PyObject *kwds);
 PyObject * CompletionPort_close(CompletionPort *self, PyObject *args);
 PyObject * CompletionPort_register(CompletionPort *self, PyObject *args);
-PyObject * CompletionPort_overlapped(CompletionPort *self, PyObject *args);
-PyObject * CompletionPort_freeOverlapped(CompletionPort *self, PyObject *args);
 PyObject * CompletionPort_post(CompletionPort *self, PyObject *args);
 PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args);
 

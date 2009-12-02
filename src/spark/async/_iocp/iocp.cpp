@@ -32,17 +32,9 @@ static PyMethodDef CompletionPort_methods[] =
 {
     {"close",  CompletionPort_close, METH_VARARGS, "Close the completion port."},
     {"register",  CompletionPort_register, METH_VARARGS, "Register a file with the completion port and return its tag."},
-    {"overlapped",  CompletionPort_overlapped, METH_VARARGS, 
-    "Create an OVERLAPPED struct, eventually wrapping some objects, \
-and return a pointer to the struct. The objects will be returned, \
-and the structure freed by wait()."},
-    {"freeOverlapped",  CompletionPort_freeOverlapped, METH_VARARGS, 
-    "Free the OVERLAPPED structure when wait() will not be called \
-(e.g. the asynchronous call failed), and return the wrapped objects."},
     {"post",  CompletionPort_post, METH_VARARGS, "Directly post the objects to the completion port."},
     {"wait",  CompletionPort_wait, METH_VARARGS, 
-    "Wait for an operation to be finished and return a (ID, tag, bytes, objs) \
-tuple containing the result. The OVERLAPPED structure is also freed. "},
+    "Wait for an operation to be finished and return a (ID, tag, bytes, objs) tuple containing the result."},
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 
@@ -171,8 +163,8 @@ void iocp_win32error(PyTypeObject *excType, const char *format)
 
 void Overlapped_dealloc(Overlapped* self)
 {
-    Py_CLEAR(self->self);
-    Py_CLEAR(self->data);
+    Py_CLEAR(self->body.self);
+    Py_CLEAR(self->body.data);
     self->ob_type->tp_free((PyObject*)self);
 }
 
@@ -181,11 +173,13 @@ PyObject * Overlapped_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     Overlapped *self = (Overlapped *)type->tp_alloc(type, 0);
     if(self != NULL)
     {
-        ZeroMemory(&self->ov, sizeof(OVERLAPPED));
-        self->self = self;
-        Py_INCREF(self->self);
-        self->data = Py_None;
-        Py_INCREF(self->data);
+        ZeroMemory(&self->body.ov, sizeof(OVERLAPPED));
+        Py_INCREF(Py_None);
+        self->body.id = Py_None;
+        Py_INCREF(Py_None);
+        self->body.self = Py_None;
+        Py_INCREF(Py_None);
+        self->body.data = Py_None;
     }
     return (PyObject *)self;
 }
@@ -196,16 +190,51 @@ int Overlapped_init(Overlapped *self, PyObject *args, PyObject *kwds)
 
     if(!PyTuple_Check(args))
         return -1;
-    old = self->data;
+    old = self->body.id;
+    self->body.id = Py_BuildValue("n", self);
+    Py_XDECREF(old);
+    old = self->body.self;
+    Py_INCREF(self);
+    self->body.self = self;
+    Py_XDECREF(old);
+    old = self->body.data;
     Py_INCREF(args);
-    self->data = args;
-    Py_DECREF(old);
+    self->body.data = args;
+    Py_XDECREF(old);
     return 0;
 }
 
 PyObject * Overlapped_address(Overlapped *self)
 {
-    return Py_BuildValue("n", &self->ov);
+    return Py_BuildValue("n", &self->body.ov);
+}
+
+Overlapped * Overlapped_create(PyObject *args)
+{
+    Overlapped *over, *ovkw;
+    int ret;
+
+    ovkw = Py_BuildValue("{}");
+    if(!ovkw)
+    {
+        return NULL;
+    }
+
+    over = Overlapped_new(&OverlappedType, args, ovkw);
+    if(!over)
+    {
+        Py_DECREF(ovkw);
+        return NULL;
+    }
+
+    ret = Overlapped_init(over, args, ovkw);
+    Py_DECREF(ovkw);
+    if(ret != 0)
+    {
+        Py_DECREF(over);
+        return NULL;
+    }
+    return over;
 }
 
 void CompletionPort_dealloc(CompletionPort* self)
@@ -254,7 +283,7 @@ PyObject * CompletionPort_register(CompletionPort *self, PyObject *args)
     Py_ssize_t hFile;
     if(!PyArg_ParseTuple(args, "n", &hFile))
         return NULL;
-    if(!CreateIoCompletionPort((HANDLE)hFile, self->hPort, (HANDLE)hFile, 0))
+    if(!CreateIoCompletionPort((HANDLE)hFile, self->hPort, (ULONG_PTR)hFile, 0))
     {
         iocp_win32error(PyExc_Exception, "Could not register file (%s)");
         return NULL;
@@ -262,86 +291,51 @@ PyObject * CompletionPort_register(CompletionPort *self, PyObject *args)
     return Py_BuildValue("n", hFile);
 }
 
-PyObject * CompletionPort_overlapped(CompletionPort *self, PyObject *args)
-{
-    Overlapped *over, *ovargs, *ovkw;
-    int ret;
-
-    ovargs = Py_BuildValue("()");
-    if(!ovargs)
-        return NULL;
-
-    ovkw = Py_BuildValue("{}");
-    if(!ovkw)
-    {
-        Py_DECREF(ovargs);
-        return NULL;
-    }
-
-    over = Overlapped_new(&OverlappedType, ovargs, ovkw);
-    if(!over)
-    {
-        Py_DECREF(ovargs);
-        Py_DECREF(ovkw);
-        return NULL;
-    }
-
-    ret = Overlapped_init(over, ovargs, ovkw);
-    Py_DECREF(ovargs);
-    Py_DECREF(ovkw);
-    if(ret != 0)
-    {
-        Py_DECREF(over);
-        return NULL;
-    }
-    return over;
-}
-
-PyObject * CompletionPort_freeOverlapped(CompletionPort *self, PyObject *args)
-{
-    PyObject *ov;
-    if (!PyArg_ParseTuple(args, "O", &ov))
-        return NULL;
-    Py_RETURN_NONE;
-}
-
 PyObject * CompletionPort_post(CompletionPort *self, PyObject *args)
 {
-    /*
-    def post(self, *objs):
-        """ Directly post the objects to the completion port. """
-        win32.PostQueuedCompletionStatus(self.handle,
-            0, win32.INVALID_HANDLE_VALUE, self.overlapped(*objs))
-    */
+    Overlapped *ov;
     if(!PyTuple_Check(args))
-        return -1;
-    Py_RETURN_NONE;
-} 
+        return NULL;
+    ov = Overlapped_create(args);
+    if(!ov)
+    {
+        PyErr_SetString(PyExc_Exception, "Could not create the overlapped object");
+        return NULL;
+    }
+    // don't decrement ov's refcount, so it stays alive until wait() returns
+    PostQueuedCompletionStatus(self->hPort, 0, 
+        (ULONG_PTR)INVALID_HANDLE_VALUE, (LPOVERLAPPED)&ov->body);
+    Py_INCREF(ov->body.id);
+    return ov->body.id;
+}
+
 PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args)
 {
-    /*
-    def wait(self):
-        """
-        Wait for an operation to be finished and return a (ID, tag, bytes, objs)
-        tuple containing the result. The OVERLAPPED structure is also freed. 
-        """
-        bytes = c_uint32()
-        tag = c_void_p(0)
-        lpOver = cast(0, win32.LP_OVERLAPPED)
-        win32.GetQueuedCompletionStatus(self.handle,
-            byref(bytes), byref(tag), byref(lpOver), -1)
-        refID = lpOver.contents.UserData
-        win32.freeOVERLAPPED(lpOver)
-        if refID > 0:
-            with self.lock:
-                userData = self.refs.pop(refID)
-        else:
-            userData = ()
-        return refID, tag.value, bytes.value, userData
-    */
-    const char *text;
-    if (!PyArg_ParseTuple(args, "s", &text))
+    BOOL success;
+    DWORD bytes = 0;
+    ULONG_PTR tag = 0;
+    iocp_OVERLAPPED *lpOver = NULL;
+    Overlapped *ov = NULL;
+    PyObject *id = NULL;
+    PyObject *data = NULL;
+
+    if(!PyArg_ParseTuple(args, ""))
         return NULL;
-    printf("%s\n", text);
-    Py_RETURN_NONE;
+    Py_BEGIN_ALLOW_THREADS
+    success = GetQueuedCompletionStatus(self->hPort, &bytes, &tag, (LPOVERLAPPED *)&lpOver, -1);
+    Py_END_ALLOW_THREADS
+    if(!success)
+    {
+        iocp_win32error(PyExc_Exception, 
+            "Waiting for an operation's completion failed (%s)");
+        return NULL;
+    }
+
+    ov = lpOver->self;
+    Py_INCREF(ov->body.id);
+    id = ov->body.id;
+    Py_INCREF(ov->body.data);
+    data = ov->body.data;
+    Py_DECREF(ov);
+    return Py_BuildValue("(OnlO)", id, tag, bytes, data); 
 }
