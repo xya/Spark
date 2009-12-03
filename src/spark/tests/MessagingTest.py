@@ -39,9 +39,9 @@ class MessageDeliveryTest(unittest.TestCase):
         self.notifications = []
         self.responses = []
         self.delivery = MockSender()
-        self.delivery.messageReceived += self.messages.append
-        self.delivery.requestReceived += self.requests.append
-        self.delivery.notificationReceived += self.notifications.append
+        self.onMessageReceived = self.messages.append
+        self.onRequestReceived = self.requests.append
+        self.onNotificationReceived = self.notifications.append
     
     def assertMessageCount(self, requests, responses, notifications, messages):
         self.assertEqual(requests, len(self.requests))
@@ -68,23 +68,23 @@ class MessageDeliveryTest(unittest.TestCase):
         self.assertNotEqual(req.transID, req2.transID)
         
     def testDeliverRequest(self):
-        """ Receiving a request should emit the requestReceived event. """
+        """ Receiving a request should call the recipient's requestReceived method. """
         req = testRequest()
-        self.delivery.deliverMessage(req)
+        self.delivery.deliverMessage(req, self)
         self.assertMessageCount(1, 0, 0, 0)
         self.assertMessagesEqual(req, self.requests[0])
     
     def testDeliverNotification(self):
-        """ Receiving a notification should emit the notificationReceived event. """
+        """ Receiving a notification should call the recipient's notificationReceived method. """
         notif = testNotification()
-        self.delivery.deliverMessage(notif)
+        self.delivery.deliverMessage(notif, self)
         self.assertMessageCount(0, 0, 1, 0)
         self.assertMessagesEqual(notif, self.notifications[0])
     
     def testDeliverBlock(self):
-        """ Receiving a block should emit the messageReceived event. """
+        """ Receiving a block should call the recipient's messageReceived method. """
         block = testBlock()
-        self.delivery.deliverMessage(block)
+        self.delivery.deliverMessage(block, self)
         self.assertMessageCount(0, 0, 0, 1)
         self.assertMessagesEqual(block, self.messages[0])
     
@@ -97,9 +97,9 @@ class MessageDeliveryTest(unittest.TestCase):
         resp.transID = req.transID + 1  # response not matching the request
         resp2 = testResponse()
         resp2.transID = req.transID     # response matching the request
-        self.delivery.deliverMessage(resp)
+        self.delivery.deliverMessage(resp, self)
         self.assertMessageCount(0, 0, 0, 0)
-        self.delivery.deliverMessage(resp2)
+        self.delivery.deliverMessage(resp2, self)
         self.assertMessageCount(0, 1, 0, 0)
         self.assertMessagesEqual(resp2, self.responses[0])
     

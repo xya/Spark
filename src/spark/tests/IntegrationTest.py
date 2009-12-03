@@ -24,6 +24,7 @@ import threading
 import functools
 from spark.async import Future
 from spark.messaging.messages import *
+from spark.messaging import TcpTransport, MessagingSession
 from spark.fileshare import FileShare
 from spark.tests.AioTest import runReactorTypes
 
@@ -55,10 +56,12 @@ class BasicIntegrationTest(unittest.TestCase):
             remoteAddr = (BIND_ADDRESS, BIND_PORT)
             rea = reactorType("client")
             rea.launch_thread()
-            s = FileShare(rea, "client")
-            s.connect(remoteAddr).wait(1.0)
-            response = s.files().wait(1.0)
-            s.disconnect().wait(1.0)
+            transport = TcpTransport(rea, "client")
+            session = MessagingSession(transport, "client")
+            share = FileShare(session, "client")
+            transport.connect(remoteAddr).wait(1.0)
+            response = rea.send(share.files).wait(1.0)
+            transport.disconnect().wait(1.0)
             cont.completed(response)
         except:
             cont.failed()
@@ -67,9 +70,11 @@ class BasicIntegrationTest(unittest.TestCase):
         try:
             rea = reactorType("server")
             rea.launch_thread()
-            s = FileShare(rea, "server")
-            s.onDisconnected += discCont.completed
-            s.listen(("", 4550))
+            transport = TcpTransport(rea, "server")
+            transport.disconnected += discCont.completed
+            session = MessagingSession(transport, "server")
+            share = FileShare(session, "server")
+            transport.listen(("", 4550))
             listenCont.completed()
         except:
             if listenCont.pending:

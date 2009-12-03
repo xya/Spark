@@ -19,7 +19,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 from spark.async import Future, Delegate
-from spark.messaging import MessengerService, serviceMethod
+from spark.messaging import Service
 from spark.fileshare import SharedFile
 
 __all__ = ["FileShare"]
@@ -28,41 +28,38 @@ REQ_LIST_FILES = "list-files"
 NOT_FILE_ADDED = "file-added"
 NOT_FILE_REMOVED = "file-removed"
 
-class FileShare(MessengerService):
+class FileShare(Service):
     """ Service that shares files over a network. """
-    def __init__(self, reactor, name=None):
-        super(FileShare, self).__init__(reactor, name)
+    def __init__(self, session, name=None):
+        super(FileShare, self).__init__(session, name)
         self.fileAdded = Delegate()
         self.fileRemoved = Delegate()
         self.remoteNotifications = False
+        session.registerService(self)
     
-    @serviceMethod
     def files(self):
         """ Return a copy of the current file table, which maps file IDs to files. """
         dummy = SharedFile("Report.pdf", 3145728, "20090619T173529.000Z", "gnome-mime-application-pdf", None, "123abc")
         return {dummy.ID: dummy}
-    
-    @serviceMethod
+
     def addFile(self, path):
         """ Add the local file with the given path to the list. """
         self.fileAdded()
-        if self.remoteNotifications and self.isSessionActive:
+        if self.remoteNotifications and self.session.isActive:
             self.sendNotification(NOT_FILE_ADDED)
     
-    @serviceMethod
     def removeFile(self, fileID):
         """ Remove the file (local or remote) with the given ID from the list. """
         self.fileRemoved()
-        if self.remoteNotifications and self.isSessionActive:
+        if self.remoteNotifications and self.session.isActive:
             self.sendNotification(NOT_FILE_REMOVED)
     
-    def sessionStarted(self):
+    def start(self):
+        """ Start the service. The session must be currently active. """
         self.sendRequest(REQ_LIST_FILES, {'register': True})
     
-    def sessionEnded(self):
-        pass
-    
-    def blockReceived(self, m):
+    def stop(self):
+        """ Stop the service, probably because the session ended. """
         pass
     
     def requestListFiles(self, req):
@@ -70,7 +67,7 @@ class FileShare(MessengerService):
         if (isinstance(req.params, dict)
             and req.params.has_key("register") and req.params["register"] is True):
             self.remoteNotifications = True
-        return self.files().result
+        return self.files()
     
     def responselistFiles(self, prev):
         """ The remote peer responded to our 'list-files' request. """

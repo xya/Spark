@@ -96,10 +96,10 @@ class MessageDelivery(object):
             self.nextID = 0
             self.pendingRequests = {}
     
-    def deliverMessage(self, m):
+    def deliverMessage(self, m, recipient):
         """
-        Deliver a message. It could be a response to return to the request's sender.
-        Or it could be a request, notification or block to publish through events.
+        Deliver a message to the recipient. It could be a response to return
+        to the request's sender; it could also be a request or notification.
         """
         if hasattr(m, "type"):
             if m.type == TextMessage.RESPONSE:
@@ -109,11 +109,11 @@ class MessageDelivery(object):
                 if cont:
                     cont.completed(m)
             elif m.type == TextMessage.REQUEST:
-                self.requestReceived(m)
+                recipient.onRequestReceived(m)
             elif m.type == TextMessage.NOTIFICATION:
-                self.notificationReceived(m)
+                recipient.onNotificationReceived(m)
         else:
-            self.messageReceived(m)
+            recipient.onMessageReceived(m)
 
 class AsyncMessenger(Messenger):
     def __init__(self, file):
