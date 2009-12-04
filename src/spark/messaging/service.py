@@ -183,7 +183,7 @@ def toPascalCase(tag):
 
 class MessagingSession(MessageDelivery):
     """
-    Session where messages are used to comunicate on top of a transport.
+    Session where messages are used to communicate on top of a transport.
     """
     def __init__(self, transport, name=None):
         super(MessagingSession, self).__init__()
@@ -191,6 +191,9 @@ class MessagingSession(MessageDelivery):
         self.transport = transport
         self.messenger = None
         self.service = None
+        self.startWaiters = []
+        self.endWaiters = []
+        self.__lock = threading.RLock()
         transport.connected += self._connected
         transport.disconnected += self._disconnected
     
@@ -215,6 +218,9 @@ class MessagingSession(MessageDelivery):
             self.messenger = AsyncMessenger(self.transport.connection)
             if self.service is not None:
                 self.service.start()
+            with self.__lock:
+                waiters, self.startWaiters = self.startWaiters, []
+            self._signalWaiters(waiters)
             self.messenger.receiveMessage().after(self._messageReceived)
     
     def _disconnected(self):
@@ -224,6 +230,9 @@ class MessagingSession(MessageDelivery):
         self.resetDelivery()
         if self.service is not None:
             self.service.stop()
+        with self.__lock:
+            waiters, self.endWaiters = self.endWaiters, []
+        self._signalWaiters(waiters)
     
     def registerService(self, service):
         """ Define to which service the requests should be delivered to. """
@@ -252,7 +261,8 @@ class MessagingSession(MessageDelivery):
             self.logger.debug("Received message: %s", message)
             if self.service is not None:
                 self.deliverMessage(message, self.service)
-            self.messenger.receiveMessage().after(self._messageReceived)
+            if self.messenger is not None:
+                self.messenger.receiveMessage().after(self._messageReceived)
     
     @property
     def isActive(self):
@@ -261,6 +271,31 @@ class MessagingSession(MessageDelivery):
         i.e. messages can be sent and received.
         """
         return self.messenger is not None
+    
+    def waitActive(self):
+        """ Return a future which can be used to wait until the session is active. """
+        if self.isActive:
+            return Future.done()
+        cont = Future()
+        with self.__lock:
+            self.startWaiters.append(cont)
+        return cont
+    
+    def waitInactive(self):
+        """ Return a future which can be used to wait until the session is inactive. """
+        if not self.isActive:
+            return Future.done()
+        cont = Future()
+        with self.__lock:
+            self.endWaiters.append(cont)
+        return cont
+    
+    def _signalWaiters(self, waiters):
+        for waiter in waiters:
+            try:
+                waiter.completed()
+            except Exception:
+                self.logger.exception("Error when signaling 'endSession' waiter")
 
 class Service(object):
     """ A service exposes a set of operations through requests and notifications. """

@@ -25,12 +25,24 @@ import functools
 import time
 from spark.async import Future, coroutine
 from spark.messaging.messages import *
-from spark.messaging import TcpTransport, MessagingSession
+from spark.messaging import TcpTransport, MessagingSession, Service
 from spark.fileshare import FileShare
 from spark.tests.AioTest import runReactorTypes, PipeTransport
 
 BIND_ADDRESS = "127.0.0.1"
 BIND_PORT = 4550
+
+class TestService(Service):
+    def __init__(self, session, name=None):
+        super(TestService, self).__init__(session, name)
+        session.registerService(self)
+    
+    def foo(self):
+        return self.session.sendRequest(Request("foo"))
+    
+    def requestFoo(self, req):
+        """ The remote peer sent a 'foo' request. """
+        return {'foo': 'bar'}
 
 class BasicIntegrationTest(unittest.TestCase):
     @runReactorTypes
@@ -39,9 +51,10 @@ class BasicIntegrationTest(unittest.TestCase):
         rea = reactorType("reactor")
         rea.launch_thread()
         response = self.beginTest(rea).wait(1.0)
-        rea.close()
+        #rea.close()
         self.assertTrue(isinstance(response, dict))
         self.assertEqual(1, len(response))
+        self.assertEqual("bar", response["foo"])
     
     @coroutine
     def beginTest(self, rea):
@@ -49,18 +62,18 @@ class BasicIntegrationTest(unittest.TestCase):
         serverTransport = TcpTransport(rea, "server")
         clientSession = MessagingSession(clientTransport, "client")
         serverSession = MessagingSession(serverTransport, "server")
-        clientShare = FileShare(clientSession, "client")
-        serverShare = FileShare(serverSession, "server")
+        clientService = TestService(clientSession, "client")
+        serverService = TestService(serverSession, "server")
         serverTransport.listen((BIND_ADDRESS, BIND_PORT))
         yield clientTransport.connect((BIND_ADDRESS, BIND_PORT))
-        response = yield rea.send(clientShare.files)
-        time.sleep(0.1) # temporary hack until I start testing a *real* request that sends a message 
+        yield clientSession.waitActive()
+        response = yield clientService.foo()
         yield clientTransport.disconnect()
-        yield response
+        yield response.params
 
 if __name__ == '__main__':
     import logging
-    logging.basicConfig(level=5)
+    logging.basicConfig(level=logging.DEBUG)
     b = BasicIntegrationTest("test")
     b.test()
     #import sys
