@@ -197,7 +197,10 @@ class MessagingSession(MessageDelivery):
     def _connected(self, initiating):
         self.logger.debug("Negociating protocol")
         conn = self.transport.connection
-        negociateProtocol(conn, initiating).after(self._protocolNegociated)
+        if conn is None:
+            self.logger.error("Connection object is None")
+        else:
+            negociateProtocol(conn, initiating).after(self._protocolNegociated)
     
     def _protocolNegociated(self, prev):
         try:

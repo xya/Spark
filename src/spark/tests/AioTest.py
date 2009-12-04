@@ -23,6 +23,7 @@ import unittest
 import functools
 import os
 from spark.async import Future
+from spark.messaging import Transport
 
 Reactors = []
 
@@ -57,6 +58,87 @@ def runReactorTypes(testMethod):
         for reactor in Reactors:
             testMethod(self, reactor)
     return wrapper
+
+class PipeWrapper(object):
+    """
+    File-like socket encapsulating both the reading end of a pipe and
+    the writing end of another pipe, much like a socket.
+    """
+    def __init__(self, r, w):
+        self.r = r
+        self.w = w
+    
+    def beginRead(self, size):
+        return self.r.beginRead(size)
+    
+    def beginWrite(self, data):
+        return self.r.beginWrite(data)
+    
+    def read(self, size):
+        return self.r.read(size)
+    
+    def write(self, data):
+        return self.r.write(data)
+    
+    def close(self):
+        self.r.close()
+        self.w.close()
+
+class PipeTransport(Transport):
+    """
+    Transport which use a pipe for communications, intended for testing.
+    
+    This class uses an asynchronous execution model. The reactor should be used
+    for all operations (I/O and non-I/O), so that the session runs on a single thread.
+    """
+    def __init__(self, reactor, pipe, w, name=None):
+        super(PipeTransport, self).__init__()
+        self.logger = logging.getLogger(name)
+        self.reactor = reactor
+        self.pipe = pipe
+        self.remoteAddr = None
+        self.connState = Transport.DISCONNECTED
+    
+    def connect(self, address):
+        """ Try to establish a connection with a remote peer at the specified address. """
+        return self.reactor.send(self._connectRequest(True))
+    
+    def listen(self, address):
+        """ Listen on the interface with the specified addres for a connection. """
+        return self.reactor.send(self._connectRequest(False))
+    
+    def disconnect(self):
+        """ Close an established connection. """
+        return self.reactor.send(self._closeConnection)
+    
+    @property
+    def connection(self):
+        """ If a connection has been established, file-like object which can be used to communicate."""
+        if self.connState == Transport.CONNECTED:
+            return self.pipe
+        else:
+            return None
+    
+    def _connectRequest(self, initiating):
+        if (self.connState == Transport.DISCONNECTED) and pipe is not None:
+            self.connState = Transport.CONNECTED
+            self.reactor.post(self.onConnected, initiating)
+        else:
+            raise Exception("Invalid state")
+    
+    def _closeConnection(self):
+        """ If there is an active connection, close it. """
+        if self.connState == Transport.CONNECTED:
+            self.logger.info("Disconnecting pipe")
+            try:
+                self.pipe.close()
+            except Exception:
+                self.logger.exception("pipe.close() failed")
+            self.pipe = None
+            self.connState = Transport.DISCONNECTED
+            self.onDisconnected()
+        else:
+            wasDisconnected = False
 
 class ReactorTest(unittest.TestCase):
     @runReactors

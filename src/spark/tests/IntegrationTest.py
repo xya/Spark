@@ -22,11 +22,12 @@
 import unittest
 import threading
 import functools
-from spark.async import Future
+import time
+from spark.async import Future, coroutine
 from spark.messaging.messages import *
 from spark.messaging import TcpTransport, MessagingSession
 from spark.fileshare import FileShare
-from spark.tests.AioTest import runReactorTypes
+from spark.tests.AioTest import runReactorTypes, PipeTransport
 
 BIND_ADDRESS = "127.0.0.1"
 BIND_PORT = 4550
@@ -35,55 +36,31 @@ class BasicIntegrationTest(unittest.TestCase):
     @runReactorTypes
     def test(self, reactorType):
         """ Two locally-connected file shares should be able to exchange their file lists. """
-        listenCalled = Future()
-        serverDone = Future()
-        serverThread = threading.Thread(target=self.server,
-                                        args=(reactorType, listenCalled, serverDone))
-        serverThread.daemon = True
-        serverThread.start()
-        listenCalled.wait(1.0)
-        clientDone = Future()
-        clientThread = threading.Thread(target=self.client, args=(reactorType, clientDone))
-        clientThread.daemon = True
-        clientThread.start()
-        response = clientDone.wait(1.0)
-        serverDone.wait(1.0)
+        rea = reactorType("reactor")
+        rea.launch_thread()
+        response = self.beginTest(rea).wait(1.0)
+        rea.close()
         self.assertTrue(isinstance(response, dict))
         self.assertEqual(1, len(response))
     
-    def client(self, reactorType, cont):
-        try:
-            remoteAddr = (BIND_ADDRESS, BIND_PORT)
-            rea = reactorType("client")
-            rea.launch_thread()
-            transport = TcpTransport(rea, "client")
-            session = MessagingSession(transport, "client")
-            share = FileShare(session, "client")
-            transport.connect(remoteAddr).wait(1.0)
-            response = rea.send(share.files).wait(1.0)
-            transport.disconnect().wait(1.0)
-            cont.completed(response)
-        except:
-            cont.failed()
-    
-    def server(self, reactorType, listenCont, discCont):
-        try:
-            rea = reactorType("server")
-            rea.launch_thread()
-            transport = TcpTransport(rea, "server")
-            transport.disconnected += discCont.completed
-            session = MessagingSession(transport, "server")
-            share = FileShare(session, "server")
-            transport.listen(("", 4550))
-            listenCont.completed()
-        except:
-            if listenCont.pending:
-                listenCont.failed()
-            discCont.failed()
+    @coroutine
+    def beginTest(self, rea):
+        clientTransport = TcpTransport(rea, "client")
+        serverTransport = TcpTransport(rea, "server")
+        clientSession = MessagingSession(clientTransport, "client")
+        serverSession = MessagingSession(serverTransport, "server")
+        clientShare = FileShare(clientSession, "client")
+        serverShare = FileShare(serverSession, "server")
+        serverTransport.listen((BIND_ADDRESS, BIND_PORT))
+        yield clientTransport.connect((BIND_ADDRESS, BIND_PORT))
+        response = yield rea.send(clientShare.files)
+        time.sleep(0.1) # temporary hack until I start testing a *real* request that sends a message 
+        yield clientTransport.disconnect()
+        yield response
 
 if __name__ == '__main__':
     import logging
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=5)
     b = BasicIntegrationTest("test")
     b.test()
     #import sys
