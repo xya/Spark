@@ -136,7 +136,7 @@ class TcpTransport(Transport):
                     sock.close()
             self.connState = Transport.CONNECTED
             self.logger.info("Connected to %s", repr(self.remoteAddr))
-            self.reactor.post(self.onConnected, initiating)
+            self.onConnected(initiating)
         except:
             self._closeConnection()
             raise

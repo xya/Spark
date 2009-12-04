@@ -27,7 +27,7 @@ from spark.async import Future, coroutine
 from spark.messaging.messages import *
 from spark.messaging import TcpTransport, MessagingSession, Service
 from spark.fileshare import FileShare
-from spark.tests.AioTest import runReactorTypes, PipeTransport
+from spark.tests.AioTest import runReactorTypes, PipeTransport, PipeWrapper
 
 BIND_ADDRESS = "127.0.0.1"
 BIND_PORT = 4550
@@ -46,18 +46,29 @@ class TestService(Service):
 
 class BasicIntegrationTest(unittest.TestCase):
     @runReactorTypes
-    def test(self, reactorType):
-        """ Two locally-connected file shares should be able to exchange their file lists. """
+    def testTcpSession(self, reactorType):
+        """ Two services connected by TCP/IP sockets should be able to exchange messages. """
         rea = reactorType("reactor")
         rea.launch_thread()
-        response = self.beginTest(rea).wait(1.0)
+        response = self.beginTestTcpSession(rea).wait(1.0)
+        rea.close()
+        self.assertTrue(isinstance(response, dict))
+        self.assertEqual(1, len(response))
+        self.assertEqual("bar", response["foo"])
+    
+    @runReactorTypes
+    def testPipeSession(self, reactorType):
+        """ Two services connected by pipes should be able to exchange messages. """
+        rea = reactorType("reactor")
+        rea.launch_thread()
+        response = self.beginTestPipeSession(rea).wait(1.0)
         rea.close()
         self.assertTrue(isinstance(response, dict))
         self.assertEqual(1, len(response))
         self.assertEqual("bar", response["foo"])
     
     @coroutine
-    def beginTest(self, rea):
+    def beginTestTcpSession(self, rea):
         clientTransport = TcpTransport(rea, "client")
         serverTransport = TcpTransport(rea, "server")
         clientSession = MessagingSession(clientTransport, "client")
@@ -70,10 +81,29 @@ class BasicIntegrationTest(unittest.TestCase):
         response = yield clientService.foo()
         yield clientTransport.disconnect()
         yield response.params
+    
+    @coroutine
+    def beginTestPipeSession(self, rea):
+        r1, w1 = rea.pipe()
+        r2, w2 = rea.pipe()
+        p1 = PipeWrapper(r1, w2)
+        p2 = PipeWrapper(r2, w1)
+        clientTransport = PipeTransport(rea, p1, "client")
+        serverTransport = PipeTransport(rea, p2, "server")
+        clientSession = MessagingSession(clientTransport, "client")
+        serverSession = MessagingSession(serverTransport, "server")
+        clientService = TestService(clientSession, "client")
+        serverService = TestService(serverSession, "server")
+        serverTransport.listen(None)
+        yield clientTransport.connect(None)
+        yield clientSession.waitActive()
+        response = yield clientService.foo()
+        yield clientTransport.disconnect()
+        yield response.params
 
 if __name__ == '__main__':
     import logging
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=5)
     b = BasicIntegrationTest("test")
     b.test()
     #import sys

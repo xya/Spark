@@ -22,6 +22,7 @@
 import unittest
 import functools
 import os
+import logging
 from spark.async import Future
 from spark.messaging import Transport
 
@@ -72,13 +73,13 @@ class PipeWrapper(object):
         return self.r.beginRead(size)
     
     def beginWrite(self, data):
-        return self.r.beginWrite(data)
+        return self.w.beginWrite(data)
     
     def read(self, size):
         return self.r.read(size)
     
     def write(self, data):
-        return self.r.write(data)
+        return self.w.write(data)
     
     def close(self):
         self.r.close()
@@ -91,21 +92,20 @@ class PipeTransport(Transport):
     This class uses an asynchronous execution model. The reactor should be used
     for all operations (I/O and non-I/O), so that the session runs on a single thread.
     """
-    def __init__(self, reactor, pipe, w, name=None):
+    def __init__(self, reactor, pipe, name=None):
         super(PipeTransport, self).__init__()
         self.logger = logging.getLogger(name)
         self.reactor = reactor
         self.pipe = pipe
-        self.remoteAddr = None
         self.connState = Transport.DISCONNECTED
     
     def connect(self, address):
         """ Try to establish a connection with a remote peer at the specified address. """
-        return self.reactor.send(self._connectRequest(True))
+        return self.reactor.send(self._connectRequest, True)
     
     def listen(self, address):
         """ Listen on the interface with the specified addres for a connection. """
-        return self.reactor.send(self._connectRequest(False))
+        return self.reactor.send(self._connectRequest, False)
     
     def disconnect(self):
         """ Close an established connection. """
@@ -120,9 +120,9 @@ class PipeTransport(Transport):
             return None
     
     def _connectRequest(self, initiating):
-        if (self.connState == Transport.DISCONNECTED) and pipe is not None:
+        if (self.connState == Transport.DISCONNECTED) and self.pipe is not None:
             self.connState = Transport.CONNECTED
-            self.reactor.post(self.onConnected, initiating)
+            self.onConnected(initiating)
         else:
             raise Exception("Invalid state")
     
