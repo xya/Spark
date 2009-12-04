@@ -104,7 +104,7 @@ class BasicIntegrationTest(unittest.TestCase):
 if __name__ == '__main__':
     import logging
     logging.basicConfig(level=5)
-    b = BasicIntegrationTest("test")
-    b.test()
+    b = BasicIntegrationTest("testPipeSession")
+    b.testPipeSession()
     #import sys
     #unittest.main(argv=sys.argv)

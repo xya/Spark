@@ -64,7 +64,8 @@ class CompletionPortReactor(Reactor):
     
     def pipe(self):
         """ Create a pipe that uses the reactor to do asynchronous I/O. """
-        raise NotImplementedError()
+        readHandle, writeHandle = iocp.createPipe()
+        return (OverlappedFile(self, readHandle), OverlappedFile(self, writeHandle))
     
     def send(self, fun, *args, **kwargs):
         """ Invoke a callable on the reactor's thread and return its result through a future. """

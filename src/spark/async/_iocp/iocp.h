@@ -10,7 +10,10 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 
 PyMODINIT_FUNC init_iocp(void);
 void iocp_win32error(PyTypeObject *excType, const char *format);
+PyObject *iocp_createPipe(PyObject *self, PyObject *args);
 PyObject *iocp_beginRead(PyObject *self, PyObject *args);
+PyObject *iocp_beginWrite(PyObject *self, PyObject *args);
+BOOL iocp_createAsyncPipe(PHANDLE hRead, PHANDLE hWrite);
 
 typedef struct
 {

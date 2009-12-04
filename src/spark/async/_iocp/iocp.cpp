@@ -19,7 +19,9 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 
 static PyMethodDef iocp_Methods[] =
 {
+    {"createPipe", iocp_createPipe, METH_VARARGS, "Create an asynchronous pipe."},
     {"beginRead", iocp_beginRead, METH_VARARGS, "Start an asynchronous read operation on a file."},
+    {"beginWrite", iocp_beginWrite, METH_VARARGS, "Start an asynchronous write operation on a file."},
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 
@@ -147,6 +149,16 @@ PyMODINIT_FUNC init_iocp(void)
     PyModule_AddObject(m, "CompletionPort", (PyObject *)&CompletionPortType);
 }
 
+PyObject *iocp_createPipe(PyObject *self, PyObject *args)
+{
+    HANDLE hRead, hWrite;
+    if(!PyArg_ParseTuple(args, ""))
+        return NULL;
+    if(!iocp_createAsyncPipe(&hRead, &hWrite))
+        return NULL;
+    return Py_BuildValue("nn", hRead, hWrite);
+}
+
 PyObject *iocp_beginRead(PyObject *self, PyObject *args)
 {
     PyObject *port, *cont, *data, *buffer;
@@ -181,6 +193,7 @@ PyObject *iocp_beginRead(PyObject *self, PyObject *args)
     data = Py_BuildValue("(lOO)", opcode, buffer, cont);
     if(!data)
     {
+        Py_DECREF(cont);
         Py_DECREF(buffer);
         return NULL;
     }
@@ -192,7 +205,6 @@ PyObject *iocp_beginRead(PyObject *self, PyObject *args)
         error = GetLastError();
         if(error != ERROR_IO_PENDING)
         {
-            Py_DECREF(buffer);
             Py_DECREF(over);
             iocp_win32error(PyExc_Exception, "Reading the file failed (%s)");
             return NULL;
@@ -200,6 +212,98 @@ PyObject *iocp_beginRead(PyObject *self, PyObject *args)
     }
     // don't decrement over's refcount, so it stays alive until wait() returns
     Py_RETURN_NONE;
+}
+
+PyObject *iocp_beginWrite(PyObject *self, PyObject *args)
+{
+    PyObject *port, *cont, *data, *buffer;
+    Overlapped *over;
+    DWORD opcode, error;
+    Py_ssize_t hFile, position, bufferSize;
+    void *pBuffer = 0;
+
+    if(!PyArg_ParseTuple(args, "OlnOnO", &port, &opcode, &hFile, &buffer, &position, &cont))
+        return NULL;
+    else if(!PyObject_TypeCheck(port, &CompletionPortType))
+    {
+        PyErr_SetString(PyExc_TypeError, "The first argument should be a completion port");
+        return NULL;
+    }
+    else if((PyObject_AsReadBuffer(buffer, &pBuffer, &bufferSize) != 0) || (bufferSize <= 0))
+    {
+        PyErr_SetString(PyExc_Exception, "Couldn't access the buffer for reading");
+        return NULL;
+    }
+
+    Py_INCREF(cont);
+    Py_INCREF(buffer);
+    data = Py_BuildValue("(lOO)", opcode, buffer, cont);
+    if(!data)
+    {
+        Py_DECREF(cont);
+        Py_DECREF(buffer);
+        return NULL;
+    }
+    over = Overlapped_create(data);
+    Py_DECREF(data);
+    OVERLAPPED_setOffset(&over->body.ov, position);
+    if(!WriteFile(hFile, pBuffer, (DWORD)bufferSize, NULL, (LPOVERLAPPED)&over->body))
+    {
+        error = GetLastError();
+        if(error != ERROR_IO_PENDING)
+        {
+            Py_DECREF(over);
+            iocp_win32error(PyExc_Exception, "Reading the file failed (%s)");
+            return NULL;
+        }
+    }
+    // don't decrement over's refcount, so it stays alive until wait() returns
+    Py_RETURN_NONE;
+}
+
+BOOL iocp_createAsyncPipe(PHANDLE hRead, PHANDLE hWrite)
+{
+    HANDLE readHandle, writeHandle;
+    char pipeName[256];
+    static int pipeID = 0;
+
+    // generate an unique name for the pipe, using the process ID and a process-wide counter
+    snprintf(pipeName, 256, "\\\\.\\Pipe\\iocp.async-pipe.%08x.%08x",
+        GetCurrentProcessId(), pipeID++);
+
+    readHandle = CreateNamedPipeA(pipeName,
+        PIPE_ACCESS_INBOUND | FILE_FLAG_FIRST_PIPE_INSTANCE | FILE_FLAG_OVERLAPPED,
+        PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+        1, 0, 0, 0, NULL);
+    if(readHandle == INVALID_HANDLE_VALUE)
+    {
+        iocp_win32error(PyExc_Exception, "Could not create a pipe (%s)");
+        if(hRead)
+            *hRead = INVALID_HANDLE_VALUE;
+        if(hWrite)
+            *hWrite = INVALID_HANDLE_VALUE;
+        return FALSE;
+    }
+
+     writeHandle = CreateFileA(pipeName, GENERIC_WRITE, 0, NULL, 
+         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+
+    if(writeHandle == INVALID_HANDLE_VALUE)
+    {
+        iocp_win32error(PyExc_Exception, "Could not create a pipe (%s)");
+        CloseHandle(readHandle);
+        if(hRead)
+            *hRead = INVALID_HANDLE_VALUE;
+        if(hWrite)
+            *hWrite = INVALID_HANDLE_VALUE;
+        return FALSE;
+    }
+
+    if(hRead)
+        *hRead = readHandle;
+    if(hWrite)
+        *hWrite = writeHandle;
+    return TRUE;
 }
 
 void iocp_win32error(PyTypeObject *excType, const char *format)
