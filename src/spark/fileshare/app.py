@@ -18,17 +18,29 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+import functools
+import types
+from spark.async import Reactor
+from spark.messaging import TcpTransport, MessagingSession, Service
 from spark.fileshare import FileShare
-from spark.async.pollreactor import PollReactor
 
 __all__ = ["SparkApplication", "Session"]
+
+def sessionMethod(func):
+    """ Invoke a callable in the context of the session. """
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        return self.reactor.send(func, *args, **kwargs)
+    return wrapper
 
 class SparkApplication(object):
     """ Hold the state of the whole application. """
     def __init__(self):
-        self.reactor = PollReactor()
+        self.reactor = Reactor.create()
         self.reactor.launch_thread()
         self.session = Session(self.reactor)
+
+_fileShareMethods = ["files", "addFile", "removeFile"]
 
 class Session(object):
     """
@@ -36,4 +48,11 @@ class Session(object):
     one user per session.
     """
     def __init__(self, reactor):
-        self.share = FileShare(reactor)
+        self.reactor = reactor
+        self.transport = TcpTransport(reactor)
+        self.messaging = MessagingSession(self.transport)
+        self.share = FileShare(self.messaging)
+        # wrap FileShare's methods so they are invoked on the reactor's thread
+        for methodName in _fileShareMethods:
+            method = sessionMethod(getattr(self.share, methodName))
+            setattr(self, methodName, types.MethodType(method, self))

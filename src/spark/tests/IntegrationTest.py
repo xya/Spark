@@ -27,7 +27,8 @@ from spark.async import Future, coroutine
 from spark.messaging.messages import *
 from spark.messaging import TcpTransport, MessagingSession, Service
 from spark.fileshare import FileShare
-from spark.tests.AioTest import runReactorTypes, PipeTransport, PipeWrapper
+from spark.tests.AioTest import PipeTransport, PipeWrapper
+from spark.tests.common import ReactorTestBase, run_tests
 
 BIND_ADDRESS = "127.0.0.1"
 BIND_PORT = 4550
@@ -44,25 +45,17 @@ class TestService(Service):
         """ The remote peer sent a 'foo' request. """
         return {'foo': 'bar'}
 
-class BasicIntegrationTest(unittest.TestCase):
-    @runReactorTypes
-    def testTcpSession(self, reactorType):
+class BasicIntegrationTest(ReactorTestBase):
+    def testTcpSession(self):
         """ Two services connected by TCP/IP sockets should be able to exchange messages. """
-        rea = reactorType("reactor")
-        rea.launch_thread()
-        response = self.beginTestTcpSession(rea).wait(1.0)
-        rea.close()
+        response = self.beginTestTcpSession(self.reactor).wait(1.0)
         self.assertTrue(isinstance(response, dict))
         self.assertEqual(1, len(response))
         self.assertEqual("bar", response["foo"])
     
-    @runReactorTypes
-    def testPipeSession(self, reactorType):
+    def testPipeSession(self):
         """ Two services connected by pipes should be able to exchange messages. """
-        rea = reactorType("reactor")
-        rea.launch_thread()
-        response = self.beginTestPipeSession(rea).wait(1.0)
-        rea.close()
+        response = self.beginTestPipeSession(self.reactor).wait(1.0)
         self.assertTrue(isinstance(response, dict))
         self.assertEqual(1, len(response))
         self.assertEqual("bar", response["foo"])
@@ -102,9 +95,4 @@ class BasicIntegrationTest(unittest.TestCase):
         yield response.params
 
 if __name__ == '__main__':
-    import logging
-    logging.basicConfig(level=5)
-    b = BasicIntegrationTest("testPipeSession")
-    b.testPipeSession()
-    #import sys
-    #unittest.main(argv=sys.argv)
+    run_tests()

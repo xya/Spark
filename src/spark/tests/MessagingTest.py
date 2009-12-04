@@ -21,6 +21,7 @@
 import unittest
 from spark.messaging import *
 from spark.async import Future
+from spark.tests.common import run_tests
 from spark.tests.ProtocolTest import testRequest, testResponse, testNotification, testBlock
 
 class MockSender(Messenger, MessageDelivery):
@@ -107,5 +108,4 @@ class MessageDeliveryTest(unittest.TestCase):
         self.responses.append(prev.result)
 
 if __name__ == '__main__':
-    import sys
-    unittest.main(argv=sys.argv)
+    run_tests()

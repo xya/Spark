@@ -19,46 +19,16 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+import sys
 import unittest
 import functools
 import os
 import logging
-from spark.async import Future
+from spark.async import Future, Reactor
 from spark.messaging import Transport
-
-Reactors = []
-
-try:
-    from spark.async.pollreactor import PollReactor
-    Reactors.append(PollReactor)
-except ImportError:
-    pass
-    
-try:
-    from spark.async.iocpreactor import CompletionPortReactor
-    Reactors.append(CompletionPortReactor)
-except ImportError:
-    pass
+from spark.tests.common import ReactorTestBase, run_tests
 
 TestFile = os.path.join(os.path.dirname(__file__), 'ProtocolTest.log')
-
-def runReactors(testMethod):
-    """ Run the test with all available reactors. """
-    @functools.wraps(testMethod)
-    def wrapper(self):
-        for reactor in Reactors:
-            with reactor() as rea:
-                rea.launch_thread()
-                testMethod(self, rea)
-    return wrapper
-
-def runReactorTypes(testMethod):
-    """ Run the test with all available reactor types. """
-    @functools.wraps(testMethod)
-    def wrapper(self):
-        for reactor in Reactors:
-            testMethod(self, reactor)
-    return wrapper
 
 class PipeWrapper(object):
     """
@@ -140,32 +110,29 @@ class PipeTransport(Transport):
         else:
             wasDisconnected = False
 
-class ReactorTest(unittest.TestCase):
-    @runReactors
-    def testSend(self, rea):
+class ReactorTest(ReactorTestBase):
+    def testSend(self):
         """ send() should invoke the callable asynchronously and return the result """
         def bar(arg):
             return (arg, "bar")
-        result = rea.send(bar, "foo").wait(1.0)
+        result = self.reactor.send(bar, "foo").wait(1.0)
         self.assertEqual(("foo", "bar"), result)
     
-    @runReactors
-    def testPost(self, rea):
+    def testPost(self):
         """ post() should invoke the callable asynchronously """
         cont = Future()
         def complete(arg1, arg2):
             cont.completed((arg1, arg2))
-        rea.post(complete, "foo", "bar")
+        self.reactor.post(complete, "foo", "bar")
         result = cont.wait(1.0)
         self.assertEqual(("foo", "bar"), result)
 
-    @runReactors
-    def testAsyncRead(self, rea):
+    def testAsyncRead(self):
         """ beginRead() should be able to read from a file. """
         results = []
         def read_complete(prev):
             results.append(prev.result)
-        with rea.open(TestFile) as file:
+        with self.reactor.open(TestFile) as file:
             f = file.beginRead(19)
             f.after(read_complete)
             f.wait(1.0)
@@ -173,13 +140,12 @@ class ReactorTest(unittest.TestCase):
             self.assertEqual(1, len(results))
             self.assertEqual("0023 > list-files 0", results[0])
     
-    @runReactors
-    def testAsyncPipe(self, rea):
+    def testAsyncPipe(self):
         """ beginRead() should be able to read what was written on a pipe. """
         results = []
         def read_complete(prev):
             results.append(prev.result)
-        r, w = rea.pipe()
+        r, w = self.reactor.pipe()
         try:
             f = r.beginRead(3)
             f.after(read_complete)
@@ -193,5 +159,4 @@ class ReactorTest(unittest.TestCase):
             w.close()
 
 if __name__ == '__main__':
-    import sys
-    unittest.main(argv=sys.argv)
+    run_tests()

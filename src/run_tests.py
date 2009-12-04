@@ -19,31 +19,11 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-import sys
 import unittest
 import logging
 import spark
-from spark.tests import *
-
-def loadModuleTests(module):
-    ''' Returns every tests from a given module '''
-    return unittest.defaultTestLoader.loadTestsFromModule(module)
-
-def allModules():
-    ''' Returns the modules to test '''
-    for name in spark.tests.__all__:
-        yield sys.modules['spark.tests.' + name]
-
-def allTests():
-    ''' Returns every test from every module '''
-    return unittest.TestSuite(map(loadModuleTests, allModules()))
+from spark.tests.common import run_tests
 
 if __name__ == '__main__':
-    import locale    
-    locale.setlocale(locale.LC_ALL, '')
-    if "-v" in sys.argv:
-        verbosity = 2
-    else:
-        verbosity = 1
-    logging.basicConfig(level=logging.ERROR)
-    unittest.TextTestRunner(verbosity=verbosity).run(allTests())
+    modules = ["spark.tests.%s" % name for name in spark.tests.__all__]
+    run_tests(modules)

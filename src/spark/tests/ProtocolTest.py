@@ -25,6 +25,7 @@ import sys
 import os
 from spark.async import Future, TaskFailedError, coroutine
 from spark.messaging import *
+from spark.tests.common import run_tests
 from StringIO import StringIO
 
 TestFile = os.path.join(os.path.dirname(__file__), 'ProtocolTest.log')
@@ -351,5 +352,4 @@ class ProtocolNegociationTest(unittest.TestCase):
         self.assertEqual(names[0], names[1])
 
 if __name__ == '__main__':
-    import sys
-    unittest.main(argv=sys.argv)
+    run_tests()

@@ -21,6 +21,7 @@
 
 import unittest
 from spark.async import Future, TaskError
+from spark.tests.common import run_tests
 
 class FutureTest(unittest.TestCase):
     def testCompleted(self):
@@ -204,5 +205,4 @@ class FutureTest(unittest.TestCase):
             self.fail("wait() should have raised an exception")
 
 if __name__ == '__main__':
-    import sys
-    unittest.main(argv=sys.argv)
+    run_tests()

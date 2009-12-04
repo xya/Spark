@@ -65,3 +65,43 @@ class Reactor(object):
         Unlike send(), this method doesn't return a future.
         """
         raise NotImplementedError()
+    
+    _types = []
+    
+    @classmethod
+    def available(cls):
+        """ Return the list of all available reactor types. """
+        return cls._types
+    
+    @classmethod
+    def addType(cls, type):
+        """ Add a reactor type to the list of available types"""
+        cls._types.append(type)
+    
+    @classmethod
+    def default(cls):
+        """ Return the default reactor type. """
+        if len(cls._types) == 0:
+            raise Exception("No type of reactor is available")
+        else:
+            return cls._types[0]
+    
+    @classmethod
+    def create(cls):
+        """ Create a reactor of the default type. """
+        return cls.default()()
+
+# try to import known types of reactors
+try:
+    from spark.async import pollreactor
+except ImportError:
+    pass
+else:
+    Reactor.addType(pollreactor.PollReactor)
+
+try:
+    from spark.async import iocpreactor
+except ImportError:
+    pass
+else:
+    Reactor.addType(iocpreactor.CompletionPortReactor)
