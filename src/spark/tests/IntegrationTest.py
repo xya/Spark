@@ -51,7 +51,7 @@ class BasicIntegrationTest(unittest.TestCase):
         rea = reactorType("reactor")
         rea.launch_thread()
         response = self.beginTest(rea).wait(1.0)
-        #rea.close()
+        rea.close()
         self.assertTrue(isinstance(response, dict))
         self.assertEqual(1, len(response))
         self.assertEqual("bar", response["foo"])

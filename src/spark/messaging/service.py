@@ -197,22 +197,16 @@ class MessagingSession(MessageDelivery):
         transport.connected += self._connected
         transport.disconnected += self._disconnected
     
+    @coroutine
     def _connected(self, initiating):
         self.logger.debug("Negociating protocol")
         conn = self.transport.connection
-        if conn is None:
-            self.logger.error("Connection object is None")
-        else:
-            negociateProtocol(conn, initiating).after(self._protocolNegociated)
-    
-    def _protocolNegociated(self, prev):
         try:
-            name = prev.result
+            name = yield negociateProtocol(conn, initiating)
         except TaskFailedError as e:
             type, val, tb = e.inner()
             if not isinstance(val, EOFError):
                 self.logger.exception("Error while negociating protocol")
-            self.transport.disconnect()
         else:
             self.logger.debug("Negociated protocol '%s'", name)
             self.messenger = AsyncMessenger(self.transport.connection)
@@ -221,7 +215,21 @@ class MessagingSession(MessageDelivery):
             with self.__lock:
                 waiters, self.startWaiters = self.startWaiters, []
             self._signalWaiters(waiters)
-            self.messenger.receiveMessage().after(self._messageReceived)
+            while self.messenger is not None:
+                try:
+                    message = yield self.messenger.receiveMessage()
+                except TaskFailedError as e:
+                    type, val, tb = e.inner()
+                    if not isinstance(val, EOFError):
+                        self.logger.exception("Error while receiving a message")
+                    message = None
+                if message is None:
+                    break
+                else:
+                    self.logger.debug("Received message: %s", message)
+                    if self.service is not None:
+                        self.deliverMessage(message, self.service)
+        self.transport.disconnect()
     
     def _disconnected(self):
         if hasattr(self.messenger, "close"):
@@ -244,25 +252,6 @@ class MessagingSession(MessageDelivery):
             raise Exception("The session must be active for sending messages.")
         self.logger.debug("Sending message: %s", message)
         return self.messenger.sendMessage(message)
-    
-    def _messageReceived(self, prev):
-        try:
-            message = prev.result
-        except TaskFailedError as e:
-            type, val, tb = e.inner()
-            if not isinstance(val, EOFError):
-                self.logger.exception("Error while receiving a message")
-            message = None
-        
-        if message is None:
-            # we have been disconnected
-            self.transport.disconnect()
-        else:
-            self.logger.debug("Received message: %s", message)
-            if self.service is not None:
-                self.deliverMessage(message, self.service)
-            if self.messenger is not None:
-                self.messenger.receiveMessage().after(self._messageReceived)
     
     @property
     def isActive(self):
