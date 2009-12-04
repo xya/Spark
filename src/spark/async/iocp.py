@@ -28,6 +28,20 @@ from spark.async import win32
 
 __all__ = ["CompletionPort"]
 
+def _tuple_to_sockaddr_in(family, t):
+    sockaddr = win32.sockaddr_in()
+    sockaddr.sin_family = family
+    sockaddr.sin_port = socket.htons(t[1])
+    for i, c in enumerate(socket.inet_aton(t[0])):
+        sockaddr.sin_addr[i] = ord(c)
+    return sockaddr
+
+def _sockaddr_in_to_tuple(sockaddr):
+    port = socket.ntohs(sockaddr.sin_port)
+    packed = "".join(chr(v) for v in sockaddr.sin_addr)
+    address = socket.inet_ntoa(packed)
+    return address, port
+
 class Overlapped(object):
     """ Wrapper for Windows's OVERLAPPED structure. """
     def __init__(self, *data):
@@ -100,7 +114,34 @@ class CompletionPort(object):
         ov = self.recall(id)
         ov.free()
         return ov.id, tag.value, bytes.value, ov.data
-   
+    
+    def createFile(self, path, mode=None):
+        if mode == "w":
+            access = win32.GENERIC_WRITE
+            creation = win32.CREATE_ALWAYS
+        elif mode == "a":
+            access = win32.FILE_APPEND_DATA
+            creation = win32.OPEN_ALWAYS
+        elif mode == "r+":
+            access = win32.GENERIC_READ | win32.GENERIC_WRITE
+            creation = win32.OPEN_EXISTING
+        elif mode == "w+":
+            access = win32.GENERIC_READ | win32.GENERIC_WRITE
+            creation =  win32.CREATE_ALWAYS
+        elif mode == "a+":
+            access = win32.GENERIC_READ | win32.GENERIC_WRITE
+            creation = win32.OPEN_ALWAYS
+        else:
+            access = win32.GENERIC_READ
+            creation = win32.OPEN_EXISTING
+        flags = win32.FILE_FLAG_OVERLAPPED | win32.FILE_ATTRIBUTE_NORMAL
+        handle = win32.CreateFile(path, access, 0, None, creation, flags, None)
+        self.register(handle)
+        return handle
+    
+    def closeFile(self, handle):
+		return win32.CloseHandle(handle)
+    
     def beginRead(self, op, handle, size, position, cont):
         buffer = create_string_buffer(size)
         over = Overlapped(op, buffer, cont)

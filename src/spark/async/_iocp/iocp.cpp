@@ -32,11 +32,12 @@ static PyMethodDef Overlapped_methods[] =
 static PyMethodDef CompletionPort_methods[] =
 {
     {"close",  CompletionPort_close, METH_VARARGS, "Close the completion port."},
-    {"register",  CompletionPort_register, METH_VARARGS, "Register a file with the completion port and return its tag."},
     {"post",  CompletionPort_post, METH_VARARGS, "Directly post the objects to the completion port."},
     {"wait",  CompletionPort_wait, METH_VARARGS, 
     "Wait for an operation to be finished and return a (ID, tag, bytes, objs) tuple containing the result."},
+    {"createFile", CompletionPort_createFile, METH_VARARGS, "Create or open a file in asynchronous mode."},
     {"createPipe", CompletionPort_createPipe, METH_VARARGS, "Create an asynchronous pipe."},
+    {"closeFile", CompletionPort_closeFile, METH_VARARGS, "Close a file, pipe or socket opened for the completion port."},
     {"beginRead", CompletionPort_beginRead, METH_VARARGS, "Start an asynchronous read operation on a file."},
     {"beginWrite", CompletionPort_beginWrite, METH_VARARGS, "Start an asynchronous write operation on a file."},
     {NULL, NULL, 0, NULL}        /* Sentinel */
@@ -142,7 +143,7 @@ PyMODINIT_FUNC init_iocp(void)
        "Wrapper around Windows' I/O completion port interface");
 
     Py_INCREF(&OverlappedType);
-    PyModule_AddObject(m, "Overlapped", (PyObject *)&OverlappedType);
+    //PyModule_AddObject(m, "Overlapped", (PyObject *)&OverlappedType);
 
     Py_INCREF(&CompletionPortType);
     PyModule_AddObject(m, "CompletionPort", (PyObject *)&CompletionPortType);
@@ -342,19 +343,6 @@ PyObject * CompletionPort_close(CompletionPort *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
-PyObject * CompletionPort_register(CompletionPort *self, PyObject *args)
-{
-    Py_ssize_t hFile;
-    if(!PyArg_ParseTuple(args, "n", &hFile))
-        return NULL;
-    if(!CreateIoCompletionPort((HANDLE)hFile, self->hPort, (ULONG_PTR)hFile, 0))
-    {
-        iocp_win32error(PyExc_Exception, "Could not register file (%s)");
-        return NULL;
-    }
-    return Py_BuildValue("n", hFile);
-}
-
 PyObject * CompletionPort_post(CompletionPort *self, PyObject *args)
 {
     Overlapped *ov;
@@ -404,6 +392,74 @@ PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args)
     return Py_BuildValue("(OnlO)", id, tag, bytes, data); 
 }
 
+PyObject * CompletionPort_createFile(CompletionPort *self, PyObject *args)
+{
+    PyObject *objMode;
+    char *mode, *path;
+    DWORD access, creation, flags;
+    HANDLE hFile;
+    if(!PyArg_ParseTuple(args, "sO", &path, &objMode))
+        return NULL;
+    if(objMode == Py_None)
+    {
+        mode = 0;
+    }
+    else if(PyString_Check(objMode))
+    {
+        mode = PyString_AsString(objMode);
+    }
+    else
+    {
+        PyErr_SetString(PyExc_TypeError, "Mode should be a string or None");
+        return NULL;
+    }
+ 
+    if(strcmpi("w", mode) == 0)
+    {
+        access = GENERIC_WRITE;
+        creation = CREATE_ALWAYS;
+    }
+    else if(strcmpi("a", mode) == 0)
+    {
+        access = FILE_APPEND_DATA;
+        creation = OPEN_ALWAYS;
+    }
+    else if(strcmpi("r+", mode) == 0)
+    {
+        access = GENERIC_READ | GENERIC_WRITE;
+        creation = OPEN_EXISTING;
+    }
+    else if(strcmpi("w+", mode) == 0)
+    {
+        access = GENERIC_READ | GENERIC_WRITE;
+        creation =  CREATE_ALWAYS;
+    }
+    else if(strcmpi("a+", mode) == 0)
+    {
+        access = GENERIC_READ | GENERIC_WRITE;
+        creation = OPEN_ALWAYS;
+    }
+    else
+    {
+        access = GENERIC_READ;
+        creation = OPEN_EXISTING;
+    }
+    flags = FILE_FLAG_OVERLAPPED | FILE_ATTRIBUTE_NORMAL;
+    hFile = CreateFileA(path, access, 0, NULL, creation, flags, NULL);
+    if(hFile == INVALID_HANDLE_VALUE)
+    {
+        iocp_win32error(PyExc_Exception, "Could not open or create file (%s)");
+        return NULL;
+    }
+    else if(!CreateIoCompletionPort((HANDLE)hFile, self->hPort, (ULONG_PTR)hFile, 0))
+    {
+        iocp_win32error(PyExc_Exception, "Could not register file (%s)");
+        CloseHandle(hFile);
+        return NULL;
+    }
+    return Py_BuildValue("n", hFile);
+}
+
 PyObject * CompletionPort_createPipe(CompletionPort *self, PyObject *args)
 {
     HANDLE hRead, hWrite;
@@ -426,6 +482,19 @@ PyObject * CompletionPort_createPipe(CompletionPort *self, PyObject *args)
         return NULL;
     }
     return Py_BuildValue("nn", hRead, hWrite);
+}
+
+PyObject * CompletionPort_closeFile(CompletionPort *self, PyObject *args)
+{
+    HANDLE hFile;
+    if(!PyArg_ParseTuple(args, "n", &hFile))
+        return NULL;
+    if(!CloseHandle(hFile))
+    {
+        iocp_win32error(PyExc_Exception, "Could not close file handle (%s)");
+        return NULL;
+    }
+    Py_RETURN_NONE;
 }
 
 PyObject * CompletionPort_beginRead(CompletionPort *self, PyObject *args)

@@ -23,14 +23,12 @@ import os
 import threading
 import socket
 import logging
-from ctypes import WinError, cast, byref, POINTER, c_void_p, c_uint32, sizeof, create_string_buffer
 from spark.async import Future, Delegate
 from spark.async.aio import Reactor
 try:
     from spark.async import _iocp as iocp
 except ImportError:
     from spark.async import iocp
-from spark.async import win32
 
 __all__ = ["CompletionPortReactor"]
 
@@ -60,7 +58,7 @@ class CompletionPortReactor(Reactor):
     
     def open(self, file, mode=None):
         """ Open a file that uses the reactor to do asynchronous I/O. """
-        return OverlappedFile.open(self, file, mode)
+        return OverlappedFile(self, self.cp.createFile(file, mode))
     
     def pipe(self):
         """ Create a pipe that uses the reactor to do asynchronous I/O. """
@@ -171,20 +169,6 @@ class CompletionPortReactor(Reactor):
             remoteAddr = _sockaddr_in_to_tuple(sockaddr)
             cont.completed((conn, remoteAddr))
 
-def _tuple_to_sockaddr_in(family, t):
-    sockaddr = win32.sockaddr_in()
-    sockaddr.sin_family = family
-    sockaddr.sin_port = socket.htons(t[1])
-    for i, c in enumerate(socket.inet_aton(t[0])):
-        sockaddr.sin_addr[i] = ord(c)
-    return sockaddr
-
-def _sockaddr_in_to_tuple(sockaddr):
-    port = socket.ntohs(sockaddr.sin_port)
-    packed = "".join(chr(v) for v in sockaddr.sin_addr)
-    address = socket.inet_ntoa(packed)
-    return address, port
-
 class OverlappedFile(object):
     """ File-like object that uses a reactor to perform asynchronous I/O. """
     def __init__(self, reactor, handle):
@@ -194,31 +178,6 @@ class OverlappedFile(object):
     @property
     def fileno(self):
         return self.handle
-    
-    @classmethod
-    def open(cls, reactor, file, mode=None):
-        if mode == "w":
-            access = win32.GENERIC_WRITE
-            creation = win32.CREATE_ALWAYS
-        elif mode == "a":
-            access = win32.FILE_APPEND_DATA
-            creation = win32.OPEN_ALWAYS
-        elif mode == "r+":
-            access = win32.GENERIC_READ | win32.GENERIC_WRITE
-            creation = win32.OPEN_EXISTING
-        elif mode == "w+":
-            access = win32.GENERIC_READ | win32.GENERIC_WRITE
-            creation =  win32.CREATE_ALWAYS
-        elif mode == "a+":
-            access = win32.GENERIC_READ | win32.GENERIC_WRITE
-            creation = win32.OPEN_ALWAYS
-        else:
-            access = win32.GENERIC_READ
-            creation = win32.OPEN_EXISTING
-        flags = win32.FILE_FLAG_OVERLAPPED | win32.FILE_ATTRIBUTE_NORMAL
-        handle = win32.CreateFile(file, access, 0, None, creation, flags, None)
-        reactor.cp.register(handle)
-        return cls(reactor, handle)
     
     def beginRead(self, size, position=0):
         cont = Future()
@@ -238,7 +197,7 @@ class OverlappedFile(object):
     
     def close(self):
         if self.handle:
-            win32.CloseHandle(self.handle)
+            self.reactor.cp.closeFile(self.handle)
             self.handle = None
     
     def __enter__(self):
@@ -255,7 +214,6 @@ class OverlappedSocket(object):
         self.type = type
         self.proto = proto
         self.socket = socket.socket(self.family, self.type, self.proto)
-        reactor.cp.register(self.socket.fileno())
     
     @property
     def fileno(self):
