@@ -10,9 +10,6 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 
 PyMODINIT_FUNC init_iocp(void);
 void iocp_win32error(PyTypeObject *excType, const char *format);
-PyObject *iocp_createPipe(PyObject *self, PyObject *args);
-PyObject *iocp_beginRead(PyObject *self, PyObject *args);
-PyObject *iocp_beginWrite(PyObject *self, PyObject *args);
 BOOL iocp_createAsyncPipe(PHANDLE hRead, PHANDLE hWrite);
 
 typedef struct
@@ -48,8 +45,10 @@ PyObject * CompletionPort_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 int CompletionPort_init(CompletionPort *self, PyObject *args, PyObject *kwds);
 PyObject * CompletionPort_close(CompletionPort *self, PyObject *args);
 PyObject * CompletionPort_register(CompletionPort *self, PyObject *args);
-PyObject * CompletionPort_memorize(CompletionPort *self, PyObject *args);
 PyObject * CompletionPort_post(CompletionPort *self, PyObject *args);
 PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args);
+PyObject * CompletionPort_createPipe(CompletionPort *self, PyObject *args);
+PyObject * CompletionPort_beginRead(CompletionPort *self, PyObject *args);
+PyObject * CompletionPort_beginWrite(CompletionPort *self, PyObject *args);
 
 #endif

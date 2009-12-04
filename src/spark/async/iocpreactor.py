@@ -64,7 +64,7 @@ class CompletionPortReactor(Reactor):
     
     def pipe(self):
         """ Create a pipe that uses the reactor to do asynchronous I/O. """
-        readHandle, writeHandle = iocp.createPipe()
+        readHandle, writeHandle = self.cp.createPipe()
         return (OverlappedFile(self, readHandle), OverlappedFile(self, writeHandle))
     
     def send(self, fun, *args, **kwargs):
@@ -222,12 +222,12 @@ class OverlappedFile(object):
     
     def beginRead(self, size, position=0):
         cont = Future()
-        iocp.beginRead(self.reactor.cp, OP_READ, self.handle, size, position, cont)
+        self.reactor.cp.beginRead(OP_READ, self.handle, size, position, cont)
         return cont
     
     def beginWrite(self, data, position=0):
         cont = Future()
-        iocp.beginWrite(self.reactor.cp, OP_WRITE, self.handle, data, position, cont)
+        self.reactor.cp.beginWrite(OP_WRITE, self.handle, data, position, cont)
         return cont
     
     def read(self, size, position=0):
@@ -268,34 +268,13 @@ class OverlappedSocket(object):
         return self.socket.listen(backlog)
     
     def beginAccept(self):
-        if self.family != socket.AF_INET:
-            raise NotImplementedError("Only IPv4 is supported for now")
         cont = Future()
-        conn = OverlappedSocket(self.family, self.type, self.proto)
-        addrpair = (win32.sockaddr_in * 2)()
-        addrpair[0] = _tuple_to_sockaddr_in(self.family, self.socket.getsockname())
-        addrpair[1] = _tuple_to_sockaddr_in(self.family, self.conn.getsockname())
-        over = iocp.Overlapped(OP_ACCEPT, addrpair, conn, cont)
-        self.reactor.cp.memorize(over)
-        ret = win32.AcceptEx(self.fileno, conn.fileno, byref(addrpair),
-            0, sizeof(addrpair[0]), sizeof(addrpair[1]), None, over.address())
-        if not ret:
-            over.free()
-            raise WinError(error)
+        self.reactor.cp.beginAccept(OP_ACCEPT, self.fileno, cont)
         return cont
     
     def beginConnect(self, address):
-        if self.family != socket.AF_INET:
-            raise NotImplementedError("Only IPv4 is supported for now")
         cont = Future()
-        sockaddr = _tuple_to_sockaddr_in(self.family, address)
-        over = iocp.Overlapped(OP_CONNECT, sockaddr, self, cont)
-        self.reactor.cp.memorize(over)
-        ret = win32.ConnectEx(self.fileno, byref(sockaddr), sizeof(sockaddr),
-            None, 0, None, over.address())
-        if not ret:
-            over.free()
-            raise WinError(error)
+        self.reactor.cp.beginAccept(OP_CONNECT, self.fileno, address, cont)
         return cont
     
     def beginRead(self, size):

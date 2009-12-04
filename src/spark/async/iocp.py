@@ -20,35 +20,13 @@
 
 import sys
 import os
+import socket
 import threading
 import logging
 from ctypes import WinError, cast, byref, POINTER, c_void_p, c_uint32, sizeof, create_string_buffer
 from spark.async import win32
 
-__all__ = ["CompletionPort", "Overlapped", "beginRead", "beginWrite"]
-
-def beginRead(cp, op, handle, size, position, cont):
-    buffer = create_string_buffer(size)
-    over = Overlapped(op, buffer, cont)
-    over.setOffset(position)
-    cp.memorize(over)
-    ret = win32.ReadFile(handle, buffer, size, None, over.address())
-    if not ret:
-        error = win32.GetLastError()
-        if error != win32.ERROR_IO_PENDING:
-            over.free()
-            raise WinError(error)
-
-def beginWrite(cp, op, handle, data, position, cont):
-    over = Overlapped(op, data, cont)
-    over.setOffset(position)
-    cp.memorize(over)
-    ret = win32.WriteFile(handle, data, len(data), None, over.address())
-    if not ret:
-        error = win32.GetLastError()
-        if error != win32.ERROR_IO_PENDING:
-            over.free()
-            raise WinError(error)
+__all__ = ["CompletionPort"]
 
 class Overlapped(object):
     """ Wrapper for Windows's OVERLAPPED structure. """
@@ -122,3 +100,32 @@ class CompletionPort(object):
         ov = self.recall(id)
         ov.free()
         return ov.id, tag.value, bytes.value, ov.data
+   
+    def beginRead(self, op, handle, size, position, cont):
+        buffer = create_string_buffer(size)
+        over = Overlapped(op, buffer, cont)
+        over.setOffset(position)
+        self.memorize(over)
+        ret = win32.ReadFile(handle, buffer, size, None, over.address())
+        if not ret:
+            error = win32.GetLastError()
+            if error != win32.ERROR_IO_PENDING:
+                over.free()
+                raise WinError(error)
+
+    def beginWrite(self, op, handle, data, position, cont):
+        over = Overlapped(op, data, cont)
+        over.setOffset(position)
+        self.memorize(over)
+        ret = win32.WriteFile(handle, data, len(data), None, over.address())
+        if not ret:
+            error = win32.GetLastError()
+            if error != win32.ERROR_IO_PENDING:
+                over.free()
+                raise WinError(error)
+    
+    def beginAccept(self, op, handle, cont):
+        raise NotImplementedError()
+    
+    def beginConnect(self, op, handle, address, cont):
+        raise NotImplementedError()
