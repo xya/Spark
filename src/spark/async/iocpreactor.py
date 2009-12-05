@@ -23,6 +23,7 @@ import os
 import threading
 import socket
 import logging
+from ctypes import WinError
 from spark.async import Future, Delegate
 from spark.async.aio import Reactor
 try:
@@ -120,14 +121,14 @@ class CompletionPortReactor(Reactor):
         try:
             while True:
                 self.logger.log(LOG_VERBOSE, "Waiting for GetQueuedCompletionStatus()")
-                id, tag, bytes, data = self.cp.wait()
+                id, tag, error, bytes, data = self.cp.wait()
                 self.logger.log(LOG_VERBOSE, "Woke up from GetQueuedCompletionStatus()")
                 if len(data) == 0:
                     break
                 elif data[0] == OP_INVOKE:
                     self.handleCallback(id, *data[1:])
                 else:
-                    self.handleIOCompletion(id, tag, bytes, data)
+                    self.handleIOCompletion(id, tag, error, bytes, data)
         finally:
             self.cleanup()
     
@@ -152,14 +153,22 @@ class CompletionPortReactor(Reactor):
         else:
             cont.run(func, *args, **kwargs)
     
-    def handleIOCompletion(self, id, tag, bytes, data):
+    def handleIOCompletion(self, id, tag, error, bytes, data):
         op = data[0]
         if op == OP_READ:
             op, buffer, cont = data
-            cont.completed(buffer[0:bytes])
+            if error == iocp.ERROR_SUCCESS:
+                cont.completed(buffer[0:bytes])
+            elif error == iocp.ERROR_BROKEN_PIPE:
+                cont.completed('')
+            else:
+                cont.failed(WinError(error))
         elif op == OP_WRITE:
             op, buffer, cont = data
-            cont.completed()
+            if error == iocp.ERROR_SUCCESS:
+                cont.completed()
+            else:
+                cont.failed(WinError(error))
         elif op == OP_ACCEPT:
             op, addrpair, conn, cont = data
             remoteAddr = _sockaddr_in_to_tuple(addrpair[1])

@@ -81,7 +81,7 @@ static PyTypeObject CompletionPortType =
 
 PyMODINIT_FUNC init_iocp(void)
 {
-    PyObject *m;
+    PyObject *m, *err;
 
     if(PyType_Ready(&CompletionPortType) < 0)
         return;
@@ -91,6 +91,14 @@ PyMODINIT_FUNC init_iocp(void)
 
     Py_INCREF(&CompletionPortType);
     PyModule_AddObject(m, "CompletionPort", (PyObject *)&CompletionPortType);
+
+    err = PyLong_FromLong(ERROR_SUCCESS);
+    if(err)
+        PyModule_AddObject(m, "ERROR_SUCCESS", err);
+
+    err = PyLong_FromLong(ERROR_BROKEN_PIPE);
+    if(err)
+        PyModule_AddObject(m, "ERROR_BROKEN_PIPE", err);
 }
 
 BOOL iocp_createAsyncPipe(PHANDLE hRead, PHANDLE hWrite)
@@ -226,11 +234,11 @@ PyObject * CompletionPort_post(CompletionPort *self, PyObject *args)
 
 PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args)
 {
-    BOOL success;
-    DWORD bytes = 0;
+    BOOL success = FALSE;
+    DWORD bytes = 0, error = ERROR_SUCCESS;
     ULONG_PTR tag = 0;
     IOCPOverlapped *ov = NULL;
-    PyObject *result;
+    PyObject *result = NULL;
 
     if(!PyArg_ParseTuple(args, ""))
         return NULL;
@@ -239,12 +247,21 @@ PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args)
     Py_END_ALLOW_THREADS
     if(!success)
     {
-        iocp_win32error(PyExc_Exception, 
-            "Waiting for an operation's completion failed (%s)");
-        return NULL;
+        if(ov == NULL)
+        {
+            // Waiting for the completion of an operation failed
+            iocp_win32error(PyExc_Exception, 
+                "Waiting for an operation's completion failed (%s)");
+            return NULL;
+        }
+        else
+        {
+            // The I/O operation itself failed
+            error = GetLastError();
+        }
     }
 
-    result = Py_BuildValue("(nnlO)", ov->id, tag, bytes, ov->data);
+    result = Py_BuildValue("(nnllO)", ov->id, tag, error, bytes, ov->data);
     Py_DECREF(ov->data); // INCREF was done in beginRead/beginWrite/post to keep it alive
     free(ov);
     return result;

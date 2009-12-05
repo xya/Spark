@@ -26,7 +26,10 @@ import logging
 from ctypes import WinError, cast, byref, POINTER, c_void_p, c_uint32, sizeof, create_string_buffer
 from spark.async import win32
 
-__all__ = ["CompletionPort"]
+__all__ = ["CompletionPort", "ERROR_SUCCESS", "ERROR_BROKEN_PIPE"]
+
+ERROR_SUCCESS = 0
+ERROR_BROKEN_PIPE = 109
 
 def _tuple_to_sockaddr_in(family, t):
     sockaddr = win32.sockaddr_in()
@@ -108,12 +111,21 @@ class CompletionPort(object):
         bytes = c_uint32()
         tag = c_void_p(0)
         lpOver = cast(0, win32.LP_OVERLAPPED)
-        win32.GetQueuedCompletionStatus(self.handle,
+        ret = win32.GetQueuedCompletionStatus(self.handle,
             byref(bytes), byref(tag), byref(lpOver), -1)
+        if ret == 0:
+            if lpOver.value is None:
+                # Waiting for the completion of an operation failed
+                raise WinError()
+            else:
+                # The I/O operation itself failed
+                error = win32.GetLastError()
+        else:
+            error = ERROR_SUCCESS
         id = lpOver.contents.UserData
         ov = self.recall(id)
         ov.free()
-        return ov.id, tag.value, bytes.value, ov.data
+        return ov.id, tag.value, error, bytes.value, ov.data
     
     def createFile(self, path, mode=None):
         if mode == "w":

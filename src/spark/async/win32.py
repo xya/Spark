@@ -105,7 +105,7 @@ PostQueuedCompletionStatus.restype = _errorIfNull
 GetQueuedCompletionStatus = kernel32.GetQueuedCompletionStatus
 GetQueuedCompletionStatus.argtypes = [c_void_p, POINTER(c_uint32),
     POINTER(c_void_p), POINTER(LP_OVERLAPPED), c_uint32]
-GetQueuedCompletionStatus.restype = _errorIfNull
+GetQueuedCompletionStatus.restype = c_uint32
 
 
 # BOOL WINAPI CloseHandle(
