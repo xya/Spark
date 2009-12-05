@@ -31,7 +31,7 @@ from spark.messaging.common import AsyncMessenger, MessageDelivery
 from spark.messaging.protocol import negociateProtocol
 from spark.messaging.messages import Request, Response, Notification
 
-__all__ = ["Service", "Transport", "TcpTransport", "MessagingSession"]
+__all__ = ["Service", "Transport", "TcpTransport", "PipeTransport", "MessagingSession"]
 
 class Transport(object):
     """
@@ -168,6 +168,61 @@ class TcpTransport(Transport):
         
         if wasDisconnected:
             self.onDisconnected()
+
+class PipeTransport(Transport):
+    """
+    Transport which use a pipe for communications, intended for testing.
+    
+    This class uses an asynchronous execution model. The reactor should be used
+    for all operations (I/O and non-I/O), so that the session runs on a single thread.
+    """
+    def __init__(self, reactor, pipe, name=None):
+        super(PipeTransport, self).__init__()
+        self.logger = logging.getLogger(name)
+        self.reactor = reactor
+        self.pipe = pipe
+        self.connState = Transport.DISCONNECTED
+    
+    def connect(self, address):
+        """ Try to establish a connection with a remote peer at the specified address. """
+        return self.reactor.send(self._connectRequest, True)
+    
+    def listen(self, address):
+        """ Listen on the interface with the specified addres for a connection. """
+        return self.reactor.send(self._connectRequest, False)
+    
+    def disconnect(self):
+        """ Close an established connection. """
+        return self.reactor.send(self._closeConnection)
+    
+    @property
+    def connection(self):
+        """ If a connection has been established, file-like object which can be used to communicate."""
+        if self.connState == Transport.CONNECTED:
+            return self.pipe
+        else:
+            return None
+    
+    def _connectRequest(self, initiating):
+        if (self.connState == Transport.DISCONNECTED) and self.pipe is not None:
+            self.connState = Transport.CONNECTED
+            self.onConnected(initiating)
+        else:
+            raise Exception("Invalid state")
+    
+    def _closeConnection(self):
+        """ If there is an active connection, close it. """
+        if self.connState == Transport.CONNECTED:
+            self.logger.info("Disconnecting pipe")
+            try:
+                self.pipe.close()
+            except Exception:
+                self.logger.exception("pipe.close() failed")
+            self.pipe = None
+            self.connState = Transport.DISCONNECTED
+            self.onDisconnected()
+        else:
+            wasDisconnected = False
 
 def toCamelCase(tag):
     """ Convert the tag to camel case (e.g. "create-transfer" becomes "createTransfer"). """

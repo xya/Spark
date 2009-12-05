@@ -25,9 +25,8 @@ import functools
 import time
 from spark.async import Future, coroutine
 from spark.messaging.messages import *
-from spark.messaging import TcpTransport, MessagingSession, Service
+from spark.messaging import TcpTransport, PipeTransport, MessagingSession, Service
 from spark.fileshare import FileShare
-from spark.tests.AioTest import PipeTransport, PipeWrapper
 from spark.tests.common import ReactorTestBase, run_tests
 
 BIND_ADDRESS = "127.0.0.1"
@@ -77,10 +76,7 @@ class BasicIntegrationTest(ReactorTestBase):
     
     @coroutine
     def beginTestPipeSession(self, rea):
-        r1, w1 = rea.pipe()
-        r2, w2 = rea.pipe()
-        p1 = PipeWrapper(r1, w2)
-        p2 = PipeWrapper(r2, w1)
+        p1, p2 = rea.pipes()
         clientTransport = PipeTransport(rea, p1, "client")
         serverTransport = PipeTransport(rea, p2, "server")
         clientSession = MessagingSession(clientTransport, "client")

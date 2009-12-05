@@ -22,6 +22,7 @@ from __future__ import print_function
 import traceback
 import sys
 import threading
+import logging
 from spark.async import *
 from spark.messaging.protocol import messageReader, messageWriter
 from spark.messaging.messages import *
@@ -91,8 +92,8 @@ class MessageDelivery(object):
             for transID, future in self.pendingRequests.iteritems():
                 try:
                     future.cancel()
-                except:
-                    traceback.print_exc()
+                except Exception:
+                    logging.exception("Error when canceling a request")
             self.nextID = 0
             self.pendingRequests = {}
     

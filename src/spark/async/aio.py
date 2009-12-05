@@ -52,6 +52,12 @@ class Reactor(object):
         """ Create a pipe that uses the reactor to do asynchronous I/O. """
         raise NotImplementedError()
     
+    def pipes(self):
+        """ Create two connected, bidirectionnal pipes. """
+        r1, w1 = self.pipe()
+        r2, w2 = self.pipe()
+        return PipeWrapper(r1, w2), PipeWrapper(r2, w1)
+    
     def send(self, fun, *args, **kwargs):
         """
         Invoke a callable on the reactor's thread and return its result through a future.
@@ -90,6 +96,31 @@ class Reactor(object):
     def create(cls):
         """ Create a reactor of the default type. """
         return cls.default()()
+
+class PipeWrapper(object):
+    """
+    File-like socket encapsulating both the reading end of a pipe and
+    the writing end of another pipe, much like a socket.
+    """
+    def __init__(self, r, w):
+        self.r = r
+        self.w = w
+    
+    def beginRead(self, size):
+        return self.r.beginRead(size)
+    
+    def beginWrite(self, data):
+        return self.w.beginWrite(data)
+    
+    def read(self, size):
+        return self.r.read(size)
+    
+    def write(self, data):
+        return self.w.write(data)
+    
+    def close(self):
+        self.r.close()
+        self.w.close()
 
 # try to import known types of reactors
 try:
