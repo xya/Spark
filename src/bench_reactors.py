@@ -32,24 +32,17 @@ TestFile = "I'm a lagger.mp3"
 def run_bench():
     sourcePath = os.path.join(TestDir, TestFile)
     destPath = sourcePath + ".1"
-    lock = threading.RLock()
     reactor = Reactor.create()
-    reactor.launch_thread()
-    try:
-        r, w = reactor.pipe()
-        started = time.time()
-        fSend = sender(sourcePath, reactor, w, lock)
-        fReceive = receiver(destPath, reactor, r, lock)
-        sent = fSend.result
-        w.close()
-        received = fReceive.result
-        duration = time.time() - started
-        print "Transfered in %f seconds" % duration
-    finally:
-        reactor.close()
+    r, w = reactor.pipe()
+    fSend = sender(sourcePath, reactor, w)
+    fReceive = receiver(destPath, reactor, r)
+    started = time.time()
+    reactor.run()
+    duration = time.time() - started
+    print "Transfered in %f seconds" % duration
 
 @coroutine
-def sender(sourcePath, reactor, writer, lock):
+def sender(sourcePath, reactor, writer):
     blockID = 0
     blockSent = 0
     messenger = messageWriter(writer)
@@ -62,10 +55,11 @@ def sender(sourcePath, reactor, writer, lock):
             yield messenger.write(block)
             blockID += 1
             blockSent += 1
+    writer.close()
     yield blockSent
 
 @coroutine
-def receiver(destPath, reactor, reader, lock):
+def receiver(destPath, reactor, reader):
     messenger = messageReader(reader)
     blockReceived = 0
     with reactor.open(destPath, 'w') as writer:
@@ -75,6 +69,8 @@ def receiver(destPath, reactor, reader, lock):
                 break
             yield writer.beginWrite(block.blockData)
             blockReceived += 1
+    reader.close()
+    reactor.close()
     yield blockReceived
 
 import hotshot
@@ -84,7 +80,6 @@ import timeit
 if len(sys.argv) != 2:
     print 'usage: python bench_reactors.py (hotshot|timeit)'    
 else:
-    #logging.basicConfig(level=10)
     if sys.argv[1] == 'hotshot':
         prof = hotshot.Profile('reactor_bench')
         prof.runcall(run_bench)
@@ -100,5 +95,5 @@ else:
         times = t.repeat(3, 1)
         print min(times), times
     else:
-        logging.basicConfig(level=10)
+        #logging.basicConfig(level=10)
         run_bench()
