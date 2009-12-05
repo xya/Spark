@@ -96,6 +96,10 @@ PyMODINIT_FUNC init_iocp(void)
     if(err)
         PyModule_AddObject(m, "ERROR_SUCCESS", err);
 
+    err = PyLong_FromLong(ERROR_HANDLE_EOF);
+    if(err)
+        PyModule_AddObject(m, "ERROR_HANDLE_EOF", err);
+
     err = PyLong_FromLong(ERROR_BROKEN_PIPE);
     if(err)
         PyModule_AddObject(m, "ERROR_BROKEN_PIPE", err);
@@ -376,7 +380,7 @@ PyObject * CompletionPort_beginRead(CompletionPort *self, PyObject *args)
 {
     PyObject *cont, *data, *buffer;
     IOCPOverlapped *over;
-    DWORD opcode, size, error;
+    DWORD opcode, size, error = ERROR_SUCCESS;
     Py_ssize_t hFile, position, bufferSize;
     void *pBuffer = 0;
 
@@ -412,23 +416,25 @@ PyObject * CompletionPort_beginRead(CompletionPort *self, PyObject *args)
     if(!ReadFile((HANDLE)hFile, pBuffer, size, NULL, (LPOVERLAPPED)over))
     {
         error = GetLastError();
-        if(error != ERROR_IO_PENDING)
+        if(error == ERROR_IO_PENDING)
+        {
+            // don't decrement data's refcount, so it stays alive until wait() returns
+            error = ERROR_SUCCESS;
+        }
+        else
         {
             Py_DECREF(over->data);
             free(over);
-            iocp_win32error(PyExc_Exception, "Reading the file failed (%s)");
-            return NULL;
         }
     }
-    // don't decrement data's refcount, so it stays alive until wait() returns
-    Py_RETURN_NONE;
+    return PyLong_FromLong(error);
 }
 
 PyObject * CompletionPort_beginWrite(CompletionPort *self, PyObject *args)
 {
     PyObject *cont, *data, *buffer;
     IOCPOverlapped *over;
-    DWORD opcode, error;
+    DWORD opcode, error = ERROR_SUCCESS;
     Py_ssize_t hFile, position, bufferSize;
     void *pBuffer = 0;
 
@@ -453,14 +459,16 @@ PyObject * CompletionPort_beginWrite(CompletionPort *self, PyObject *args)
     if(!WriteFile((HANDLE)hFile, pBuffer, (DWORD)bufferSize, NULL, (LPOVERLAPPED)over))
     {
         error = GetLastError();
-        if(error != ERROR_IO_PENDING)
+        if(error == ERROR_IO_PENDING)
+        {
+            // don't decrement data's refcount, so it stays alive until wait() returns
+            error = ERROR_SUCCESS;
+        }
+        else
         {
             Py_DECREF(over->data);
             free(over);
-            iocp_win32error(PyExc_Exception, "Writing the file failed (%s)");
-            return NULL;
         }
     }
-    // don't decrement data's refcount, so it stays alive until wait() returns
-    Py_RETURN_NONE;
+    return PyLong_FromLong(error);
 }

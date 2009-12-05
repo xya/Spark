@@ -26,9 +26,10 @@ import logging
 from ctypes import WinError, cast, byref, POINTER, c_void_p, c_uint32, sizeof, create_string_buffer
 from spark.async import win32
 
-__all__ = ["CompletionPort", "ERROR_SUCCESS", "ERROR_BROKEN_PIPE"]
+__all__ = ["CompletionPort", "ERROR_SUCCESS", "ERROR_HANDLE_EOF", "ERROR_BROKEN_PIPE"]
 
 ERROR_SUCCESS = 0
+ERROR_HANDLE_EOF = 38
 ERROR_BROKEN_PIPE = 109
 
 def _tuple_to_sockaddr_in(family, t):

@@ -159,7 +159,7 @@ class CompletionPortReactor(Reactor):
             op, buffer, cont = data
             if error == iocp.ERROR_SUCCESS:
                 cont.completed(buffer[0:bytes])
-            elif error == iocp.ERROR_BROKEN_PIPE:
+            elif (error == iocp.ERROR_BROKEN_PIPE) or (error == iocp.ERROR_HANDLE_EOF):
                 cont.completed('')
             else:
                 cont.failed(WinError(error))
@@ -190,12 +190,18 @@ class OverlappedFile(object):
     
     def beginRead(self, size, position=0):
         cont = Future()
-        self.reactor.cp.beginRead(OP_READ, self.handle, size, position, cont)
+        error = self.reactor.cp.beginRead(OP_READ, self.handle, size, position, cont)
+        if (error == iocp.ERROR_BROKEN_PIPE) or (error == iocp.ERROR_HANDLE_EOF):
+            cont.completed('')
+        elif error != iocp.ERROR_SUCCESS:
+            cont.failed(WinError(error))
         return cont
     
     def beginWrite(self, data, position=0):
         cont = Future()
-        self.reactor.cp.beginWrite(OP_WRITE, self.handle, data, position, cont)
+        error = self.reactor.cp.beginWrite(OP_WRITE, self.handle, data, position, cont)
+        if error != iocp.ERROR_SUCCESS:
+            cont.failed(WinError(error))
         return cont
     
     def read(self, size, position=0):
