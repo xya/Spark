@@ -26,7 +26,8 @@ import logging
 from spark.async import coroutine, Reactor
 from spark.messaging import Block, messageReader, messageWriter
 
-TestDir = "/home/xya/Public/Spark"
+TestDir = "C:\Documents and Settings\Xya\Mes documents\Spark"
+#TestFile = "_iocp.pyd"
 TestFile = "I'm a lagger.mp3"
 
 def run_bench():
@@ -44,56 +45,41 @@ def run_bench():
 @coroutine
 def sender(sourcePath, reactor, writer):
     blockID = 0
-    blockSent = 0
+    position = 0
     messenger = messageWriter(writer)
     with reactor.open(sourcePath, 'r') as reader:
-        while True:
-            data = yield reader.beginRead(4096)
-            if len(data) == 0:
-                break
-            block = Block(0, blockID, data)
-            yield messenger.write(block)
-            blockID += 1
-            blockSent += 1
+        try:
+            while True:
+                data = yield reader.beginRead(4096, position)
+                read = len(data)
+                if read == 0:
+                    break
+                else:
+                    position += read
+                block = Block(0, blockID, data)
+                yield messenger.write(block)
+                blockID += 1
+        except Exception:
+            logging.exception("Error while sending file")
     writer.close()
     yield blockSent
 
 @coroutine
 def receiver(destPath, reactor, reader):
     messenger = messageReader(reader)
-    blockReceived = 0
+    position = 0
     with reactor.open(destPath, 'w') as writer:
-        while True:
-            block = yield messenger.read()
-            if block is None:
-                break
-            yield writer.beginWrite(block.blockData)
-            blockReceived += 1
+        try:
+            while True:
+                block = yield messenger.read()
+                if block is None:
+                    break
+                yield writer.beginWrite(block.blockData, position)
+                position += len(block.blockData)
+        except Exception:
+            logging.exception("Error while sending file")
     reader.close()
     reactor.close()
     yield blockReceived
 
-import hotshot
-import hotshot.stats
-import timeit
-
-if len(sys.argv) != 2:
-    print 'usage: python bench_reactors.py (hotshot|timeit)'    
-else:
-    if sys.argv[1] == 'hotshot':
-        prof = hotshot.Profile('reactor_bench')
-        prof.runcall(run_bench)
-        prof.close()
-        s = hotshot.stats.load('reactor_bench')
-        s.strip_dirs()
-        s.sort_stats('time').print_stats(20)
-        s.sort_stats('cum').print_stats(20)
-        s.sort_stats('call').print_stats(20)
-        
-    elif sys.argv[1] == 'timeit':
-        t = timeit.Timer('run_bench()', 'from __main__ import run_bench')
-        times = t.repeat(3, 1)
-        print min(times), times
-    else:
-        #logging.basicConfig(level=10)
-        run_bench()
+run_bench()

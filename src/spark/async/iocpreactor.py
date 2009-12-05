@@ -121,14 +121,14 @@ class CompletionPortReactor(Reactor):
         try:
             while True:
                 self.logger.log(LOG_VERBOSE, "Waiting for GetQueuedCompletionStatus()")
-                id, tag, error, bytes, data = self.cp.wait()
+                tag, error, bytes, data = self.cp.wait()
                 self.logger.log(LOG_VERBOSE, "Woke up from GetQueuedCompletionStatus()")
                 if len(data) == 0:
                     break
                 elif data[0] == OP_INVOKE:
-                    self.handleCallback(id, *data[1:])
+                    self.handleCallback(*data[1:])
                 else:
-                    self.handleIOCompletion(id, tag, error, bytes, data)
+                    self.handleIOCompletion(tag, error, bytes, data)
         finally:
             self.cleanup()
     
@@ -143,17 +143,17 @@ class CompletionPortReactor(Reactor):
         except Exception:
             self.logger.exception("onClosed() failed")
     
-    def handleCallback(self, id, cont, func, args, kwargs):
-        self.logger.log(LOG_VERBOSE, "Invoking non-I/O callback %s" % hex(id))
+    def handleCallback(self, cont, func, args, kwargs):
+        self.logger.log(LOG_VERBOSE, "Invoking non-I/O callback")
         if cont is None:
             try:
                 func(*args, **kwargs)
             except Exception:
-                self.logger.exception("Error in non-I/O callback %s" % hex(id))
+                self.logger.exception("Error in non-I/O callback")
         else:
             cont.run(func, *args, **kwargs)
     
-    def handleIOCompletion(self, id, tag, error, bytes, data):
+    def handleIOCompletion(self, tag, error, bytes, data):
         op = data[0]
         if op == OP_READ:
             op, buffer, cont = data

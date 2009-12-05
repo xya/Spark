@@ -217,12 +217,10 @@ PyObject * CompletionPort_close(CompletionPort *self, PyObject *args)
 PyObject * CompletionPort_post(CompletionPort *self, PyObject *args)
 {
     IOCPOverlapped *ov;
-    ULONG_PTR id = (ULONG_PTR)args;
     if(!PyTuple_Check(args))
         return NULL;
     ov = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));
     ZeroMemory(&ov->ov, sizeof(OVERLAPPED));
-    ov->id = id;
     Py_INCREF(args);
     ov->data = args;
     if(!ov)
@@ -233,7 +231,7 @@ PyObject * CompletionPort_post(CompletionPort *self, PyObject *args)
     // don't decrement ov's refcount, so it stays alive until wait() returns
     PostQueuedCompletionStatus(self->hPort, 0, 
         (ULONG_PTR)INVALID_HANDLE_VALUE, (LPOVERLAPPED)ov);
-    return Py_BuildValue("n", id);
+    Py_RETURN_NONE;
 }
 
 PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args)
@@ -265,7 +263,7 @@ PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args)
         }
     }
 
-    result = Py_BuildValue("(nnllO)", ov->id, tag, error, bytes, ov->data);
+    result = Py_BuildValue("(nllO)", tag, error, bytes, ov->data);
     Py_DECREF(ov->data); // INCREF was done in beginRead/beginWrite/post to keep it alive
     free(ov);
     return result;
@@ -410,7 +408,6 @@ PyObject * CompletionPort_beginRead(CompletionPort *self, PyObject *args)
 
     over = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));
     ZeroMemory(&over->ov, sizeof(OVERLAPPED));
-    over->id = (ULONG_PTR)data;
     over->data = data;
     OVERLAPPED_setOffset(&over->ov, position);
     if(!ReadFile((HANDLE)hFile, pBuffer, size, NULL, (LPOVERLAPPED)over))
@@ -453,7 +450,6 @@ PyObject * CompletionPort_beginWrite(CompletionPort *self, PyObject *args)
     }
     over = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));
     ZeroMemory(&over->ov, sizeof(OVERLAPPED));
-    over->id = (ULONG_PTR)data;
     over->data = data;
     OVERLAPPED_setOffset(&over->ov, position);
     if(!WriteFile((HANDLE)hFile, pBuffer, (DWORD)bufferSize, NULL, (LPOVERLAPPED)over))

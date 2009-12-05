@@ -21,7 +21,6 @@ typedef struct
 typedef struct
 {
     OVERLAPPED ov;
-    ULONG_PTR id;
     PyObject *data;
 } IOCPOverlapped;
 
