@@ -21,24 +21,11 @@ typedef struct
 typedef struct
 {
     OVERLAPPED ov;
-    PyObject *id;
-    PyObject *self; // not ref-counted to avoid cycles
+    ULONG_PTR id;
     PyObject *data;
-} iocp_OVERLAPPED;
+} IOCPOverlapped;
 
-typedef struct
-{
-    PyObject_HEAD
-    iocp_OVERLAPPED body;
-} Overlapped;
-
-void Overlapped_dealloc(Overlapped* self);
-PyObject * Overlapped_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
-int Overlapped_init(Overlapped *self, PyObject *args, PyObject *kwds);
-PyObject * Overlapped_address(Overlapped *self);
-PyObject * Overlapped_setOffset(Overlapped *self, PyObject *args);
 void OVERLAPPED_setOffset(OVERLAPPED *ov, ssize_t offset);
-Overlapped * Overlapped_create(PyObject *args);
 
 void CompletionPort_dealloc(CompletionPort* self);
 PyObject * CompletionPort_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
