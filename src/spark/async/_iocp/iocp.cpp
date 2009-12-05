@@ -93,7 +93,7 @@ static PyTypeObject OverlappedType =
     "_iocp.Overlapped",                                     /*tp_name*/
     sizeof(Overlapped),                                     /*tp_basicsize*/
     0,                                                      /*tp_itemsize*/
-    0,                                                      /*tp_dealloc*/
+    (destructor)Overlapped_dealloc,                         /*tp_dealloc*/
     0,                                                      /*tp_print*/
     0,                                                      /*tp_getattr*/
     0,                                                      /*tp_setattr*/
@@ -213,7 +213,8 @@ void iocp_win32error(PyTypeObject *excType, const char *format)
 
 void Overlapped_dealloc(Overlapped* self)
 {
-    Py_CLEAR(self->body.self);
+    self->body.self = NULL;
+    printf("Freeing overlapped, data refcount will be: %i\n", self->body.data->ob_refcnt);
     Py_CLEAR(self->body.data);
     self->ob_type->tp_free((PyObject*)self);
 }
@@ -244,7 +245,6 @@ int Overlapped_init(Overlapped *self, PyObject *args, PyObject *kwds)
     self->body.id = Py_BuildValue("n", self);
     Py_XDECREF(old);
     old = self->body.self;
-    Py_INCREF(self);
     self->body.self = self;
     Py_XDECREF(old);
     old = self->body.data;
@@ -383,7 +383,7 @@ PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args)
         return NULL;
     }
 
-    ov = lpOver->self;
+    ov = (Overlapped *)lpOver->self;
     Py_INCREF(ov->body.id);
     id = ov->body.id;
     Py_INCREF(ov->body.data);

@@ -22,7 +22,7 @@ typedef struct
 {
     OVERLAPPED ov;
     PyObject *id;
-    PyObject *self;
+    PyObject *self; // not ref-counted to avoid cycles
     PyObject *data;
 } iocp_OVERLAPPED;
 
