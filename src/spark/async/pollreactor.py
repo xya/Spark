@@ -168,13 +168,16 @@ class PollReactor(Reactor):
     
     def eventLoop(self):
         try:
+            logging = self.logger.isEnabledFor(LOG_VERBOSE)
             self.poll = select.poll()
             self.queue.put(PipeReadOperation(self, self.req_r))
             self.empty_queue()
             while True:
-                self.logger.log(LOG_VERBOSE, "Waiting for poll()")
+                if logging:
+                    self.logger.log(LOG_VERBOSE, "Waiting for poll()")
                 events = self.poll.poll()
-                self.logger.log(LOG_VERBOSE, "Woke up from poll() with %s" % repr(events))
+                if logging:
+                    self.logger.log(LOG_VERBOSE, "Woke up from poll() with %s" % repr(events))
                 for fd, event in events:
                      self.perform_io(fd, event)
         except QueueClosedError:
@@ -273,7 +276,8 @@ class IOOperation(object):
         self.raise_completed()
     
     def raise_completed(self, result=None):
-        self.reactor.logger.log(LOG_VERBOSE, "Completed operation %s" % str(self))
+        if self.reactor.logger.isEnabledFor(LOG_VERBOSE):
+            self.reactor.logger.log(LOG_VERBOSE, "Completed operation %s" % str(self))
         try:
             self.cont.completed(result)
         except Exception:

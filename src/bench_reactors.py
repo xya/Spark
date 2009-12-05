@@ -19,6 +19,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 import os
+import sys
 import time
 import threading
 import logging
@@ -35,12 +36,12 @@ def run_bench():
     reactor = Reactor.create()
     reactor.launch_thread()
     try:
-        p1, p2 = reactor.pipes()
-        fSend = sender(sourcePath, reactor, p1, lock)
-        fReceive = receiver(destPath, reactor, p2, lock)
+        r, w = reactor.pipe()
         started = time.time()
+        fSend = sender(sourcePath, reactor, w, lock)
+        fReceive = receiver(destPath, reactor, r, lock)
         sent = fSend.result
-        p1.close()
+        w.close()
         received = fReceive.result
         duration = time.time() - started
         print "Transfered in %f seconds" % duration
@@ -54,7 +55,7 @@ def sender(sourcePath, reactor, writer, lock):
     messenger = messageWriter(writer)
     with reactor.open(sourcePath, 'r') as reader:
         while True:
-            data = yield reader.beginRead(1024)
+            data = yield reader.beginRead(4096)
             if len(data) == 0:
                 break
             block = Block(0, blockID, data)
@@ -76,6 +77,28 @@ def receiver(destPath, reactor, reader, lock):
             blockReceived += 1
     yield blockReceived
 
-if __name__ == '__main__':
-    logging.basicConfig(level=10)
-    run_bench()
+import hotshot
+import hotshot.stats
+import timeit
+
+if len(sys.argv) != 2:
+    print 'usage: python bench_reactors.py (hotshot|timeit)'    
+else:
+    #logging.basicConfig(level=10)
+    if sys.argv[1] == 'hotshot':
+        prof = hotshot.Profile('reactor_bench')
+        prof.runcall(run_bench)
+        prof.close()
+        s = hotshot.stats.load('reactor_bench')
+        s.strip_dirs()
+        s.sort_stats('time').print_stats(20)
+        s.sort_stats('cum').print_stats(20)
+        s.sort_stats('call').print_stats(20)
+        
+    elif sys.argv[1] == 'timeit':
+        t = timeit.Timer('run_bench()', 'from __main__ import run_bench')
+        times = t.repeat(3, 1)
+        print min(times), times
+    else:
+        logging.basicConfig(level=10)
+        run_bench()
