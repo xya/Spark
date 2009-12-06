@@ -7,7 +7,16 @@ static PyMethodDef Future_methods[] =
 {
     {"wait", Future_wait, METH_VARARGS, "Wait for the result of the operation to be available."},
     {"after", Future_after, METH_VARARGS, "Register a callable to be invoked after the operation is finished."},
+    {"completed", Future_completed, METH_VARARGS, "Indicate the operation is finished."},
     {NULL, NULL, 0, NULL}        /* Sentinel */
+};
+
+static PyGetSetDef Future_getseters[] = 
+{
+    {"pending", (getter)Future_pending_getter, NULL, "Indicate whether the task is still active or if it is complete.", NULL},
+    {"result", (getter)Future_result_getter, NULL, "Access the result of the task. If no result is available yet, \
+block until there is. May raise an exception if the task failed or was canceled.", NULL},
+    {NULL}  /* Sentinel */
 };
 
 PyTypeObject FutureType =
@@ -42,7 +51,7 @@ PyTypeObject FutureType =
     0,		                                                /* tp_iternext */
     Future_methods,                                         /* tp_methods */
     0,                                                      /* tp_members */
-    0,                                                      /* tp_getset */
+    Future_getseters,                                       /* tp_getset */
     0,                                                      /* tp_base */
     0,                                                      /* tp_dict */
     0,                                                      /* tp_descr_get */
@@ -90,26 +99,33 @@ int Future_init(Future *self, PyObject *args, PyObject *kwds)
 
 PyObject * Future_wait(Future *self, PyObject *args)
 {
+    double timeoutSec = -1.0;
+    DWORD timeoutMsec;
     DWORD waitResult;
     int state;
     PyObject *result;
+    HANDLE hEvent;
 
-     if(!PyArg_ParseTuple(args, ""))
+    if(!PyArg_ParseTuple(args, "|d", &timeoutSec))
         return NULL;
 
-    Future_get_result(self, &state, &result);
+    if(timeoutSec < 0.0)
+        timeoutMsec = INFINITE;
+    else
+        timeoutMsec = (DWORD)(timeoutSec * 1000.0);
+    Future_get_result(self, &state, &result, &hEvent);
     if(state == FUTURE_PENDING)
     {
         // the operation is not finished yet, we have to wait until it is
         Py_BEGIN_ALLOW_THREADS
-        waitResult = WaitForSingleObject(self->hEvent, INFINITE);
+        waitResult = WaitForSingleObject(hEvent, timeoutMsec);
         Py_END_ALLOW_THREADS
         if(waitResult == WAIT_FAILED)
         {
             iocp_win32error("Waiting for the result of the operation failed (%s)");
             return NULL;
         }
-        Future_get_result(self, &state, &result);
+        Future_get_result(self, &state, &result, NULL);
     }
     
     // return the result or propagate the exception the operation raised
@@ -131,21 +147,25 @@ PyObject * Future_wait(Future *self, PyObject *args)
     }
 }
 
-void Future_get_result(Future *self, int *pState, PyObject **pResult)
+void Future_get_result(Future *self, int *pState, PyObject **pResult, HANDLE *pEvent)
 {
     int state;
     PyObject *result;
+    HANDLE hEvent;
     EnterCriticalSection(&self->lock);
     state = self->state;
     result = self->result;
     // create an event to wait for the result if we haven't created one yet
-    if((state == FUTURE_PENDING) && !self->hEvent)
+    if((state == FUTURE_PENDING) && !self->hEvent && pEvent)
         self->hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    hEvent = self->hEvent;
     LeaveCriticalSection(&self->lock);
     if(pState)
         *pState = state;
     if(pResult)
         *pResult = result;
+    if(pEvent)
+        *pEvent = hEvent;
 }
 
 BOOL Future_set_result(Future *self, int state, PyObject *result)
@@ -187,4 +207,24 @@ PyObject * Future_completed(Future *self, PyObject *args)
 PyObject * Future_after(Future *self, PyObject *args)
 {
     return NULL;
+}
+
+PyObject * Future_pending_getter(Future *self, void *closure)
+{
+    int state;
+    Future_get_result(self, &state, NULL, NULL);
+    if(state == FUTURE_PENDING)
+        Py_RETURN_TRUE;
+    else
+        Py_RETURN_FALSE;
+}
+
+PyObject * Future_result_getter(Future *self, void *closure)
+{
+    PyObject *result, *args = Py_BuildValue("()");
+    if(!args)
+        return NULL;
+    result = Future_wait(self, args);
+    Py_DECREF(args);
+    return result;
 }
