@@ -8,6 +8,8 @@ typedef struct
     PyObject_HEAD
     int state;
     PyObject *result;
+    PyObject *callback;
+    PyObject *args;
     CRITICAL_SECTION lock;
     HANDLE hEvent;
 } Future;
@@ -23,7 +25,9 @@ PyObject * Future_wait(Future *self, PyObject *args);
 void Future_get_result(Future *self, int *pState, PyObject **pResult, HANDLE *pEvent);
 BOOL Future_set_result(Future *self, int state, PyObject *result);
 PyObject * Future_completed(Future *self, PyObject *args);
+PyObject * Future_failed(Future *self, PyObject *args);
 PyObject * Future_after(Future *self, PyObject *args);
+BOOL Future_callback_args(Future *self, PyObject *args, PyObject **cb, PyObject **cbargs);
 PyObject * Future_pending_getter(Future *self, void *closure);
 PyObject * Future_result_getter(Future *self, void *closure);
 

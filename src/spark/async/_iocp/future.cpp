@@ -8,6 +8,7 @@ static PyMethodDef Future_methods[] =
     {"wait", Future_wait, METH_VARARGS, "Wait for the result of the operation to be available."},
     {"after", Future_after, METH_VARARGS, "Register a callable to be invoked after the operation is finished."},
     {"completed", Future_completed, METH_VARARGS, "Indicate the operation is finished."},
+    {"failed", Future_failed, METH_VARARGS, "Indicate that the task failed, maybe because of an exception."},
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 
@@ -57,7 +58,7 @@ PyTypeObject FutureType =
     0,                                                      /* tp_descr_get */
     0,                                                      /* tp_descr_set */
     0,                                                      /* tp_dictoffset */
-    (initproc)Future_init,                                  /* tp_init */
+    0,                                                      /* tp_init */
     0,                                                      /* tp_alloc */
     Future_new,                                             /* tp_new */
 };
@@ -65,6 +66,8 @@ PyTypeObject FutureType =
 void Future_dealloc(Future* self)
 {
     Py_CLEAR(self->result);
+    Py_CLEAR(self->callback);
+    Py_CLEAR(self->args);
     DeleteCriticalSection(&self->lock);
     if(self->hEvent)
     {
@@ -79,22 +82,17 @@ PyObject * Future_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     Future *self = (Future *)type->tp_alloc(type, 0);
     if(self != NULL)
     {
-        self->state = 0;
-        self->result = NULL;
+        self->state = FUTURE_PENDING;
+        Py_INCREF(Py_None);
+        self->result = Py_None;
+        Py_INCREF(Py_None);
+        self->callback = Py_None;
+        Py_INCREF(Py_None);
+        self->args = Py_None;
         InitializeCriticalSection(&self->lock);
         self->hEvent = NULL;
     }
     return (PyObject *)self;
-}
-
-int Future_init(Future *self, PyObject *args, PyObject *kwds)
-{
-    if(!PyArg_ParseTuple(args, ""))
-        return -1;
-    self->state = FUTURE_PENDING;
-    Py_INCREF(Py_None);
-    self->result = Py_None;
-    return 0;
 }
 
 PyObject * Future_wait(Future *self, PyObject *args)
@@ -103,7 +101,7 @@ PyObject * Future_wait(Future *self, PyObject *args)
     DWORD timeoutMsec;
     DWORD waitResult;
     int state;
-    PyObject *result;
+    PyObject *result, *type, *val, *tb;
     HANDLE hEvent;
 
     if(!PyArg_ParseTuple(args, "|d", &timeoutSec))
@@ -136,8 +134,7 @@ PyObject * Future_wait(Future *self, PyObject *args)
     }
     else if(state == FUTURE_FAILED)
     {
-        Py_INCREF(result);
-        PyErr_SetObject(PyObject_Type(result), result);
+        PyErr_SetString(PyExc_Exception, "The operation failed for an unknown reason");
         return NULL;
     }
     else
@@ -170,27 +167,40 @@ void Future_get_result(Future *self, int *pState, PyObject **pResult, HANDLE *pE
 
 BOOL Future_set_result(Future *self, int state, PyObject *result)
 {
-    BOOL assigned;
+    PyObject *ret, *callback = Py_None, *args, *old;
+    BOOL success;
     EnterCriticalSection(&self->lock);
     if(self->state == FUTURE_PENDING)
     {
         self->state = state;
         Py_INCREF(result);
+        old = self->result;
         self->result = result;
+        Py_DECREF(old);
         // wake up all the threads that might be calling wait()
         if(self->hEvent)
             SetEvent(self->hEvent);
-        assigned = TRUE;
+        callback = self->callback;
+        args = self->args;
+        success = TRUE;
     }
     else
     {
         // the result has already been set
         PyErr_SetString(PyExc_Exception, "The result of the operation has already been set");
-        assigned = FALSE;
+        success = FALSE;
     }
     LeaveCriticalSection(&self->lock);
-    // TODO: call the callback
-    return assigned;
+    // call the callback if there is one
+    if(success && (callback != Py_None))
+    {
+        ret = PyObject_CallObject(callback, args);
+        if(ret)
+            Py_DECREF(ret);
+        else
+            success = FALSE;
+    }
+    return success;
 }
 
 PyObject * Future_completed(Future *self, PyObject *args)
@@ -204,9 +214,60 @@ PyObject * Future_completed(Future *self, PyObject *args)
         return NULL;
 }
 
+PyObject * Future_failed(Future *self, PyObject *args)
+{
+    PyObject *exc = Py_None;
+    if(!PyArg_ParseTuple(args, "|O", &exc))
+        return NULL;
+    if(Future_set_result(self, FUTURE_FAILED, exc))
+        Py_RETURN_NONE;
+    else
+        return NULL;
+}
+
 PyObject * Future_after(Future *self, PyObject *args)
 {
-    return NULL;
+    BOOL pending;
+    PyObject *callback, *cbargs, *old;
+    if(PySequence_Size(args) < 1)
+    {
+        PyErr_SetString(PyExc_TypeError, "Need at least one argument");
+        return NULL;
+    }
+    Future_callback_args(self, args, &callback, &cbargs);
+    EnterCriticalSection(&self->lock);
+    pending = (self->state == FUTURE_PENDING);
+    if(pending)
+    {
+        Py_INCREF(callback);
+        old = self->callback;
+        self->callback = callback;
+        Py_DECREF(old);
+        Py_INCREF(cbargs);
+        old = self->args;
+        self->args = cbargs;
+        Py_DECREF(old);
+    }
+    LeaveCriticalSection(&self->lock);
+    if(!pending)
+        PyObject_CallObject(callback, cbargs);
+    Py_DECREF(callback);
+    Py_DECREF(cbargs);
+    if(pending)
+        Py_RETURN_FALSE;
+    else
+        Py_RETURN_TRUE;
+}
+
+BOOL Future_callback_args(Future *self, PyObject *args, PyObject **cb, PyObject **cbargs)
+{
+    PyObject *arglist, *argtuple;
+    *cb = PySequence_GetItem(args, 0);
+    arglist = PySequence_List(args);
+    PySequence_SetItem(arglist, 0, self);
+    *cbargs = PySequence_Tuple(arglist);
+    Py_DECREF(arglist);
+    return TRUE;
 }
 
 PyObject * Future_pending_getter(Future *self, void *closure)
