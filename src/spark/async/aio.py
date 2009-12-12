@@ -124,15 +124,13 @@ class PipeWrapper(object):
 
 # try to import known types of reactors
 try:
-    from spark.async import pollreactor
+    import spark.async.pollreactor
 except ImportError:
     pass
-else:
-    Reactor.addType(pollreactor.PollReactor)
 
 try:
-    from spark.async import iocpreactor
+    import spark.async.iocpreactor
 except ImportError:
     pass
-else:
-    Reactor.addType(iocpreactor.CompletionPortReactor)
+
+import spark.async.threadpoolreactor

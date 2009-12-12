@@ -33,14 +33,18 @@ TestFile = "I'm a lagger.mp3"
 def run_bench():
     sourcePath = os.path.join(TestDir, TestFile)
     destPath = sourcePath + ".1"
-    reactor = Reactor.create()
+    for reactorType in Reactor.available():
+        with reactorType() as reactor:
+            run_reactor(sourcePath, destPath, reactor)
+
+def run_reactor(sourcePath, destPath, reactor):
     r, w = reactor.pipe()
     fSend = sender(sourcePath, reactor, w)
     fReceive = receiver(destPath, reactor, r)
     started = time.time()
     reactor.run()
     duration = time.time() - started
-    print "Transfered in %f seconds" % duration
+    print "[%s] Transfered in %f seconds" % (reactor.__class__.__name__, duration)
 
 @coroutine
 def sender(sourcePath, reactor, writer):
@@ -106,5 +110,5 @@ else:
         times = t.repeat(3, 1)
         print min(times), times
     else:
-        logging.basicConfig(level=10)
+        #logging.basicConfig(level=10)
         run_bench()

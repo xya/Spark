@@ -49,31 +49,18 @@ class ReactorTest(ReactorTestBase):
 
     def testAsyncRead(self):
         """ beginRead() should be able to read from a file. """
-        results = []
-        def read_complete(prev):
-            results.append(prev.result)
         with self.reactor.open(TestFile) as file:
-            f = file.beginRead(19)
-            f.after(read_complete)
-            f.wait(1.0)
-            # TODO: make it thread-safe
-            self.assertEqual(1, len(results))
-            self.assertEqual("0023 > list-files 0", results[0])
+            result = file.beginRead(19).wait(1.0)
+            self.assertEqual("0023 > list-files 0", result)
     
     def testAsyncPipe(self):
         """ beginRead() should be able to read what was written on a pipe. """
-        results = []
-        def read_complete(prev):
-            results.append(prev.result)
         r, w = self.reactor.pipe()
         try:
             f = r.beginRead(3)
-            f.after(read_complete)
             w.write("foo")
-            f.wait(1.0)
-            # TODO: make it thread-safe
-            self.assertEqual(1, len(results))
-            self.assertEqual("foo", results[0])
+            result = f.wait(1.0)
+            self.assertEqual("foo", result)
         finally:
             r.close()
             w.close()

@@ -491,7 +491,7 @@ class NonBlockingFile(object):
             flags = os.O_RDWR | os.O_CREAT | os.O_APPEND
         else:
             flags =  os.O_RDONLY
-        fd = os.open(file, flags | os.O_NONBLOCK)
+        fd = os.open(file, flags | os.O_NONBLOCK, 0o666)
         return cls(reactor, fd)
     
     def beginRead(self, size):
@@ -568,3 +568,6 @@ class NonBlockingSocket(object):
     
     def __exit__(self, type, e, traceback):
         self.close()
+
+# register the reactor
+Reactor.addType(PollReactor)

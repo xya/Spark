@@ -256,3 +256,6 @@ class OverlappedSocket(object):
     
     def __exit__(self, type, e, traceback):
         self.close()
+
+# register the reactor
+Reactor.addType(CompletionPortReactor)

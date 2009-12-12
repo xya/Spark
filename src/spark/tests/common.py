@@ -44,8 +44,8 @@ class ReactorTestBase(TestCase):
 class CustomLoader(TestLoader):
     def loadTestsFromTestCase(self, testCaseClass):
         if issubclass(testCaseClass, ReactorTestBase):
-            for reactorType in Reactor.available():
-                return loadReactorTests(reactorType, testCaseClass)
+            return TestSuite(loadReactorTests(reactorType, testCaseClass)
+                            for reactorType in Reactor.available())
         else:
             return super(CustomLoader, self).loadTestsFromTestCase(testCaseClass)
 
