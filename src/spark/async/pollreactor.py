@@ -170,7 +170,7 @@ class PollReactor(Reactor):
         try:
             logging = self.logger.isEnabledFor(LOG_VERBOSE)
             self.poll = select.poll()
-            self.queue.put(PipeReadOperation(self, self.req_r))
+            self.execute(PipeReadOperation(self, self.req_r), False)
             self.empty_queue()
             while True:
                 if logging:
@@ -203,28 +203,26 @@ class PollReactor(Reactor):
                 self.schedule(op)
     
     def schedule(self, op):
-        events = op.event
         if not self.pending.has_key(op.fd):
             self.pending[op.fd] = [op]
+            self.poll.register(op.fd, self.event_mask(op.fd))
         else:
-            op_queue = self.pending[op.fd]
-            for op in op_queue:
+            self.pending[op.fd].append(op)
+            self.poll.modify(op.fd, self.event_mask(op.fd))
+    
+    def event_mask(self, fd):
+        events = 0
+        if fd in self.pending:
+            for op in self.pending[fd]:
                 events = events | op.event
-            op_queue.append(op)
-        self.poll.register(op.fd, events)
+        return events
 
     def perform_io(self, fd, event):
+        read = (event & select.POLLIN) != 0
+        write = (event & select.POLLOUT) != 0
         hangup = (event & select.POLLHUP) != 0
-        error = (event & select.POLLERR) != 0
         invalid = (event & select.POLLNVAL) != 0
-        if hangup or error or invalid:
-            for op in self.pending[fd]:
-                op.canceled(event)
-            self.poll.unregister(fd)
-            del self.pending[fd]
-            if fd == self.req_r:
-                raise QueueClosedError()
-        else:
+        if read or write:
             found = None
             for op in self.pending[fd]:
                 if (op.event & event) != 0:
@@ -232,6 +230,14 @@ class PollReactor(Reactor):
                     break
             if found is not None:
                 self.execute(found, True)
+        if hangup or invalid:
+            if fd in self.pending:
+                for op in self.pending[fd]:
+                    op.canceled(event)
+                self.poll.unregister(fd)
+                del self.pending[fd]
+            if fd == self.req_r:
+                raise QueueClosedError()
     
     def remove_op(self, op):
         op_queue = self.pending[op.fd]
@@ -239,6 +245,8 @@ class PollReactor(Reactor):
         if len(op_queue) == 0:
             self.poll.unregister(op.fd)
             del self.pending[op.fd]
+        else:
+            self.poll.modify(op.fd, self.event_mask(op.fd))
 
 def _beginRead(reactor, fd, size):
     cont = Future()
@@ -368,18 +376,18 @@ class ReadOperation(IOOperation):
         self.cont = cont
     
     def complete(self):
-        success, data = self.nonblock(os.read, (self.fd, self.left, ))
-        if success:
-            if len(data) > 0:
-                self.data.append(data)
-                self.left -= len(data)
-                return self.left == 0
-            else:
-                # end of file or we got disconnected
-                self.left = 0
-                return True
-        else:
-            return False
+        success = True
+        while success and (self.left > 0):
+            success, data = self.nonblock(os.read, (self.fd, self.left, ))
+            if success:
+                readBytes = len(data)
+                if readBytes > 0:
+                    self.data.append(data)
+                    self.left -= readBytes
+                else:
+                    # end of file or we got disconnected
+                    self.left = 0
+        return self.left == 0
     
     def canceled(self, event=None):
         self.left = 0

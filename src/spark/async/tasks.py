@@ -228,10 +228,8 @@ class Future(object):
             self._coroutine_yielded(coroutine, result)
     
     def _coroutine_yielded(self, coroutine, result):
-        if isinstance(result, Future):
+        if hasattr(result, "after"):
             result.after(self._coroutine_task_completed, coroutine)
-        elif result is None:
-            self.completed()
         else:
             self.completed(result)
     

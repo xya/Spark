@@ -27,6 +27,7 @@ from spark.async import coroutine, Reactor
 from spark.messaging import Block, messageReader, messageWriter
 
 TestDir = "/home/xya/Public/Spark"
+#TestFile = "dia.clp"
 TestFile = "I'm a lagger.mp3"
 
 def run_bench():
@@ -47,14 +48,19 @@ def sender(sourcePath, reactor, writer):
     blockSent = 0
     messenger = messageWriter(writer)
     with reactor.open(sourcePath, 'r') as reader:
-        while True:
-            data = yield reader.beginRead(4096)
-            if len(data) == 0:
-                break
-            block = Block(0, blockID, data)
-            yield messenger.write(block)
-            blockID += 1
-            blockSent += 1
+        logging.info("sending from file %i to pipe %i" % (reader.fileno, writer.fileno))
+        try:
+            while True:
+                data = yield reader.beginRead(4096)
+                if len(data) == 0:
+                    break
+                block = Block(0, blockID, data)
+                yield messenger.write(block)
+                blockID += 1
+                blockSent += 1
+        except Exception:
+            logging.exception("Error while sending the file")
+    logging.info("Closing pipe %i" % writer.fileno)
     writer.close()
     yield blockSent
 
@@ -63,12 +69,17 @@ def receiver(destPath, reactor, reader):
     messenger = messageReader(reader)
     blockReceived = 0
     with reactor.open(destPath, 'w') as writer:
-        while True:
-            block = yield messenger.read()
-            if block is None:
-                break
-            yield writer.beginWrite(block.blockData)
-            blockReceived += 1
+        logging.info("receiving from pipe %i to file %i" % (reader.fileno, writer.fileno))
+        try:
+            while True:
+                block = yield messenger.read()
+                if block is None:
+                    break
+                yield writer.beginWrite(block.blockData)
+                blockReceived += 1
+        except Exception:
+            logging.exception("Error while receiving the file")
+    logging.info("Closing pipe %i" % reader.fileno)
     reader.close()
     reactor.close()
     yield blockReceived
@@ -95,5 +106,5 @@ else:
         times = t.repeat(3, 1)
         print min(times), times
     else:
-        #logging.basicConfig(level=10)
+        logging.basicConfig(level=10)
         run_bench()
