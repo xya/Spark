@@ -18,9 +18,11 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+from collections import Mapping
+
 from spark.async import Future, Delegate
 from spark.messaging import Service
-from spark.fileshare import SharedFile
+from spark.fileshare import SharedFile, FileTable
 
 __all__ = ["FileShare"]
 
@@ -32,27 +34,47 @@ class FileShare(Service):
     """ Service that shares files over a network. """
     def __init__(self, session, name=None):
         super(FileShare, self).__init__(session, name)
-        self.fileAdded = Delegate()
-        self.fileRemoved = Delegate()
+        self.filesUpdated = Delegate()
         self.remoteNotifications = False
+        self.fileTable = FileTable()
+        self.fileTable.fileAdded += self.cacheFileAdded
+        self.fileTable.fileUpdated += self.cacheFileUpdated
+        self.fileTable.fileRemoved += self.cacheFileRemoved
         session.registerService(self)
     
-    def files(self):
+    def files(self, excludeRemoved=True):
         """ Return a copy of the current file table, which maps file IDs to files. """
-        dummy = SharedFile("Report.pdf", 3145728, "20090619T173529.000Z", "gnome-mime-application-pdf", None, "123abc")
-        return {dummy.ID: dummy}
+        cache = self.fileTable.listFiles()
+        if excludeRemoved:
+            files = {}
+            for fileID, file in cache.items():
+                if not file.localRemoved:
+                    files[fileID] = file
+            return files
+        else:
+            return cache.copy()
 
     def addFile(self, path):
         """ Add the local file with the given path to the list. """
-        self.fileAdded()
-        if self.remoteNotifications and self.session.isActive:
-            self.sendNotification(NOT_FILE_ADDED)
+        self.fileTable.addFile(path)
     
     def removeFile(self, fileID):
         """ Remove the file (local or remote) with the given ID from the list. """
-        self.fileRemoved()
-        if self.remoteNotifications and self.session.isActive:
-            self.sendNotification(NOT_FILE_REMOVED)
+        self.fileTable.removeFile(fileID, True)
+    
+    def cacheFileAdded(self, fileID, local):
+        self.filesUpdated()
+        if local and self.remoteNotifications and self.session.isActive:
+            file = self.fileTable[fileID]
+            self.sendNotification(NOT_FILE_ADDED, file)
+    
+    def cacheFileUpdated(self, fileID, local):
+        self.filesUpdated()
+    
+    def cacheFileRemoved(self, fileID, local):
+        self.filesUpdated()
+        if local and self.remoteNotifications and self.session.isActive:
+            self.sendNotification(NOT_FILE_REMOVED, fileID)
     
     def start(self):
         """ Start the service. The session must be currently active. """
@@ -64,20 +86,22 @@ class FileShare(Service):
     
     def requestListFiles(self, req):
         """ The remote peer sent a 'list-files' request. """
-        if (isinstance(req.params, dict)
-            and req.params.has_key("register") and req.params["register"] is True):
+        if (isinstance(req.params, Mapping)
+            and "register" in req.params and req.params["register"] is True):
             self.remoteNotifications = True
-        return self.files()
+        return self.fileTable.listFiles()
     
     def responselistFiles(self, prev):
         """ The remote peer responded to our 'list-files' request. """
         files = prev.result
-        # TODO: do something with the file table
+        self.fileTable.updateTable(files, False)
     
     def notificationFileAdded(self, n):
         """ The remote peer sent a 'file-added' notification. """
-        self.fileAdded()
+        if isinstance(n.params, Mapping):
+            self.fileTable.updateFile(n.params, False)
     
     def notificationFileRemoved(self, n):
         """ The remote peer sent a 'file-removed' notification. """
-        self.fileRemoved()
+        if isinstance(n.params, Mapping) and "ID" in n.params:
+            self.fileTable.removeFile(n.params["ID"], False)

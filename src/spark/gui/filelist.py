@@ -56,9 +56,16 @@ class CustomList(QWidget):
     
     def clear(self):
         """ Remove all the items from the list. """
-        for i in range(0, self.layout().count()):
-            self.layout().takeAt(0)
+        while True:
+            item = self.layout().takeAt(0)
+            if item is None:
+                break
+            # prevent the widget's parent from keeping it alive
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
         self.items = []
+        self.selectedIndex = -1
     
     def updateItems(self):
         for i in range(0, len(self.items)):

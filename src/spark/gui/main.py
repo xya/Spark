@@ -19,6 +19,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 import sys
+import os
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from spark.gui.filelist import FileList, FileInfoWidget, iconPath
@@ -42,6 +43,7 @@ class MainWindow(QMainWindow):
         super(MainWindow, self).__init__(parent)
         self.setWindowIcon(QIcon(iconPath("emblems/emblem-new", 16)))
         self.setWindowTitle("Spark")
+        self.setMinimumSize(429, 360)
         self.app = app
         self.actions = {}
         self.initToolbar()
@@ -49,8 +51,8 @@ class MainWindow(QMainWindow):
         self.initStatusBar()
         self.sharedFiles = {}
         self.fileIDs = []
-        self.app.session.share.fileAdded += onGuiThread(self.sharedFilesUpdated)
-        self.app.session.share.fileRemoved += onGuiThread(self.sharedFilesUpdated)
+        self.selectedID = None
+        self.app.session.share.filesUpdated += onGuiThread(self.sharedFilesUpdated)
         self.sharedFilesUpdated()
     
     def createAction(self, icon, size, text, help=None):
@@ -79,6 +81,8 @@ class MainWindow(QMainWindow):
             else:
                 self.toolbar.addSeparator()
         self.toolbar.setMovable(False)
+        QObject.connect(self.actions["add"], SIGNAL("triggered()"), self.action_add)
+        QObject.connect(self.actions["remove"], SIGNAL("triggered()"), self.action_remove)
     
     def initStatusBar(self):
         self.connStatus = QLabel(self.statusBar())
@@ -128,6 +132,8 @@ class MainWindow(QMainWindow):
         widget.setTransferSize("Size: %s" % self.formatSize(file.size))
         if file.mimeType:
             widget.setTypeIcon("mimetypes/%s" % file.mimeType)
+        else:
+            widget.setTypeIcon("mimetypes/gtk-file")
         widget.setStatusIcon(file.isLocal and "actions/go-home" or None, 0)
         if file.isReceiving:
             widget.setStatusIcon("actions/go-previous", 1)
@@ -142,7 +148,12 @@ class MainWindow(QMainWindow):
         return widget
     
     def updateSelectedTransfer(self, index):
-        file = self.sharedFiles[self.fileIDs[index]]
+        if index < 0:
+            self.selectedID = None
+            file = None
+        else:
+            self.selectedID = self.fileIDs[index]
+            file = self.sharedFiles[self.selectedID]
         for key in ("add", "remove", "start", "pause", "stop", "open"):
             self.actions[key].setEnabled(self.isActionAvailable(key, file))
     
@@ -166,6 +177,24 @@ class MainWindow(QMainWindow):
             return file.isLocal
         else:
             return False
+    
+    def action_add(self):
+        dir = os.path.expanduser("~")
+        files = QFileDialog.getOpenFileNames(self, "Choose a file to open", dir, "All files (*.*)")
+        if files.count() > 0:
+            for file in files:
+                self.app.session.addFile(str(file)).after(onGuiThread(self.end_addFile))
+    
+    def end_addFile(self, prev):
+        result = prev.result
+    
+    def action_remove(self):
+        if self.selectedID is not None:
+            self.app.session.removeFile(self.selectedID).after(
+                onGuiThread(self.end_removeFile))
+    
+    def end_removeFile(self, prev):
+        result = prev.result
     
     def sharedFilesUpdated(self):
         self.updateTransferList()
