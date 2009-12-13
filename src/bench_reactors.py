@@ -26,8 +26,12 @@ import logging
 from spark.async import coroutine, Reactor
 from spark.messaging import Block, messageReader, messageWriter
 
-TestDir = "/home/xya/Public/Spark"
+if sys.platform.startswith("win32"):
+    TestDir = os.path.join(os.path.expanduser("~"), "Mes documents\\Spark")
+else:
+    TestDir = os.path.join(os.path.expanduser("~"), "Public/Spark")
 #TestFile = "dia.clp"
+#TestFile = "_iocp.pyd"
 TestFile = "I'm a lagger.mp3"
 
 def run_bench():
@@ -50,14 +54,18 @@ def run_reactor(sourcePath, destPath, reactor):
 def sender(sourcePath, reactor, writer):
     blockID = 0
     blockSent = 0
+    position = 0
     messenger = messageWriter(writer)
     with reactor.open(sourcePath, 'r') as reader:
         logging.info("sending from file %i to pipe %i" % (reader.fileno, writer.fileno))
         try:
             while True:
-                data = yield reader.beginRead(4096)
-                if len(data) == 0:
+                data = yield reader.beginRead(4096, position)
+                read = len(data)
+                if read == 0:
                     break
+                else:
+                    position += read
                 block = Block(0, blockID, data)
                 yield messenger.write(block)
                 blockID += 1
@@ -71,6 +79,7 @@ def sender(sourcePath, reactor, writer):
 @coroutine
 def receiver(destPath, reactor, reader):
     messenger = messageReader(reader)
+    position = 0
     blockReceived = 0
     with reactor.open(destPath, 'w') as writer:
         logging.info("receiving from pipe %i to file %i" % (reader.fileno, writer.fileno))
@@ -79,7 +88,8 @@ def receiver(destPath, reactor, reader):
                 block = yield messenger.read()
                 if block is None:
                     break
-                yield writer.beginWrite(block.blockData)
+                yield writer.beginWrite(block.blockData, position)
+                position += len(block.blockData)
                 blockReceived += 1
         except Exception:
             logging.exception("Error while receiving the file")
@@ -88,27 +98,4 @@ def receiver(destPath, reactor, reader):
     reactor.close()
     yield blockReceived
 
-import hotshot
-import hotshot.stats
-import timeit
-
-if len(sys.argv) != 2:
-    print 'usage: python bench_reactors.py (hotshot|timeit)'    
-else:
-    if sys.argv[1] == 'hotshot':
-        prof = hotshot.Profile('reactor_bench')
-        prof.runcall(run_bench)
-        prof.close()
-        s = hotshot.stats.load('reactor_bench')
-        s.strip_dirs()
-        s.sort_stats('time').print_stats(20)
-        s.sort_stats('cum').print_stats(20)
-        s.sort_stats('call').print_stats(20)
-        
-    elif sys.argv[1] == 'timeit':
-        t = timeit.Timer('run_bench()', 'from __main__ import run_bench')
-        times = t.repeat(3, 1)
-        print min(times), times
-    else:
-        #logging.basicConfig(level=10)
-        run_bench()
+run_bench()

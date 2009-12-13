@@ -26,7 +26,11 @@ import logging
 from ctypes import WinError, cast, byref, POINTER, c_void_p, c_uint32, sizeof, create_string_buffer
 from spark.async import win32
 
-__all__ = ["CompletionPort"]
+__all__ = ["CompletionPort", "ERROR_SUCCESS", "ERROR_HANDLE_EOF", "ERROR_BROKEN_PIPE"]
+
+ERROR_SUCCESS = 0
+ERROR_HANDLE_EOF = 38
+ERROR_BROKEN_PIPE = 109
 
 def _tuple_to_sockaddr_in(family, t):
     sockaddr = win32.sockaddr_in()
@@ -82,11 +86,11 @@ class CompletionPort(object):
         """ Register a file with the completion port and return its tag. """
         win32.CreateIoCompletionPort(hFile, self.handle, hFile, 0)
     
-    def memorize(self, overlapped):
+    def _memorize(self, overlapped):
         with self.lock:
             self.refs[overlapped.id] = overlapped
     
-    def recall(self, id):
+    def _recall(self, id):
         with self.lock:
             if id in self.refs:
                 return self.refs.pop(id)
@@ -96,24 +100,33 @@ class CompletionPort(object):
     def post(self, *objs):
         """ Directly post the objects to the completion port. """
         ov = Overlapped(*objs)
-        self.memorize(ov)
+        self._memorize(ov)
         win32.PostQueuedCompletionStatus(self.handle,
             0, win32.INVALID_HANDLE_VALUE, ov.address())
     
     def wait(self):
         """
-        Wait for an operation to be finished and return a (ID, tag, bytes, objs)
+        Wait for an operation to be finished and return a (tag, error, bytes, objs)
         tuple containing the result. The OVERLAPPED structure is also freed. 
         """
         bytes = c_uint32()
         tag = c_void_p(0)
         lpOver = cast(0, win32.LP_OVERLAPPED)
-        win32.GetQueuedCompletionStatus(self.handle,
+        ret = win32.GetQueuedCompletionStatus(self.handle,
             byref(bytes), byref(tag), byref(lpOver), -1)
+        if ret == 0:
+            if lpOver.value is None:
+                # Waiting for the completion of an operation failed
+                raise WinError()
+            else:
+                # The I/O operation itself failed
+                error = win32.GetLastError()
+        else:
+            error = ERROR_SUCCESS
         id = lpOver.contents.UserData
-        ov = self.recall(id)
+        ov = self._recall(id)
         ov.free()
-        return ov.id, tag.value, bytes.value, ov.data
+        return tag.value, error, bytes.value, ov.data
     
     def createFile(self, path, mode=None):
         if mode == "w":
@@ -139,6 +152,9 @@ class CompletionPort(object):
         self.register(handle)
         return handle
     
+    def createPipe(self):
+        raise NotImplementedError()
+    
     def closeFile(self, handle):
 		return win32.CloseHandle(handle)
     
@@ -146,24 +162,32 @@ class CompletionPort(object):
         buffer = create_string_buffer(size)
         over = Overlapped(op, buffer, cont)
         over.setOffset(position)
-        self.memorize(over)
+        self._memorize(over)
         ret = win32.ReadFile(handle, buffer, size, None, over.address())
         if not ret:
             error = win32.GetLastError()
-            if error != win32.ERROR_IO_PENDING:
+            if error == win32.ERROR_IO_PENDING:
+                error = ERROR_SUCCESS
+            else:
                 over.free()
-                raise WinError(error)
+        else:
+            error = ERROR_SUCCESS
+        return error
 
     def beginWrite(self, op, handle, data, position, cont):
         over = Overlapped(op, data, cont)
         over.setOffset(position)
-        self.memorize(over)
+        self._memorize(over)
         ret = win32.WriteFile(handle, data, len(data), None, over.address())
         if not ret:
             error = win32.GetLastError()
-            if error != win32.ERROR_IO_PENDING:
+            if error == win32.ERROR_IO_PENDING:
+                error = ERROR_SUCCESS
+            else:
                 over.free()
-                raise WinError(error)
+        else:
+            error = ERROR_SUCCESS
+        return error
     
     def beginAccept(self, op, handle, cont):
         raise NotImplementedError()
