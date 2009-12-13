@@ -23,6 +23,7 @@ import sys
 import time
 import threading
 import logging
+import pdb
 from spark.async import coroutine, Reactor
 from spark.messaging import Block, messageReader, messageWriter
 
@@ -45,13 +46,15 @@ def run_reactor(sourcePath, destPath, reactor):
     r, w = reactor.pipe()
     fSend = sender(sourcePath, reactor, w)
     fReceive = receiver(destPath, reactor, r)
+    fSend.after(fileSent)
+    fReceive.after(fileReceived)
     started = time.time()
     reactor.run()
     duration = time.time() - started
     size = fSend.result
     speed = size / duration
-    print "[%s] Transfered in %f seconds (%s/s)" % (reactor.__class__.__name__,
-        duration, formatSize(speed))
+    print "[%s] Transfered %s in %f seconds (%s/s)" % (reactor.__class__.__name__,
+        formatSize(size), duration, formatSize(speed))
 
 Units = [("KiB", 1024), ("MiB", 1024 * 1024), ("GiB", 1024 * 1024 * 1024)]
 def formatSize(size):
@@ -71,6 +74,7 @@ def sender(sourcePath, reactor, writer):
             while True:
                 data = yield reader.beginRead(4096, position)
                 read = len(data)
+                #logging.info("Read %i bytes from the file" % read)
                 if read == 0:
                     break
                 else:
@@ -83,6 +87,22 @@ def sender(sourcePath, reactor, writer):
     logging.info("Closing pipe %i" % writer.fileno)
     writer.close()
     yield position
+
+def fileSent(prev):
+    try:
+        size = prev.result
+    except Exception:
+        logging.exception("Error while sending the file")
+    else:
+        logging.info("Sent %i bytes" % size)
+
+def fileReceived(prev):
+    try:
+        size = prev.result
+    except Exception:
+        logging.exception("Error while receiving the file")
+    else:
+        logging.info("Received %i bytes" % size)
 
 @coroutine
 def receiver(destPath, reactor, reader):
@@ -104,4 +124,5 @@ def receiver(destPath, reactor, reader):
     reactor.close()
     yield position
 
+logging.basicConfig(level=logging.DEBUG)
 run_bench()

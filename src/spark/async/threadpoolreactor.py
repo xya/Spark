@@ -259,11 +259,11 @@ class WriteOperation(Operation):
     
     def __str__(self):
         if len(self.args) == 1:
-            return "WriteOperation(%i)" % len(self.args[0])
+            return "Write(%i)" % len(self.args[0])
         elif len(self.args) == 2:
-            return "WriteOperation(%i, %i)" % (self.args[0], len(self.args[1]))
+            return "Write(%i, %i)" % (self.args[0], len(self.args[1]))
         else:
-            return "WriteOperation()"
+            return "Write()"
 
 class ThreadPoolFile(object):
     """ File-like object that uses a reactor to perform asynchronous I/O. """
@@ -289,14 +289,27 @@ class ThreadPoolFile(object):
             flags = os.O_RDWR | os.O_CREAT | os.O_APPEND
         else:
             flags =  os.O_RDONLY
-        fd = os.open(path, flags | os.O_NONBLOCK, 0o666)
+        fd = os.open(path, flags, 0o666)
         return cls(reactor, fd)
     
     def beginRead(self, size, position=-1):
         cont = Future()
-        op = Operation(self.reactor, cont, "Read", os.read, self.fd, size)
+        op = Operation(self.reactor, cont, "Read", self.doRead, self.fd, size)
         self.reactor.submit(REQ_IO_CALL, op)
         return cont
+    
+    def doRead(self, fd, size):
+        chunks = []
+        left = size
+        while left > 0:
+            data = os.read(fd, left)
+            read = len(data)
+            if read > 0:
+                chunks.append(data)
+                left -= read
+            else:
+                left = 0
+        return "".join(chunks)
     
     def beginWrite(self, data, position=-1):
         cont = Future()
