@@ -494,10 +494,10 @@ class NonBlockingFile(object):
         fd = os.open(file, flags | os.O_NONBLOCK, 0o666)
         return cls(reactor, fd)
     
-    def beginRead(self, size):
+    def beginRead(self, size, position=-1):
         return _beginRead(self.reactor, self.fd, size)
     
-    def beginWrite(self, data):
+    def beginWrite(self, data, position=-1):
         return _beginWrite(self.reactor, self.fd, data)
     
     def read(self, size):

@@ -292,13 +292,13 @@ class ThreadPoolFile(object):
         fd = os.open(path, flags | os.O_NONBLOCK, 0o666)
         return cls(reactor, fd)
     
-    def beginRead(self, size):
+    def beginRead(self, size, position=-1):
         cont = Future()
         op = Operation(self.reactor, cont, "Read", os.read, self.fd, size)
         self.reactor.submit(REQ_IO_CALL, op)
         return cont
     
-    def beginWrite(self, data):
+    def beginWrite(self, data, position=-1):
         cont = Future()
         op = WriteOperation(self.reactor, cont, "Write", os.write, self.fd, data)
         self.reactor.submit(REQ_IO_CALL, op)

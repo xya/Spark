@@ -48,12 +48,21 @@ def run_reactor(sourcePath, destPath, reactor):
     started = time.time()
     reactor.run()
     duration = time.time() - started
-    print "[%s] Transfered in %f seconds" % (reactor.__class__.__name__, duration)
+    size = fSend.result
+    speed = size / duration
+    print "[%s] Transfered in %f seconds (%s/s)" % (reactor.__class__.__name__,
+        duration, formatSize(speed))
+
+Units = [("KiB", 1024), ("MiB", 1024 * 1024), ("GiB", 1024 * 1024 * 1024)]
+def formatSize(size):
+    for unit, count in reversed(Units):
+        if size >= count:
+            return "%0.2f %s" % (size / float(count), unit)
+    return "%d byte" % size
 
 @coroutine
 def sender(sourcePath, reactor, writer):
     blockID = 0
-    blockSent = 0
     position = 0
     messenger = messageWriter(writer)
     with reactor.open(sourcePath, 'r') as reader:
@@ -69,18 +78,16 @@ def sender(sourcePath, reactor, writer):
                 block = Block(0, blockID, data)
                 yield messenger.write(block)
                 blockID += 1
-                blockSent += 1
         except Exception:
             logging.exception("Error while sending the file")
     logging.info("Closing pipe %i" % writer.fileno)
     writer.close()
-    yield blockSent
+    yield position
 
 @coroutine
 def receiver(destPath, reactor, reader):
     messenger = messageReader(reader)
     position = 0
-    blockReceived = 0
     with reactor.open(destPath, 'w') as writer:
         logging.info("receiving from pipe %i to file %i" % (reader.fileno, writer.fileno))
         try:
@@ -90,12 +97,11 @@ def receiver(destPath, reactor, reader):
                     break
                 yield writer.beginWrite(block.blockData, position)
                 position += len(block.blockData)
-                blockReceived += 1
         except Exception:
             logging.exception("Error while receiving the file")
     logging.info("Closing pipe %i" % reader.fileno)
     reader.close()
     reactor.close()
-    yield blockReceived
+    yield position
 
 run_bench()
