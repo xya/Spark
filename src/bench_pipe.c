@@ -43,20 +43,27 @@ void set_msg_size(BlockHeader *bh);
 
 int main(int argc, char **argv)
 {
-    char *src_file = "/home/xya/Public/Spark/I'm a lagger.avi";
-    char *dst_file = "/home/xya/Public/Spark/I'm a lagger.avi.1";
+    char dst_file[256];
     pid_t pid;
     int p[2];
     size_t sent, received;
     clock_t start, duration;
     double sec, speed;
     
+    if(argc < 2)
+    {
+        printf("Usage: %s <file>\n", argv[0]);
+        return 1;
+    }
+    snprintf(dst_file, sizeof(dst_file), "%s.1", argv[1]);
+    
     pipe(p);
     pid = fork();
     if(pid == 0)
     {
-        receive_file(p[0], dst_file);
         close(p[0]);
+        sent = send_file(p[1], argv[1]);
+        close(p[1]);
     }
     else if(pid < 0)
     {
@@ -66,12 +73,13 @@ int main(int argc, char **argv)
     else
     {
         start = clock();
-        sent = send_file(p[1], src_file);
         close(p[1]);
+        received = receive_file(p[0], dst_file);
+        close(p[0]);
         duration = clock() - start;
         sec = ((double)duration / (double)CLOCKS_PER_SEC);
-        speed = ((double)sent / (1024.0 * 1024.0)) / sec;
-        printf("Sent %zi bytes in %f seconds (%f MiB/s)\n", sent, sec, speed);
+        speed = ((double)received / (1024.0 * 1024.0)) / sec;
+        printf("Sent %zi bytes in %f seconds (%f MiB/s)\n", received, sec, speed);
     }
     return 0;
 }
@@ -136,5 +144,7 @@ void set_msg_size(BlockHeader *bh)
 {
     size_t textSize = sizeof(bh->msg_size);
     int size = sizeof(*bh) - textSize + bh->block_size;
-    snprintf(bh->msg_size, textSize, "%x", size);
+    if((size < 0x0000) && (size > 0xffff))
+        size = 0;
+    sprintf(bh->msg_size, "%04x", size);
 }
