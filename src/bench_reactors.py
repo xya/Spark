@@ -38,7 +38,9 @@ TestFile = "I'm a lagger.mp3"
 def run_bench():
     sourcePath = os.path.join(TestDir, TestFile)
     destPath = sourcePath + ".1"
-    for reactorType in Reactor.available():
+    reactors = Reactor.available()
+    reactors.pop(1)
+    for reactorType in reactors:
         with reactorType() as reactor:
             run_reactor(sourcePath, destPath, reactor)
 
@@ -124,5 +126,11 @@ def receiver(destPath, reactor, reader):
     reactor.close()
     yield position
 
-logging.basicConfig(level=logging.DEBUG)
-run_bench()
+profiling = False
+if profiling:
+    import cProfile
+    command = """run_bench()"""
+    cProfile.runctx(command, globals(), locals(), filename="run_bench.profile")
+else:
+    logging.basicConfig(level=logging.DEBUG)
+    run_bench()

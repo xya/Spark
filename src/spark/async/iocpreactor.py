@@ -24,12 +24,13 @@ import threading
 import socket
 import logging
 from ctypes import WinError
-from spark.async import Future, Delegate
+from spark.async import Delegate
 from spark.async.aio import Reactor
 try:
     from spark.async import _iocp as iocp
+    Future = iocp.Future
 except ImportError:
-    from spark.async import iocp
+    from spark.async import iocp, Future
 
 __all__ = ["CompletionPortReactor"]
 
@@ -119,10 +120,13 @@ class CompletionPortReactor(Reactor):
     
     def eventLoop(self):
         try:
+            logging = self.logger.isEnabledFor(LOG_VERBOSE)
             while True:
-                self.logger.log(LOG_VERBOSE, "Waiting for GetQueuedCompletionStatus()")
+                if logging:
+                    self.logger.log(LOG_VERBOSE, "Waiting for GetQueuedCompletionStatus()")
                 tag, error, bytes, data = self.cp.wait()
-                self.logger.log(LOG_VERBOSE, "Woke up from GetQueuedCompletionStatus()")
+                if logging:
+                    self.logger.log(LOG_VERBOSE, "Woke up from GetQueuedCompletionStatus()")
                 if len(data) == 0:
                     break
                 elif data[0] == OP_INVOKE:
