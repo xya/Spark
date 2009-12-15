@@ -32,6 +32,13 @@ ERROR_SUCCESS = 0
 ERROR_HANDLE_EOF = 38
 ERROR_BROKEN_PIPE = 109
 
+OP_CLOSE = 0
+OP_INVOKE = 1
+OP_READ = 2
+OP_WRITE = 3
+OP_CONNECT = 4
+OP_ACCEPT = 5
+
 def _tuple_to_sockaddr_in(family, t):
     sockaddr = win32.sockaddr_in()
     sockaddr.sin_family = family
@@ -48,8 +55,10 @@ def _sockaddr_in_to_tuple(sockaddr):
 
 class Overlapped(object):
     """ Wrapper for Windows's OVERLAPPED structure. """
-    def __init__(self, *data):
+    def __init__(self, opcode, cont, data):
         self.id = id(self)
+        self.opcode = opcode
+        self.cont = cont
         self.data = data
         self.over = win32.allocOVERLAPPED()
         self.over.contents.UserData = self.id
@@ -97,9 +106,9 @@ class CompletionPort(object):
             else:
                 return None
     
-    def post(self, *objs):
+    def post(self, opcode=0, cont=None, data=None):
         """ Directly post the objects to the completion port. """
-        ov = Overlapped(*objs)
+        ov = Overlapped(opcode, cont, data)
         self._memorize(ov)
         win32.PostQueuedCompletionStatus(self.handle,
             0, win32.INVALID_HANDLE_VALUE, ov.address())
@@ -126,7 +135,29 @@ class CompletionPort(object):
         id = lpOver.contents.UserData
         ov = self._recall(id)
         ov.free()
-        return tag.value, error, bytes.value, ov.data
+        return tag.value, error, bytes.value, ov.opcode, ov.cont, ov.data
+    
+    def complete(self, tag, error, bytes, op, cont, data):
+        if op == OP_READ:
+            if error == ERROR_SUCCESS:
+                cont.completed(data[0:bytes])
+            elif (error == ERROR_BROKEN_PIPE) or (error == ERROR_HANDLE_EOF):
+                cont.completed('')
+            else:
+                cont.failed(WinError(error))
+        elif op == OP_WRITE:
+            if error == ERROR_SUCCESS:
+                cont.completed()
+            else:
+                cont.failed(WinError(error))
+        elif op == OP_ACCEPT:
+            addrpair, conn = data
+            remoteAddr = _sockaddr_in_to_tuple(addrpair[1])
+            cont.completed((conn, remoteAddr))
+        elif op == OP_CONNECT:
+            sockaddr, conn = data
+            remoteAddr = _sockaddr_in_to_tuple(sockaddr)
+            cont.completed((conn, remoteAddr))
     
     def createFile(self, path, mode=None):
         if mode == "w":
@@ -160,7 +191,7 @@ class CompletionPort(object):
     
     def beginRead(self, op, handle, size, position, cont):
         buffer = create_string_buffer(size)
-        over = Overlapped(op, buffer, cont)
+        over = Overlapped(op, cont, buffer)
         over.setOffset(position)
         self._memorize(over)
         ret = win32.ReadFile(handle, buffer, size, None, over.address())
@@ -175,7 +206,7 @@ class CompletionPort(object):
         return error
 
     def beginWrite(self, op, handle, data, position, cont):
-        over = Overlapped(op, data, cont)
+        over = Overlapped(op, cont, data)
         over.setOffset(position)
         self._memorize(over)
         ret = win32.WriteFile(handle, data, len(data), None, over.address())

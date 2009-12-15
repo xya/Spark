@@ -44,17 +44,23 @@ PyMODINIT_FUNC init_iocp(void)
     Py_INCREF(&FutureType);
     PyModule_AddObject(m, "Future", (PyObject *)&FutureType);
 
-    err = PyLong_FromLong(ERROR_SUCCESS);
-    if(err)
-        PyModule_AddObject(m, "ERROR_SUCCESS", err);
+    iocp_addConstant(m, "ERROR_SUCCESS", ERROR_SUCCESS);
+    iocp_addConstant(m, "ERROR_HANDLE_EOF", ERROR_HANDLE_EOF);
+    iocp_addConstant(m, "ERROR_BROKEN_PIPE", ERROR_BROKEN_PIPE);
 
-    err = PyLong_FromLong(ERROR_HANDLE_EOF);
-    if(err)
-        PyModule_AddObject(m, "ERROR_HANDLE_EOF", err);
+    iocp_addConstant(m, "OP_CLOSE", OP_CLOSE);
+    iocp_addConstant(m, "OP_INVOKE", OP_INVOKE);
+    iocp_addConstant(m, "OP_READ", OP_READ);
+    iocp_addConstant(m, "OP_WRITE", OP_WRITE);
+    iocp_addConstant(m, "OP_CONNECT", OP_CONNECT);
+    iocp_addConstant(m, "OP_ACCEPT", OP_ACCEPT);
+}
 
-    err = PyLong_FromLong(ERROR_BROKEN_PIPE);
-    if(err)
-        PyModule_AddObject(m, "ERROR_BROKEN_PIPE", err);
+void iocp_addConstant(PyObject *module, char *name, DWORD value)
+{
+    PyObject *obj = PyLong_FromLong(value);
+    if(obj)
+        PyModule_AddObject(module, name, obj);
 }
 
 BOOL iocp_createAsyncPipe(PHANDLE hRead, PHANDLE hWrite)
@@ -104,17 +110,51 @@ BOOL iocp_createAsyncPipe(PHANDLE hRead, PHANDLE hWrite)
 
 void iocp_win32error(const char *format)
 {
+    DWORD error = GetLastError();
+    PyObject *exc = iocp_createWinError(error, format);
+    if(exc)
+    {
+        PyErr_SetObject(exc->ob_type, exc);
+        Py_DECREF(exc);
+    }
+}
+
+PyObject * iocp_createWinError(DWORD error, const char *format)
+{
+    PyObject *args, *exc;
     char message[512], text[512];
+    char *str;
+
+    exc = PyObject_New(PyObject, PyExc_WindowsError);
+    if(!exc)
+        return NULL;
+
     ZeroMemory(message, sizeof(message));
     FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, 0, GetLastError(), LANG_NEUTRAL, 
         message, sizeof(message), 0);
     if(format)
     {
         snprintf(text, sizeof(text), format, message);
-        PyErr_SetString(PyExc_WindowsError, text);
+        str = text;
     }
     else
     {
-        PyErr_SetString(PyExc_WindowsError, message);
+        str = message;
+    }
+    
+    args = Py_BuildValue("ls", &error, &str);
+    if(!args)
+    {
+        Py_DECREF(exc);
+        return NULL;
+    }
+    else if(exc->ob_type->tp_init(exc, args, NULL) < 0)
+    {
+        Py_DECREF(exc);
+        return NULL;
+    }
+    else
+    {
+        return exc;
     }
 }

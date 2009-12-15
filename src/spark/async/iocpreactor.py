@@ -36,12 +36,6 @@ __all__ = ["CompletionPortReactor"]
 
 LOG_VERBOSE = 5
 
-OP_INVOKE = 0
-OP_READ = 1
-OP_WRITE = 2
-OP_CONNECT = 3
-OP_ACCEPT = 4
-
 class CompletionPortReactor(Reactor):
     def __init__(self, name=None, lock=None):
         self.logger = logging.getLogger(name)
@@ -72,14 +66,14 @@ class CompletionPortReactor(Reactor):
         if fun is None:
             raise TypeError("The callable must not be None")
         cont = Future()
-        self.cp.post(OP_INVOKE, cont, fun, args, kwargs)
+        self.cp.post(iocp.OP_INVOKE, cont, (fun, args, kwargs))
         return cont
     
     def post(self, fun, *args, **kwargs):
         """ Submit a callable to be invoked on the reactor's thread later. """
         if fun is None:
             raise TypeError("The callable must not be None")
-        self.cp.post(OP_INVOKE, None, fun, args, kwargs)
+        self.cp.post(iocp.OP_INVOKE, None, (fun, args, kwargs))
     
     def launch_thread(self):
         """ Start a background I/O thread to run the reactor. """
@@ -110,7 +104,7 @@ class CompletionPortReactor(Reactor):
         """ Close the reactor, terminating all pending operations. """
         with self.lock:
             if self.active:
-                self.cp.post()
+                self.cp.post(iocp.OP_CLOSE)
     
     def __enter__(self):
         return self
@@ -124,15 +118,15 @@ class CompletionPortReactor(Reactor):
             while True:
                 if logging:
                     self.logger.log(LOG_VERBOSE, "Waiting for GetQueuedCompletionStatus()")
-                tag, error, bytes, data = self.cp.wait()
+                tag, error, bytes, opcode, cont, data = self.cp.wait()
                 if logging:
                     self.logger.log(LOG_VERBOSE, "Woke up from GetQueuedCompletionStatus()")
-                if len(data) == 0:
+                if opcode == iocp.OP_CLOSE:
                     break
-                elif data[0] == OP_INVOKE:
-                    self.handleCallback(*data[1:])
+                elif opcode == iocp.OP_INVOKE:
+                    self.handleCallback(cont, *data)
                 else:
-                    self.handleIOCompletion(tag, error, bytes, data)
+                    self.cp.complete(tag, error, bytes, opcode, cont, data)
         finally:
             self.cleanup()
     
@@ -155,32 +149,12 @@ class CompletionPortReactor(Reactor):
             except Exception:
                 self.logger.exception("Error in non-I/O callback")
         else:
-            cont.run(func, *args, **kwargs)
-    
-    def handleIOCompletion(self, tag, error, bytes, data):
-        op = data[0]
-        if op == OP_READ:
-            op, buffer, cont = data
-            if error == iocp.ERROR_SUCCESS:
-                cont.completed(buffer[0:bytes])
-            elif (error == iocp.ERROR_BROKEN_PIPE) or (error == iocp.ERROR_HANDLE_EOF):
-                cont.completed('')
+            try:
+                result = func(*args, **kwargs)
+            except Exception:
+                cont.failed()
             else:
-                cont.failed(WinError(error))
-        elif op == OP_WRITE:
-            op, buffer, cont = data
-            if error == iocp.ERROR_SUCCESS:
-                cont.completed()
-            else:
-                cont.failed(WinError(error))
-        elif op == OP_ACCEPT:
-            op, addrpair, conn, cont = data
-            remoteAddr = _sockaddr_in_to_tuple(addrpair[1])
-            cont.completed((conn, remoteAddr))
-        elif op == OP_CONNECT:
-            op, sockaddr, conn, cont = data
-            remoteAddr = _sockaddr_in_to_tuple(sockaddr)
-            cont.completed((conn, remoteAddr))
+                cont.completed(result)
 
 class OverlappedFile(object):
     """ File-like object that uses a reactor to perform asynchronous I/O. """
@@ -194,7 +168,7 @@ class OverlappedFile(object):
     
     def beginRead(self, size, position=0):
         cont = Future()
-        error = self.reactor.cp.beginRead(OP_READ, self.handle, size, position, cont)
+        error = self.reactor.cp.beginRead(iocp.OP_READ, self.handle, size, position, cont)
         if (error == iocp.ERROR_BROKEN_PIPE) or (error == iocp.ERROR_HANDLE_EOF):
             cont.completed('')
         elif error != iocp.ERROR_SUCCESS:
@@ -203,7 +177,7 @@ class OverlappedFile(object):
     
     def beginWrite(self, data, position=0):
         cont = Future()
-        error = self.reactor.cp.beginWrite(OP_WRITE, self.handle, data, position, cont)
+        error = self.reactor.cp.beginWrite(iocp.OP_WRITE, self.handle, data, position, cont)
         if error != iocp.ERROR_SUCCESS:
             cont.failed(WinError(error))
         return cont
@@ -246,22 +220,22 @@ class OverlappedSocket(object):
     
     def beginAccept(self):
         cont = Future()
-        self.reactor.cp.beginAccept(OP_ACCEPT, self.fileno, cont)
+        self.reactor.cp.beginAccept(iocp.OP_ACCEPT, self.fileno, cont)
         return cont
     
     def beginConnect(self, address):
         cont = Future()
-        self.reactor.cp.beginAccept(OP_CONNECT, self.fileno, address, cont)
+        self.reactor.cp.beginAccept(iocp.OP_CONNECT, self.fileno, address, cont)
         return cont
     
     def beginRead(self, size):
         cont = Future()
-        iocp.beginRead(self.reactor.cp, OP_READ, self.socket.fileno, size, 0, cont)
+        iocp.beginRead(self.reactor.cp, iocp.OP_READ, self.socket.fileno, size, 0, cont)
         return cont
     
     def beginWrite(self, data):
         cont = Future()
-        iocp.beginWrite(self.reactor.cp, OP_WRITE, self.socket.fileno, data, 0, cont)
+        iocp.beginWrite(self.reactor.cp, iocp.OP_WRITE, self.socket.fileno, data, 0, cont)
         return cont
     
     def shutdown(self, how):

@@ -9,6 +9,8 @@ static PyMethodDef CompletionPort_methods[] =
     {"post",  CompletionPort_post, METH_VARARGS, "Directly post the objects to the completion port."},
     {"wait",  CompletionPort_wait, METH_VARARGS, 
     "Wait for an operation to be finished and return a (ID, tag, bytes, objs) tuple containing the result."},
+    {"complete",  CompletionPort_complete, METH_VARARGS, 
+    "Finish an operation by invoking the callback or continuation with the result."},
     {"createFile", CompletionPort_createFile, METH_VARARGS, "Create or open a file in asynchronous mode."},
     {"createPipe", CompletionPort_createPipe, METH_VARARGS, "Create an asynchronous pipe."},
     {"closeFile", CompletionPort_closeFile, METH_VARARGS, "Close a file, pipe or socket opened for the completion port."},
@@ -109,21 +111,29 @@ PyObject * CompletionPort_close(CompletionPort *self, PyObject *args)
 
 PyObject * CompletionPort_post(CompletionPort *self, PyObject *args)
 {
-    IOCPOverlapped *ov;
-    if(!PyTuple_Check(args))
+    DWORD opcode = 0;
+    PyObject *cont = Py_None, *data = Py_None;
+    IOCPOverlapped *over;
+
+    if(!PyArg_ParseTuple(args, "|lOO", &opcode, &cont, &data))
         return NULL;
-    ov = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));
-    ZeroMemory(&ov->ov, sizeof(OVERLAPPED));
-    Py_INCREF(args);
-    ov->data = args;
-    if(!ov)
+    over = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));
+    if(!over)
     {
         PyErr_SetString(PyExc_Exception, "Could not create the overlapped object");
         return NULL;
     }
-    // don't decrement ov's refcount, so it stays alive until wait() returns
+
+    ZeroMemory(&over->ov, sizeof(OVERLAPPED));
+    over->opcode = opcode;
+    Py_INCREF(cont);
+    over->cont = cont;
+    Py_INCREF(data);
+    over->data = data;
+    
+    // don't decrement cont and data's refcount, so they remain alive until wait() returns
     PostQueuedCompletionStatus(self->hPort, 0, 
-        (ULONG_PTR)INVALID_HANDLE_VALUE, (LPOVERLAPPED)ov);
+        (ULONG_PTR)INVALID_HANDLE_VALUE, (LPOVERLAPPED)over);
     Py_RETURN_NONE;
 }
 
@@ -132,17 +142,17 @@ PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args)
     BOOL success = FALSE;
     DWORD bytes = 0, error = ERROR_SUCCESS;
     ULONG_PTR tag = 0;
-    IOCPOverlapped *ov = NULL;
+    IOCPOverlapped *over = NULL;
     PyObject *result = NULL;
 
     if(!PyArg_ParseTuple(args, ""))
         return NULL;
     Py_BEGIN_ALLOW_THREADS
-    success = GetQueuedCompletionStatus(self->hPort, &bytes, &tag, (LPOVERLAPPED *)&ov, -1);
+    success = GetQueuedCompletionStatus(self->hPort, &bytes, &tag, (LPOVERLAPPED *)&over, -1);
     Py_END_ALLOW_THREADS
     if(!success)
     {
-        if(ov == NULL)
+        if(over == NULL)
         {
             // Waiting for the completion of an operation failed
             iocp_win32error("Waiting for an operation's completion failed (%s)");
@@ -155,10 +165,72 @@ PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args)
         }
     }
 
-    result = Py_BuildValue("(nllO)", tag, error, bytes, ov->data);
-    Py_DECREF(ov->data); // INCREF was done in beginRead/beginWrite/post to keep it alive
-    free(ov);
+    result = Py_BuildValue("(nlllOO)", tag, error, bytes, over->opcode, over->cont, over->data);
+    // INCREF was done in beginRead/beginWrite/post to keep these alive
+    Py_DECREF(over->cont);
+    Py_DECREF(over->data);
+    free(over);
     return result;
+}
+
+PyObject * CompletionPort_complete(CompletionPort *self, PyObject *args)
+{
+    DWORD bytes, error, opcode;
+    ULONG_PTR tag;
+    PyObject *cont, *data, *result, *exc, *ret;
+    if(!PyArg_ParseTuple(args, "nlllOO", &tag, &error, &bytes, &opcode, &cont, &data))
+        return NULL;
+
+    if(opcode == OP_READ)
+    {
+        if(error == ERROR_SUCCESS)
+        {
+            result = PySequence_GetSlice(data, 0, (Py_ssize_t)bytes);
+        }
+        else if((error == ERROR_BROKEN_PIPE) || (error == ERROR_HANDLE_EOF))
+        {
+            result = PyString_FromString("");
+        }
+        else
+        {
+            exc = iocp_createWinError(error, "The read operation failed (%s)");
+            result = NULL;
+        }
+    }
+    else if(opcode == OP_WRITE)
+    {
+        if(error == ERROR_SUCCESS)
+        {
+            Py_INCREF(Py_None);
+            result = Py_None;
+        }
+        else
+        {
+            exc = iocp_createWinError(error, "The write operation failed (%s)");
+            result = NULL;
+        }
+    }
+
+    if(result == NULL)
+    {
+        if(exc == NULL)
+        {
+            PyErr_SetString(PyExc_Exception, "Could not create WinError exception");
+            return NULL;
+        }
+        else
+        {
+            ret = PyObject_CallMethod(cont, "failed", "O", exc);
+            Py_DECREF(exc);
+            return ret;
+        }
+    }
+    else
+    {
+        ret = PyObject_CallMethod(cont, "completed", "O", result);
+        Py_DECREF(result);
+        return ret;
+    }
 }
 
 PyObject * CompletionPort_createFile(CompletionPort *self, PyObject *args)
@@ -291,23 +363,19 @@ PyObject * CompletionPort_beginRead(CompletionPort *self, PyObject *args)
         return NULL;
     }
 
-    data = Py_BuildValue("(lOO)", opcode, buffer, cont);
-    Py_DECREF(buffer);
-    if(!data)
-    {
-        return NULL;
-    }
-
     over = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));
     ZeroMemory(&over->ov, sizeof(OVERLAPPED));
-    over->data = data;
+    over->opcode = OP_READ;
+    Py_INCREF(cont);
+    over->cont = cont;
+    over->data = buffer;
     OVERLAPPED_setOffset(&over->ov, position);
     if(!ReadFile((HANDLE)hFile, pBuffer, size, NULL, (LPOVERLAPPED)over))
     {
         error = GetLastError();
         if(error == ERROR_IO_PENDING)
         {
-            // don't decrement data's refcount, so it stays alive until wait() returns
+            // don't decrement cont and data's refcount, so they remain alive until wait() returns
             error = ERROR_SUCCESS;
         }
         else
@@ -321,7 +389,7 @@ PyObject * CompletionPort_beginRead(CompletionPort *self, PyObject *args)
 
 PyObject * CompletionPort_beginWrite(CompletionPort *self, PyObject *args)
 {
-    PyObject *cont, *data, *buffer;
+    PyObject *cont, *buffer;
     IOCPOverlapped *over;
     DWORD opcode, error = ERROR_SUCCESS;
     Py_ssize_t hFile, position, bufferSize;
@@ -335,21 +403,20 @@ PyObject * CompletionPort_beginWrite(CompletionPort *self, PyObject *args)
         return NULL;
     }
 
-    data = Py_BuildValue("(lOO)", opcode, buffer, cont);
-    if(!data)
-    {    
-        return NULL;
-    }
     over = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));
     ZeroMemory(&over->ov, sizeof(OVERLAPPED));
-    over->data = data;
+    over->opcode = OP_WRITE;
+    Py_INCREF(cont);
+    over->cont = cont;
+    Py_INCREF(buffer);
+    over->data = buffer;
     OVERLAPPED_setOffset(&over->ov, position);
     if(!WriteFile((HANDLE)hFile, pBuffer, (DWORD)bufferSize, NULL, (LPOVERLAPPED)over))
     {
         error = GetLastError();
         if(error == ERROR_IO_PENDING)
         {
-            // don't decrement data's refcount, so it stays alive until wait() returns
+            // don't decrement cont and data's refcount, so they remain alive until wait() returns
             error = ERROR_SUCCESS;
         }
         else
