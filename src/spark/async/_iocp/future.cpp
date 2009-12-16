@@ -5,10 +5,10 @@
 
 static PyMethodDef Future_methods[] =
 {
-    {"wait", Future_wait, METH_VARARGS, "Wait for the result of the operation to be available."},
-    {"after", Future_after, METH_VARARGS, "Register a callable to be invoked after the operation is finished."},
-    {"completed", Future_completed, METH_VARARGS, "Indicate the operation is finished."},
-    {"failed", Future_failed, METH_VARARGS, "Indicate that the task failed, maybe because of an exception."},
+    {"wait", (PyCFunction)Future_wait, METH_VARARGS, "Wait for the result of the operation to be available."},
+    {"after", (PyCFunction)Future_after, METH_VARARGS, "Register a callable to be invoked after the operation is finished."},
+    {"completed", (PyCFunction)Future_completed, METH_VARARGS, "Indicate the operation is finished."},
+    {"failed", (PyCFunction)Future_failed, METH_VARARGS, "Indicate that the task failed, maybe because of an exception."},
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 
@@ -264,7 +264,7 @@ BOOL Future_callback_args(Future *self, PyObject *args, PyObject **cb, PyObject 
     PyObject *arglist, *argtuple;
     *cb = PySequence_GetItem(args, 0);
     arglist = PySequence_List(args);
-    PySequence_SetItem(arglist, 0, self);
+    PySequence_SetItem(arglist, 0, (PyObject *)self);
     *cbargs = PySequence_Tuple(arglist);
     Py_DECREF(arglist);
     return TRUE;

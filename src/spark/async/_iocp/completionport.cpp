@@ -5,17 +5,17 @@
 
 static PyMethodDef CompletionPort_methods[] =
 {
-    {"close",  CompletionPort_close, METH_VARARGS, "Close the completion port."},
-    {"post",  CompletionPort_post, METH_VARARGS, "Directly post the objects to the completion port."},
-    {"wait",  CompletionPort_wait, METH_VARARGS, 
+    {"close", (PyCFunction)CompletionPort_close, METH_VARARGS, "Close the completion port."},
+    {"post",  (PyCFunction)CompletionPort_post, METH_VARARGS, "Directly post the objects to the completion port."},
+    {"wait",  (PyCFunction)CompletionPort_wait, METH_VARARGS, 
     "Wait for an operation to be finished and return a (ID, tag, bytes, objs) tuple containing the result."},
-    {"complete",  CompletionPort_complete, METH_VARARGS, 
+    {"complete",  (PyCFunction)CompletionPort_complete, METH_VARARGS, 
     "Finish an operation by invoking the callback or continuation with the result."},
-    {"createFile", CompletionPort_createFile, METH_VARARGS, "Create or open a file in asynchronous mode."},
-    {"createPipe", CompletionPort_createPipe, METH_VARARGS, "Create an asynchronous pipe."},
-    {"closeFile", CompletionPort_closeFile, METH_VARARGS, "Close a file, pipe or socket opened for the completion port."},
-    {"beginRead", CompletionPort_beginRead, METH_VARARGS, "Start an asynchronous read operation on a file."},
-    {"beginWrite", CompletionPort_beginWrite, METH_VARARGS, "Start an asynchronous write operation on a file."},
+    {"createFile", (PyCFunction)CompletionPort_createFile, METH_VARARGS, "Create or open a file in asynchronous mode."},
+    {"createPipe", (PyCFunction)CompletionPort_createPipe, METH_VARARGS, "Create an asynchronous pipe."},
+    {"closeFile", (PyCFunction)CompletionPort_closeFile, METH_VARARGS, "Close a file, pipe or socket opened for the completion port."},
+    {"beginRead", (PyCFunction)CompletionPort_beginRead, METH_VARARGS, "Start an asynchronous read operation on a file."},
+    {"beginWrite", (PyCFunction)CompletionPort_beginWrite, METH_VARARGS, "Start an asynchronous write operation on a file."},
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 
@@ -64,8 +64,8 @@ PyTypeObject CompletionPortType =
 
 void OVERLAPPED_setOffset(OVERLAPPED *ov, ssize_t offset)
 {
-    ov->Offset = (DWORD)((size_t)offset & 0x00000000ffffffff);
-    ov->OffsetHigh = (DWORD)(((size_t)offset & 0xffffffff00000000) >> 32);
+    ov->Offset = (DWORD)((__int64)offset & (__int64)0x00000000ffffffff);
+    ov->OffsetHigh = (DWORD)(((__int64)offset & (__int64)0xffffffff00000000) >> 32);
 }
 
 void CompletionPort_dealloc(CompletionPort* self)
@@ -393,7 +393,7 @@ PyObject * CompletionPort_beginWrite(CompletionPort *self, PyObject *args)
     IOCPOverlapped *over;
     DWORD opcode, error = ERROR_SUCCESS;
     Py_ssize_t hFile, position, bufferSize;
-    void *pBuffer = 0;
+    const void *pBuffer = 0;
 
     if(!PyArg_ParseTuple(args, "lnOnO", &opcode, &hFile, &buffer, &position, &cont))
         return NULL;

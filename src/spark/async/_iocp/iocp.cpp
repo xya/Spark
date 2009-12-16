@@ -114,7 +114,7 @@ void iocp_win32error(const char *format)
     PyObject *exc = iocp_createWinError(error, format);
     if(exc)
     {
-        PyErr_SetObject(exc->ob_type, exc);
+        PyErr_SetObject(PyObject_Type(exc), exc);
         Py_DECREF(exc);
     }
 }
@@ -125,7 +125,7 @@ PyObject * iocp_createWinError(DWORD error, const char *format)
     char message[512], text[512];
     char *str;
 
-    exc = PyObject_New(PyObject, PyExc_WindowsError);
+    exc = PyObject_New(PyObject, (PyTypeObject *)PyExc_WindowsError);
     if(!exc)
         return NULL;
 
