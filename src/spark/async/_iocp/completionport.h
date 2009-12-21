@@ -28,8 +28,6 @@ PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args);
 PyObject * CompletionPort_complete(CompletionPort *self, PyObject *args);
 PyObject * CompletionPort_createFile(CompletionPort *self, PyObject *args);
 PyObject * CompletionPort_createPipe(CompletionPort *self, PyObject *args);
-PyObject * CompletionPort_closeFile(CompletionPort *self, PyObject *args);
-PyObject * CompletionPort_beginRead(CompletionPort *self, PyObject *args);
-PyObject * CompletionPort_beginWrite(CompletionPort *self, PyObject *args);
+PyObject * CompletionPort_createAsyncFile(CompletionPort *self, HANDLE hFile);
 
 #endif

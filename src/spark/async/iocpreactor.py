@@ -50,16 +50,15 @@ class CompletionPortReactor(Reactor):
     
     def socket(self, family, type, proto):
         """ Create a socket that uses the reactor to do asynchronous I/O. """
-        return OverlappedSocket(self, family, type, proto)
+        raise NotImplementedError()
     
     def open(self, file, mode=None):
         """ Open a file that uses the reactor to do asynchronous I/O. """
-        return OverlappedFile(self, self.cp.createFile(file, mode))
+        return self.cp.createFile(file, mode)
     
     def pipe(self):
         """ Create a pipe that uses the reactor to do asynchronous I/O. """
-        readHandle, writeHandle = self.cp.createPipe()
-        return (OverlappedFile(self, readHandle), OverlappedFile(self, writeHandle))
+        return self.cp.createPipe()
     
     def send(self, fun, *args, **kwargs):
         """ Invoke a callable on the reactor's thread and return its result through a future. """
@@ -155,100 +154,6 @@ class CompletionPortReactor(Reactor):
                 cont.failed()
             else:
                 cont.completed(result)
-
-class OverlappedFile(object):
-    """ File-like object that uses a reactor to perform asynchronous I/O. """
-    def __init__(self, reactor, handle):
-        self.reactor = reactor
-        self.handle = handle
-    
-    @property
-    def fileno(self):
-        return self.handle
-    
-    def beginRead(self, size, position=0):
-        cont = Future()
-        error = self.reactor.cp.beginRead(iocp.OP_READ, self.handle, size, position, cont)
-        if (error == iocp.ERROR_BROKEN_PIPE) or (error == iocp.ERROR_HANDLE_EOF):
-            cont.completed('')
-        elif error != iocp.ERROR_SUCCESS:
-            cont.failed(WinError(error))
-        return cont
-    
-    def beginWrite(self, data, position=0):
-        cont = Future()
-        error = self.reactor.cp.beginWrite(iocp.OP_WRITE, self.handle, data, position, cont)
-        if error != iocp.ERROR_SUCCESS:
-            cont.failed(WinError(error))
-        return cont
-    
-    def read(self, size, position=0):
-        return self.beginRead(size, position).result
-    
-    def write(self, data, position=0):
-        return self.beginWrite(data, position).result
-    
-    def close(self):
-        if self.handle:
-            self.reactor.cp.closeFile(self.handle)
-            self.handle = None
-    
-    def __enter__(self):
-        return self
-    
-    def __exit__(self, type, e, traceback):
-        self.close()
-
-class OverlappedSocket(object):
-    """ File-like wrapper for a socket. Uses a reactor to perform asynchronous I/O. """
-    def __init__(self, reactor, family, type, proto):
-        self.reactor = reactor
-        self.family = family
-        self.type = type
-        self.proto = proto
-        self.socket = socket.socket(self.family, self.type, self.proto)
-    
-    @property
-    def fileno(self):
-        return self.socket.fileno()
-    
-    def bind(self, address):
-        return self.socket.bind(address)
-    
-    def listen(self, backlog=1):
-        return self.socket.listen(backlog)
-    
-    def beginAccept(self):
-        cont = Future()
-        self.reactor.cp.beginAccept(iocp.OP_ACCEPT, self.fileno, cont)
-        return cont
-    
-    def beginConnect(self, address):
-        cont = Future()
-        self.reactor.cp.beginAccept(iocp.OP_CONNECT, self.fileno, address, cont)
-        return cont
-    
-    def beginRead(self, size):
-        cont = Future()
-        iocp.beginRead(self.reactor.cp, iocp.OP_READ, self.socket.fileno, size, 0, cont)
-        return cont
-    
-    def beginWrite(self, data):
-        cont = Future()
-        iocp.beginWrite(self.reactor.cp, iocp.OP_WRITE, self.socket.fileno, data, 0, cont)
-        return cont
-    
-    def shutdown(self, how):
-        return self.socket.shutdown(how)
-    
-    def close(self):
-        return self.socket.close()
-    
-    def __enter__(self):
-        return self
-    
-    def __exit__(self, type, e, traceback):
-        self.close()
 
 # register the reactor
 Reactor.addType(CompletionPortReactor)

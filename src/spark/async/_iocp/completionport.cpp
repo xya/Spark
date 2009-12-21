@@ -1,6 +1,7 @@
 #include <Python.h>
 #include <windows.h>
 #include "completionport.h"
+#include "AsyncFile.h"
 #include "iocp.h"
 
 static PyMethodDef CompletionPort_methods[] =
@@ -13,9 +14,6 @@ static PyMethodDef CompletionPort_methods[] =
     "Finish an operation by invoking the callback or continuation with the result."},
     {"createFile", (PyCFunction)CompletionPort_createFile, METH_VARARGS, "Create or open a file in asynchronous mode."},
     {"createPipe", (PyCFunction)CompletionPort_createPipe, METH_VARARGS, "Create an asynchronous pipe."},
-    {"closeFile", (PyCFunction)CompletionPort_closeFile, METH_VARARGS, "Close a file, pipe or socket opened for the completion port."},
-    {"beginRead", (PyCFunction)CompletionPort_beginRead, METH_VARARGS, "Start an asynchronous read operation on a file."},
-    {"beginWrite", (PyCFunction)CompletionPort_beginWrite, METH_VARARGS, "Start an asynchronous write operation on a file."},
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 
@@ -235,7 +233,7 @@ PyObject * CompletionPort_complete(CompletionPort *self, PyObject *args)
 
 PyObject * CompletionPort_createFile(CompletionPort *self, PyObject *args)
 {
-    PyObject *objMode;
+    PyObject *objMode, *fileArgs, *file;
     char *mode, *path;
     DWORD access, creation, flags;
     HANDLE hFile;
@@ -298,11 +296,13 @@ PyObject * CompletionPort_createFile(CompletionPort *self, PyObject *args)
         CloseHandle(hFile);
         return NULL;
     }
-    return Py_BuildValue("n", hFile);
+
+    return CompletionPort_createAsyncFile(self, hFile);
 }
 
 PyObject * CompletionPort_createPipe(CompletionPort *self, PyObject *args)
 {
+    PyObject *pipe1, *pipe2, *pipes;
     HANDLE hRead, hWrite;
     if(!PyArg_ParseTuple(args, ""))
         return NULL;
@@ -322,108 +322,31 @@ PyObject * CompletionPort_createPipe(CompletionPort *self, PyObject *args)
         CloseHandle(hWrite);
         return NULL;
     }
-    return Py_BuildValue("nn", hRead, hWrite);
+
+    pipe1 = CompletionPort_createAsyncFile(self, hRead);
+    if(!pipe1)
+        return NULL;
+
+    pipe2 = CompletionPort_createAsyncFile(self, hWrite);
+    if(!pipe2)
+    {
+        Py_DECREF(pipe1);
+        return NULL;
+    }
+
+    pipes = Py_BuildValue("OO", pipe1, pipe2);
+    Py_DECREF(pipe1);
+    Py_DECREF(pipe2);
+    return pipes;
 }
 
-PyObject * CompletionPort_closeFile(CompletionPort *self, PyObject *args)
+PyObject * CompletionPort_createAsyncFile(CompletionPort *self, HANDLE hFile)
 {
-    HANDLE hFile;
-    if(!PyArg_ParseTuple(args, "n", &hFile))
+    PyObject *fileArgs, *file;
+    fileArgs = Py_BuildValue("On", self, hFile);
+    if(!fileArgs)
         return NULL;
-    if(!CloseHandle(hFile))
-    {
-        iocp_win32error("Could not close file handle (%s)");
-        return NULL;
-    }
-    Py_RETURN_NONE;
-}
-
-PyObject * CompletionPort_beginRead(CompletionPort *self, PyObject *args)
-{
-    PyObject *cont, *data, *buffer;
-    IOCPOverlapped *over;
-    DWORD opcode, size, error = ERROR_SUCCESS;
-    Py_ssize_t hFile, position, bufferSize;
-    void *pBuffer = 0;
-
-    if(!PyArg_ParseTuple(args, "lnlnO", &opcode, &hFile, &size, &position, &cont))
-        return NULL;
-
-    buffer = PyBuffer_New(size);
-    if(!buffer)
-    {
-        return NULL;
-    }
-    
-    bufferSize = buffer->ob_type->tp_as_buffer->bf_getwritebuffer(buffer, 0, &pBuffer);
-    if(((ssize_t)size > bufferSize) || !pBuffer)
-    {
-        PyErr_SetString(PyExc_Exception, "Couldn't allocate the buffer");
-        Py_DECREF(buffer);
-        return NULL;
-    }
-
-    over = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));
-    ZeroMemory(&over->ov, sizeof(OVERLAPPED));
-    over->opcode = OP_READ;
-    Py_INCREF(cont);
-    over->cont = cont;
-    over->data = buffer;
-    OVERLAPPED_setOffset(&over->ov, position);
-    if(!ReadFile((HANDLE)hFile, pBuffer, size, NULL, (LPOVERLAPPED)over))
-    {
-        error = GetLastError();
-        if(error == ERROR_IO_PENDING)
-        {
-            // don't decrement cont and data's refcount, so they remain alive until wait() returns
-            error = ERROR_SUCCESS;
-        }
-        else
-        {
-            Py_DECREF(over->data);
-            free(over);
-        }
-    }
-    return PyLong_FromLong(error);
-}
-
-PyObject * CompletionPort_beginWrite(CompletionPort *self, PyObject *args)
-{
-    PyObject *cont, *buffer;
-    IOCPOverlapped *over;
-    DWORD opcode, error = ERROR_SUCCESS;
-    Py_ssize_t hFile, position, bufferSize;
-    const void *pBuffer = 0;
-
-    if(!PyArg_ParseTuple(args, "lnOnO", &opcode, &hFile, &buffer, &position, &cont))
-        return NULL;
-    else if((PyObject_AsReadBuffer(buffer, &pBuffer, &bufferSize) != 0) || (bufferSize <= 0))
-    {
-        PyErr_SetString(PyExc_Exception, "Couldn't access the buffer for reading");
-        return NULL;
-    }
-
-    over = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));
-    ZeroMemory(&over->ov, sizeof(OVERLAPPED));
-    over->opcode = OP_WRITE;
-    Py_INCREF(cont);
-    over->cont = cont;
-    Py_INCREF(buffer);
-    over->data = buffer;
-    OVERLAPPED_setOffset(&over->ov, position);
-    if(!WriteFile((HANDLE)hFile, pBuffer, (DWORD)bufferSize, NULL, (LPOVERLAPPED)over))
-    {
-        error = GetLastError();
-        if(error == ERROR_IO_PENDING)
-        {
-            // don't decrement cont and data's refcount, so they remain alive until wait() returns
-            error = ERROR_SUCCESS;
-        }
-        else
-        {
-            Py_DECREF(over->data);
-            free(over);
-        }
-    }
-    return PyLong_FromLong(error);
+    file = PyObject_CallObject((PyObject *)&AsyncFileType, fileArgs);
+    Py_DECREF(fileArgs);
+    return file;
 }

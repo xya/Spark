@@ -4,6 +4,7 @@
 #include "iocp.h"
 #include "completionport.h"
 #include "future.h"
+#include "AsyncFile.h"
 
 BOOL APIENTRY DllMain(HMODULE hModule,
                       DWORD  ul_reason_for_call,
@@ -35,11 +36,17 @@ PyMODINIT_FUNC init_iocp(void)
     if(PyType_Ready(&FutureType) < 0)
         return;
 
+    if(PyType_Ready(&AsyncFileType) < 0)
+        return;
+
     m = Py_InitModule3("_iocp", iocp_Methods,
        "Wrapper around Windows' I/O completion port interface");
 
     Py_INCREF(&CompletionPortType);
     PyModule_AddObject(m, "CompletionPort", (PyObject *)&CompletionPortType);
+
+    Py_INCREF(&AsyncFileType);
+    PyModule_AddObject(m, "AsyncFile", (PyObject *)&AsyncFileType);
 
     Py_INCREF(&FutureType);
     PyModule_AddObject(m, "Future", (PyObject *)&FutureType);
@@ -50,10 +57,6 @@ PyMODINIT_FUNC init_iocp(void)
 
     iocp_addConstant(m, "OP_CLOSE", OP_CLOSE);
     iocp_addConstant(m, "OP_INVOKE", OP_INVOKE);
-    iocp_addConstant(m, "OP_READ", OP_READ);
-    iocp_addConstant(m, "OP_WRITE", OP_WRITE);
-    iocp_addConstant(m, "OP_CONNECT", OP_CONNECT);
-    iocp_addConstant(m, "OP_ACCEPT", OP_ACCEPT);
 }
 
 void iocp_addConstant(PyObject *module, char *name, DWORD value)
@@ -125,12 +128,8 @@ PyObject * iocp_createWinError(DWORD error, const char *format)
     char message[512], text[512];
     char *str;
 
-    exc = PyObject_New(PyObject, (PyTypeObject *)PyExc_WindowsError);
-    if(!exc)
-        return NULL;
-
     ZeroMemory(message, sizeof(message));
-    FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, 0, GetLastError(), LANG_NEUTRAL, 
+    FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, 0, error, LANG_NEUTRAL, 
         message, sizeof(message), 0);
     if(format)
     {
@@ -141,20 +140,12 @@ PyObject * iocp_createWinError(DWORD error, const char *format)
     {
         str = message;
     }
-    
+
     args = Py_BuildValue("ls", &error, &str);
     if(!args)
-    {
-        Py_DECREF(exc);
         return NULL;
-    }
-    else if(exc->ob_type->tp_init(exc, args, NULL) < 0)
-    {
-        Py_DECREF(exc);
-        return NULL;
-    }
-    else
-    {
-        return exc;
-    }
+
+    exc = PyObject_CallObject(PyExc_WindowsError, args);
+    Py_DECREF(args);
+    return exc;
 }
