@@ -369,7 +369,6 @@ class Service(object):
         if hasattr(self, methodName):
             method = getattr(self, methodName)
             try:
-                self.logger.debug("Executing request handler '%s'" % req.tag)
                 results = method(req)
                 assert not isinstance(results, Future), "Request handler returned a future"
             except Exception as e:
@@ -378,6 +377,7 @@ class Service(object):
             else:
                 self.session.sendResponse(req, results)
         else:
+            self.logger.error("Request handler '%s' not found" % req.tag)
             self._sendErrorReponse(req, NotImplementedError())
     
     def sendRequest(self, tag, params=None):
@@ -394,6 +394,8 @@ class Service(object):
         if hasattr(self, methodName):
             method = getattr(self, methodName)
             method(prev)
+        else:
+            self.logger.error("Response handler '%s' not found" % tag)
     
     def _sendErrorReponse(self, req, e):
         """ Send a response indicating the request failed because of the exception. """

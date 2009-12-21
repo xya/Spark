@@ -20,8 +20,21 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 if __name__ == "__main__":
-    from spark.gui.main import MainView
+    import sys
+    import os
+    import logging
+    from PyQt4.QtGui import QApplication
+    from spark.gui.main import MainWindow
     from spark.fileshare import SparkApplication
-    app = SparkApplication()
-    view = MainView(app)
-    view.show()
+    qtapp = QApplication(sys.argv)
+    logging.basicConfig(level=logging.DEBUG)
+    with SparkApplication() as appA:
+        appA.session.listen(("127.0.0.1", 4550))
+        with SparkApplication() as appB:
+            viewA = MainWindow(appA)
+            viewB = MainWindow(appB)
+            viewA.setWindowTitle("Spark 4550")
+            viewA.show()
+            viewB.setWindowTitle("Spark 4551")
+            viewB.show()
+            qtapp.exec_()

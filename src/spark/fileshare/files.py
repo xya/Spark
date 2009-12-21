@@ -147,7 +147,7 @@ class FileTable(object):
             self.fileUpdated(fileID, local)
     
     def updateTable(self, table, local):
-        for key, file in table:
+        for key, file in table.items():
             self.updateFile(file, local)
 
 class DictWrapper(object):

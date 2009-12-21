@@ -74,7 +74,7 @@ class FileShare(Service):
     def cacheFileRemoved(self, fileID, local):
         self.filesUpdated()
         if local and self.remoteNotifications and self.session.isActive:
-            self.sendNotification(NOT_FILE_REMOVED, fileID)
+            self.sendNotification(NOT_FILE_REMOVED, {"ID": fileID})
     
     def start(self):
         """ Start the service. The session must be currently active. """
@@ -91,10 +91,10 @@ class FileShare(Service):
             self.remoteNotifications = True
         return self.fileTable.listFiles()
     
-    def responselistFiles(self, prev):
+    def responseListFiles(self, prev):
         """ The remote peer responded to our 'list-files' request. """
-        files = prev.result
-        self.fileTable.updateTable(files, False)
+        resp = prev.result
+        self.fileTable.updateTable(resp.params, False)
     
     def notificationFileAdded(self, n):
         """ The remote peer sent a 'file-added' notification. """

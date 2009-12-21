@@ -52,7 +52,9 @@ class MainWindow(QMainWindow):
         self.sharedFiles = {}
         self.fileIDs = []
         self.selectedID = None
-        self.app.session.share.filesUpdated += onGuiThread(self.sharedFilesUpdated)
+        self.app.session.connected += onGuiThread(self.sessionConnected)
+        self.app.session.disconnected += onGuiThread(self.sessionDisconnected)
+        self.app.session.filesUpdated += onGuiThread(self.sharedFilesUpdated)
         self.sharedFilesUpdated()
     
     def createAction(self, icon, size, text, help=None):
@@ -82,6 +84,8 @@ class MainWindow(QMainWindow):
             else:
                 self.toolbar.addSeparator()
         self.toolbar.setMovable(False)
+        QObject.connect(self.actions["connect"], SIGNAL("triggered()"), self.action_connect)
+        QObject.connect(self.actions["disconnect"], SIGNAL("triggered()"), self.action_disconnect)
         QObject.connect(self.actions["add"], SIGNAL("triggered()"), self.action_add)
         QObject.connect(self.actions["remove"], SIGNAL("triggered()"), self.action_remove)
     
@@ -119,9 +123,10 @@ class MainWindow(QMainWindow):
     def updateStatusBar(self):
         if self.app.session.isConnected:
             self.connStatus.setPixmap(QPixmap(iconPath("status/network-idle", 24)))
+            self.connStatus.setToolTip("Connected to a peer")
         else:
             self.connStatus.setPixmap(QPixmap(iconPath("status/network-offline", 24)))
-        self.connStatus.setToolTip("Connected to a peer")
+            self.connStatus.setToolTip("Not connected")
         self.myIP.setText("My IP: %s" % self.app.myIPaddress)
         self.transferCount.setText("%d transfer(s)" % self.app.activeTransfers)
         self.uploadSpeedText.setText("%s/s" % self.app.formatSize(self.app.uploadSpeed))
@@ -172,6 +177,7 @@ class MainWindow(QMainWindow):
     
     def isActionAvailable(self, name, file=None):
         """ Can the specified action be used now? """
+        connected = self.app.session.isConnected
         if isinstance(file, basestring):
             file = self.sharedFiles[file]
         if name == "add":
@@ -181,15 +187,25 @@ class MainWindow(QMainWindow):
         elif name == "remove":
             return file.ID in self.sharedFiles
         elif name == "start":
-            return file.isRemote
+            return file.isRemote and connected
         elif name == "pause":
-            return file.isReceiving or file.isSending
+            return (file.isReceiving or file.isSending) and connected
         elif name == "stop":
-            return file.isReceiving or file.isSending
+            return (file.isReceiving or file.isSending) and connected
         elif name == "open":
             return file.isLocal
         else:
             return False
+    
+    def action_connect(self):
+        d = ConnectionDialog(self.app, self)
+        d.exec_()
+    
+    def action_disconnect(self):
+        self.app.session.disconnect().after(onGuiThread(self.end_disconnect))
+    
+    def end_disconnect(self, prev):
+        result = prev.result
     
     def action_add(self):
         dir = os.path.expanduser("~")
@@ -213,9 +229,70 @@ class MainWindow(QMainWindow):
         self.updateStatusBar()
         self.app.session.files().after(onGuiThread(self.end_listFiles))
     
+    def sessionConnected(self, initiating):
+        self.updateStatusBar()
+        self.updateToolBar()
+    
+    def sessionDisconnected(self):
+        self.updateStatusBar()
+        self.updateToolBar()
+    
     def end_listFiles(self, prev):
         files = prev.result
         self.updateTransferList(files)
+
+class ConnectionDialog(QDialog):
+    def __init__(self, app, parent=None):
+        super(ConnectionDialog, self).__init__(parent)
+        self.app = app
+        self.setWindowTitle("Connect to a peer")
+        self.initWidgets()
+        self.initLayout()
+    
+    def initWidgets(self):
+        self.messageLabel = QLabel("Enter the peer's address and port below")
+        self.hostText = QLineEdit("localhost")
+        self.addressSeparator = QLabel(":")
+        self.portText = QLineEdit("4550")
+        self.progressBar = QProgressBar()
+        self.progressBar.setMinimum(0)
+        self.progressBar.setMaximum(0)
+        self.progressBar.setVisible(False)
+        self.connectButton = QPushButton("Connect")
+        self.cancelButton = QPushButton("Cancel")
+        QObject.connect(self.connectButton, SIGNAL("clicked()"), self.doConnect)
+        QObject.connect(self.cancelButton, SIGNAL("clicked()"), self, SLOT("reject()"))
+    
+    def initLayout(self):
+        addressLayout = QBoxLayout(QBoxLayout.LeftToRight)
+        addressLayout.addWidget(self.hostText, 4)
+        addressLayout.addWidget(self.addressSeparator)
+        addressLayout.addWidget(self.portText, 1)
+        buttonLayout = QBoxLayout(QBoxLayout.LeftToRight)
+        buttonLayout.addWidget(self.connectButton)
+        buttonLayout.addWidget(self.cancelButton)
+        mainLayout = QBoxLayout(QBoxLayout.TopToBottom, self)
+        mainLayout.addWidget(self.messageLabel)
+        mainLayout.addLayout(addressLayout)
+        mainLayout.addWidget(self.progressBar)
+        mainLayout.addLayout(buttonLayout)
+    
+    def doConnect(self):
+        address = (str(self.hostText.text()), int(self.portText.text()))
+        self.connectButton.setEnabled(False)
+        self.progressBar.setVisible(True)
+        self.app.session.connect(address).after(onGuiThread(self.end_connect))
+    
+    def end_connect(self, prev):
+        self.connectButton.setEnabled(True)
+        self.progressBar.setVisible(False)
+        try:
+            result = prev.result
+        except Exception as ex:
+            QMessageBox.critical(self, "Connection error",
+                "Error while connecting: %s" % str(ex))
+        else:
+            self.accept()
 
 class Invoker(QObject):
     def __init__(self):

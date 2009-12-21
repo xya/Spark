@@ -439,6 +439,14 @@ class ConnectOperation(IOOperation):
             (self.address, ), os.errno.EINPROGRESS)
         return success
     
+    def canceled(self, event=None):
+        try:
+            self.nbsock.socket.connect(self.address)
+        except Exception:
+            self.raise_failed()
+        else:
+            self.raise_canceled()
+    
     def completed(self):
         self.raise_completed((self.nbsock, self.address))
     
