@@ -39,6 +39,33 @@ class SparkApplication(object):
         self.reactor = Reactor.create()
         self.reactor.launch_thread()
         self.session = Session(self.reactor)
+    
+    @property
+    def myIPaddress(self):
+        """ Return the public IP address of the user, if known. """
+        return "127.0.0.1"
+    
+    @property
+    def activeTransfers(self):
+        """ Return the number of active transfers. """
+        return self.session.activeTransfers
+    
+    @property
+    def uploadSpeed(self):
+        """ Return the total upload speed, across all active transfers. """
+        return self.session.uploadSpeed
+    
+    @property
+    def downloadSpeed(self):
+        """ Return the total download speed, across all active transfers. """
+        return self.session.downloadSpeed
+    
+    Units = [("KiB", 1024), ("MiB", 1024 * 1024), ("GiB", 1024 * 1024 * 1024)]
+    def formatSize(self, size):
+        for unit, count in reversed(SparkApplication.Units):
+            if size >= count:
+                return "%0.2f %s" % (size / float(count), unit)
+        return "%d byte" % size
 
 _fileShareMethods = ["files", "addFile", "removeFile"]
 
@@ -56,3 +83,18 @@ class Session(object):
         for methodName in _fileShareMethods:
             method = sessionMethod(getattr(self.share, methodName))
             setattr(self, methodName, types.MethodType(method, self))
+    
+    @property
+    def activeTransfers(self):
+        """ Return the number of active transfers. """
+        return 0
+    
+    @property
+    def uploadSpeed(self):
+        """ Return the total upload speed, across all active transfers. """
+        return 0.0
+    
+    @property
+    def downloadSpeed(self):
+        """ Return the total download speed, across all active transfers. """
+        return 0.0

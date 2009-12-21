@@ -105,10 +105,10 @@ class MainWindow(QMainWindow):
     def updateStatusBar(self):
         self.connStatus.setPixmap(QPixmap(iconPath("status/network-idle", 24)))
         self.connStatus.setToolTip("Connected to a peer")
-        self.myIP.setText("My IP: 127.0.0.1")
-        self.transferCount.setText("%d transfer(s)" % 0) # self.sharedFiles.activeTransfers)
-        self.uploadSpeedText.setText("%s/s" %  "0.0 KB") # self.formatSize(self.sharedFiles.uploadSpeed))
-        self.downloadSpeedText.setText("%s/s" % "0.0 KB") # self.formatSize(self.sharedFiles.downloadSpeed))
+        self.myIP.setText("My IP: %s" % self.app.myIPaddress)
+        self.transferCount.setText("%d transfer(s)" % self.app.activeTransfers)
+        self.uploadSpeedText.setText("%s/s" % self.app.formatSize(self.app.uploadSpeed))
+        self.downloadSpeedText.setText("%s/s" % self.app.formatSize(self.app.downloadSpeed))
     
     def initTransferList(self):
         self.transferList = FileList()
@@ -116,9 +116,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.transferList)
         self.transferList.setFocus()
     
-    def updateTransferList(self):
+    def updateTransferList(self, files):
         self.transferList.clear()
-        files = self.app.session.files().wait(0.2) # FIXME
         self.sharedFiles = files
         self.fileIDs = files.keys()
         for file in (self.sharedFiles[ID] for ID in self.fileIDs):
@@ -129,7 +128,7 @@ class MainWindow(QMainWindow):
     def createFileWidget(self, file):
         widget = FileInfoWidget(self)
         widget.setName(file.name)
-        widget.setTransferSize("Size: %s" % self.formatSize(file.size))
+        widget.setTransferSize("Size: %s" % self.app.formatSize(file.size))
         if file.mimeType:
             widget.setTypeIcon("mimetypes/%s" % file.mimeType)
         else:
@@ -197,15 +196,8 @@ class MainWindow(QMainWindow):
         result = prev.result
     
     def sharedFilesUpdated(self):
-        self.updateTransferList()
         self.updateStatusBar()
-    
-    Units = [("KiB", 1024), ("MiB", 1024 * 1024), ("GiB", 1024 * 1024 * 1024)]
-    def formatSize(self, size):
-        for unit, count in reversed(MainWindow.Units):
-            if size >= count:
-                return "%0.2f %s" % (size / float(count), unit)
-        return "%d byte" % size
+        self.app.session.files().after(lambda prev: self.updateTransferList(prev.result))
 
 class Invoker(QObject):
     def __init__(self):
