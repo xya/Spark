@@ -63,7 +63,7 @@ class MainWindow(QMainWindow):
         return action
     
     def initToolbar(self):
-        #self.actions["connect"] = self.createAction("status/network-transmit-receive", 32, "Connect", "Connect to a peer")
+        self.actions["connect"] = self.createAction("status/network-transmit-receive", 32, "Connect", "Connect to a peer")
         self.actions["disconnect"] = self.createAction("actions/process-stop", 32, "Disconnect", "Close the connection to the peer")
         self.actions["add"] = self.createAction("actions/list-add", 32, "Add", "Add a file to the list")
         self.actions["remove"] = self.createAction("actions/list-remove", 32, "Remove", "Remove the file from the list")
@@ -75,7 +75,8 @@ class MainWindow(QMainWindow):
         self.toolbar = self.addToolBar("Actions")
         self.toolbar.setIconSize(QSize(32, 32))
         self.toolbar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-        for name in ("disconnect", None, "add", "remove", None, "start", "pause", "stop", None, "open"):
+        for name in ("connect", "disconnect", None, "add", "remove", None,
+                     "start", "pause", "stop", None, "open"):
             if name:
                 self.toolbar.addAction(self.actions[name])
             else:
@@ -83,6 +84,19 @@ class MainWindow(QMainWindow):
         self.toolbar.setMovable(False)
         QObject.connect(self.actions["add"], SIGNAL("triggered()"), self.action_add)
         QObject.connect(self.actions["remove"], SIGNAL("triggered()"), self.action_remove)
+    
+    def updateToolBar(self):
+        # connection-dependent actions
+        self.actions["disconnect"].setVisible(self.app.session.isConnected)
+        self.actions["connect"].setVisible(not self.app.session.isConnected)
+        
+        # selection-dependent actions
+        if self.selectedID is None:
+            file = None
+        else:
+            file = self.sharedFiles[self.selectedID]
+        for key in ("add", "remove", "start", "pause", "stop", "open"):
+            self.actions[key].setEnabled(self.isActionAvailable(key, file))
     
     def initStatusBar(self):
         self.connStatus = QLabel(self.statusBar())
@@ -103,7 +117,10 @@ class MainWindow(QMainWindow):
         self.statusBar().addWidget(self.downloadSpeedText)
     
     def updateStatusBar(self):
-        self.connStatus.setPixmap(QPixmap(iconPath("status/network-idle", 24)))
+        if self.app.session.isConnected:
+            self.connStatus.setPixmap(QPixmap(iconPath("status/network-idle", 24)))
+        else:
+            self.connStatus.setPixmap(QPixmap(iconPath("status/network-offline", 24)))
         self.connStatus.setToolTip("Connected to a peer")
         self.myIP.setText("My IP: %s" % self.app.myIPaddress)
         self.transferCount.setText("%d transfer(s)" % self.app.activeTransfers)
@@ -149,12 +166,9 @@ class MainWindow(QMainWindow):
     def updateSelectedTransfer(self, index):
         if index < 0:
             self.selectedID = None
-            file = None
         else:
             self.selectedID = self.fileIDs[index]
-            file = self.sharedFiles[self.selectedID]
-        for key in ("add", "remove", "start", "pause", "stop", "open"):
-            self.actions[key].setEnabled(self.isActionAvailable(key, file))
+        self.updateToolBar()
     
     def isActionAvailable(self, name, file=None):
         """ Can the specified action be used now? """
@@ -197,7 +211,11 @@ class MainWindow(QMainWindow):
     
     def sharedFilesUpdated(self):
         self.updateStatusBar()
-        self.app.session.files().after(lambda prev: self.updateTransferList(prev.result))
+        self.app.session.files().after(onGuiThread(self.end_listFiles))
+    
+    def end_listFiles(self, prev):
+        files = prev.result
+        self.updateTransferList(files)
 
 class Invoker(QObject):
     def __init__(self):

@@ -85,6 +85,11 @@ class Session(object):
             setattr(self, methodName, types.MethodType(method, self))
     
     @property
+    def isConnected(self):
+        """ Determine whether the session is active, i.e. we are connected to a remote peer. """
+        return False
+    
+    @property
     def activeTransfers(self):
         """ Return the number of active transfers. """
         return 0
