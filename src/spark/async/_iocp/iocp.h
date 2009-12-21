@@ -6,8 +6,10 @@ BOOL APIENTRY DllMain(HMODULE hModule,
                       LPVOID lpReserved);
 
 PyMODINIT_FUNC init_iocp(void);
-void iocp_win32error(const char *format);
+void iocp_lastwin32error(const char *format);
+void iocp_win32error(DWORD error, const char *format);
 PyObject * iocp_createWinError(DWORD error, const char *format);
+PyObject * iocp_fetchException();
 BOOL iocp_createAsyncPipe(PHANDLE hRead, PHANDLE hWrite);
 void iocp_addConstant(PyObject *module, char *name, DWORD value);
 

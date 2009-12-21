@@ -6,14 +6,18 @@
 
 static PyMethodDef CompletionPort_methods[] =
 {
-    {"close", (PyCFunction)CompletionPort_close, METH_VARARGS, "Close the completion port."},
-    {"post",  (PyCFunction)CompletionPort_post, METH_VARARGS, "Directly post the objects to the completion port."},
+    {"close", (PyCFunction)CompletionPort_close, METH_VARARGS, 
+        "Close the completion port."},
+    {"eof", (PyCFunction)CompletionPort_eof, METH_VARARGS, 
+        "Post an end-of-file marker to the completion port."},
+    {"invokeLater", (PyCFunction)CompletionPort_invokeLater, METH_VARARGS, 
+        "Post a callable to the completion port. It will be invoked by wait()."},
     {"wait",  (PyCFunction)CompletionPort_wait, METH_VARARGS, 
-    "Wait for an operation to be finished and return a (ID, tag, bytes, objs) tuple containing the result."},
-    {"complete",  (PyCFunction)CompletionPort_complete, METH_VARARGS, 
-    "Finish an operation by invoking the callback or continuation with the result."},
-    {"createFile", (PyCFunction)CompletionPort_createFile, METH_VARARGS, "Create or open a file in asynchronous mode."},
-    {"createPipe", (PyCFunction)CompletionPort_createPipe, METH_VARARGS, "Create an asynchronous pipe."},
+        "Wait for an operation to be finished and return a (success, result, cont) tuple describing its outcome."},
+    {"createFile", (PyCFunction)CompletionPort_createFile, METH_VARARGS, 
+        "Create or open a file in asynchronous mode."},
+    {"createPipe", (PyCFunction)CompletionPort_createPipe, METH_VARARGS, 
+        "Create an asynchronous pipe."},
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 
@@ -90,7 +94,7 @@ int CompletionPort_init(CompletionPort *self, PyObject *args, PyObject *kwds)
         return -1;
     self->hPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, (ULONG_PTR)NULL, 0);
     if(!self->hPort)
-        iocp_win32error("Could not create completion port (%s)");
+        iocp_lastwin32error("Could not create completion port (%s)");
     return 0;
 }
 
@@ -107,15 +111,9 @@ PyObject * CompletionPort_close(CompletionPort *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
-PyObject * CompletionPort_post(CompletionPort *self, PyObject *args)
+PyObject * CompletionPort_post(CompletionPort *self, DWORD opcode, PyObject *cont, PyObject *data)
 {
-    DWORD opcode = 0;
-    PyObject *cont = Py_None, *data = Py_None;
-    IOCPOverlapped *over;
-
-    if(!PyArg_ParseTuple(args, "|lOO", &opcode, &cont, &data))
-        return NULL;
-    over = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));
+    IOCPOverlapped *over = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));
     if(!over)
     {
         PyErr_SetString(PyExc_Exception, "Could not create the overlapped object");
@@ -133,6 +131,30 @@ PyObject * CompletionPort_post(CompletionPort *self, PyObject *args)
     PostQueuedCompletionStatus(self->hPort, 0, 
         (ULONG_PTR)INVALID_HANDLE_VALUE, (LPOVERLAPPED)over);
     Py_RETURN_NONE;
+}
+
+PyObject * CompletionPort_invokeLater(CompletionPort *self, PyObject *args)
+{
+    PyObject *func, *func_args, *func_kw, *cont = Py_None;
+    PyObject *postArgs, *ret;
+    if(!PyArg_ParseTuple(args, "OOO|O", &func, &func_args, &func_kw, &cont))
+    {
+        return NULL;
+    }
+    else if(!PyCallable_Check(func))
+    {
+        PyErr_SetString(PyExc_TypeError, "The first argument should be a callable");
+    }
+
+    postArgs = Py_BuildValue("OOO", func, func_args, func_kw);
+    ret = CompletionPort_post(self, OP_INVOKE, cont, postArgs);
+    Py_DECREF(postArgs);
+    return ret;
+}
+
+PyObject * CompletionPort_eof(CompletionPort *self, PyObject *args)
+{
+    return CompletionPort_post(self, OP_CLOSE, Py_None, Py_None);
 }
 
 PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args)
@@ -153,7 +175,7 @@ PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args)
         if(over == NULL)
         {
             // Waiting for the completion of an operation failed
-            iocp_win32error("Waiting for an operation's completion failed (%s)");
+            iocp_lastwin32error("Waiting for an operation's completion failed (%s)");
             return NULL;
         }
         else
@@ -163,7 +185,7 @@ PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args)
         }
     }
 
-    result = Py_BuildValue("(nlllOO)", tag, error, bytes, over->opcode, over->cont, over->data);
+    result = CompletionPort_getResult(self, tag, error, bytes, over->opcode, over->cont, over->data);
     // INCREF was done in beginRead/beginWrite/post to keep these alive
     Py_DECREF(over->cont);
     Py_DECREF(over->data);
@@ -171,64 +193,85 @@ PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args)
     return result;
 }
 
-PyObject * CompletionPort_complete(CompletionPort *self, PyObject *args)
+PyObject * CompletionPort_getResult(CompletionPort *self, ULONG_PTR tag, 
+        DWORD error, DWORD bytes, DWORD opcode, PyObject *cont, PyObject *data)
 {
-    DWORD bytes, error, opcode;
-    ULONG_PTR tag;
-    PyObject *cont, *data, *result, *exc, *ret;
-    if(!PyArg_ParseTuple(args, "nlllOO", &tag, &error, &bytes, &opcode, &cont, &data))
+    PyObject *result, *value;
+    PyObject *func, *args, *kwargs;
+    PyObject *ex_type, *ex_val, *ex_tb;
+    BOOL success;
+    if(opcode == OP_INVOKE)
+    {
+        func = PyTuple_GetItem(data, 0);
+        args = PyTuple_GetItem(data, 1);
+        kwargs = PyTuple_GetItem(data, 2);
+        value = PyObject_Call(func, args, kwargs);
+        if(value)
+        {
+            success = TRUE;
+        }
+        else
+        {
+            success = FALSE;
+            value = iocp_fetchException();
+            if(!value)
+                return NULL;
+        }
+    }
+    else if(opcode == OP_CLOSE)
+    {
+        PyErr_SetString(PyExc_EOFError, "The completion port was closed.");
         return NULL;
-
-    if(opcode == OP_READ)
+    }
+    else if(opcode == OP_READ)
     {
         if(error == ERROR_SUCCESS)
         {
-            result = PySequence_GetSlice(data, 0, (Py_ssize_t)bytes);
+            success = TRUE;
+            value = PySequence_GetSlice(data, 0, (Py_ssize_t)bytes);
+            if(!value)
+                return NULL;
         }
         else if((error == ERROR_BROKEN_PIPE) || (error == ERROR_HANDLE_EOF))
         {
-            result = PyString_FromString("");
+            success = TRUE;
+            value = PyString_FromString("");
+            if(!value)
+                return NULL;
         }
         else
         {
-            exc = iocp_createWinError(error, "The read operation failed (%s)");
-            result = NULL;
-        }
-    }
-    else if(opcode == OP_WRITE)
-    {
-        if(error == ERROR_SUCCESS)
-        {
-            Py_INCREF(Py_None);
-            result = Py_None;
-        }
-        else
-        {
-            exc = iocp_createWinError(error, "The write operation failed (%s)");
-            result = NULL;
-        }
-    }
-
-    if(result == NULL)
-    {
-        if(exc == NULL)
-        {
-            PyErr_SetString(PyExc_Exception, "Could not create WinError exception");
-            return NULL;
-        }
-        else
-        {
-            ret = PyObject_CallMethod(cont, "failed", "O", exc);
-            Py_DECREF(exc);
-            return ret;
+            success = FALSE;
+            iocp_win32error(error, "The read operation failed (%s)");
+            value = iocp_fetchException();
+            if(!value)
+                return NULL;
         }
     }
     else
     {
-        ret = PyObject_CallMethod(cont, "completed", "O", result);
-        Py_DECREF(result);
-        return ret;
+        if(error == ERROR_SUCCESS)
+        {
+            success = TRUE;
+            Py_INCREF(Py_None);
+            value = Py_None;
+        }
+        else
+        {
+            success = FALSE;
+            iocp_win32error(error, "The operation failed (%s)");
+            value = iocp_fetchException();
+            if(!value)
+                return NULL;
+        }
     }
+
+    if(success)
+        result = Py_BuildValue("OOO", Py_True, value, cont);
+    else
+        result = Py_BuildValue("OOO", Py_False, value, cont);
+    Py_DECREF(value);
+    return result;
 }
 
 PyObject * CompletionPort_createFile(CompletionPort *self, PyObject *args)
@@ -287,12 +330,12 @@ PyObject * CompletionPort_createFile(CompletionPort *self, PyObject *args)
     hFile = CreateFileA(path, access, 0, NULL, creation, flags, NULL);
     if(hFile == INVALID_HANDLE_VALUE)
     {
-        iocp_win32error("Could not open or create file (%s)");
+        iocp_lastwin32error("Could not open or create file (%s)");
         return NULL;
     }
     else if(!CreateIoCompletionPort((HANDLE)hFile, self->hPort, (ULONG_PTR)hFile, 0))
     {
-        iocp_win32error("Could not register file (%s)");
+        iocp_lastwin32error("Could not register file (%s)");
         CloseHandle(hFile);
         return NULL;
     }
@@ -310,14 +353,14 @@ PyObject * CompletionPort_createPipe(CompletionPort *self, PyObject *args)
         return NULL;
     if(!CreateIoCompletionPort((HANDLE)hRead, self->hPort, (ULONG_PTR)hRead, 0))
     {
-        iocp_win32error("Could not register read pipe (%s)");
+        iocp_lastwin32error("Could not register read pipe (%s)");
         CloseHandle(hRead);
         CloseHandle(hWrite);
         return NULL;
     }
     if(!CreateIoCompletionPort((HANDLE)hWrite, self->hPort, (ULONG_PTR)hWrite, 0))
     {
-        iocp_win32error("Could not register write pipe (%s)");
+        iocp_lastwin32error("Could not register write pipe (%s)");
         CloseHandle(hRead);
         CloseHandle(hWrite);
         return NULL;

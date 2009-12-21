@@ -50,13 +50,6 @@ PyMODINIT_FUNC init_iocp(void)
 
     Py_INCREF(&FutureType);
     PyModule_AddObject(m, "Future", (PyObject *)&FutureType);
-
-    iocp_addConstant(m, "ERROR_SUCCESS", ERROR_SUCCESS);
-    iocp_addConstant(m, "ERROR_HANDLE_EOF", ERROR_HANDLE_EOF);
-    iocp_addConstant(m, "ERROR_BROKEN_PIPE", ERROR_BROKEN_PIPE);
-
-    iocp_addConstant(m, "OP_CLOSE", OP_CLOSE);
-    iocp_addConstant(m, "OP_INVOKE", OP_INVOKE);
 }
 
 void iocp_addConstant(PyObject *module, char *name, DWORD value)
@@ -82,7 +75,7 @@ BOOL iocp_createAsyncPipe(PHANDLE hRead, PHANDLE hWrite)
         1, 0, 0, 0, NULL);
     if(readHandle == INVALID_HANDLE_VALUE)
     {
-        iocp_win32error("Could not create a pipe (%s)");
+        iocp_lastwin32error("Could not create a pipe (%s)");
         if(hRead)
             *hRead = INVALID_HANDLE_VALUE;
         if(hWrite)
@@ -95,7 +88,7 @@ BOOL iocp_createAsyncPipe(PHANDLE hRead, PHANDLE hWrite)
 
     if(writeHandle == INVALID_HANDLE_VALUE)
     {
-        iocp_win32error("Could not create a pipe (%s)");
+        iocp_lastwin32error("Could not create a pipe (%s)");
         CloseHandle(readHandle);
         if(hRead)
             *hRead = INVALID_HANDLE_VALUE;
@@ -111,9 +104,13 @@ BOOL iocp_createAsyncPipe(PHANDLE hRead, PHANDLE hWrite)
     return TRUE;
 }
 
-void iocp_win32error(const char *format)
+void iocp_lastwin32error(const char *format)
 {
-    DWORD error = GetLastError();
+    iocp_win32error(GetLastError(), format);
+}
+
+void iocp_win32error(DWORD error, const char *format)
+{
     PyObject *exc = iocp_createWinError(error, format);
     if(exc)
     {
@@ -148,4 +145,23 @@ PyObject * iocp_createWinError(DWORD error, const char *format)
     exc = PyObject_CallObject(PyExc_WindowsError, args);
     Py_DECREF(args);
     return exc;
+}
+
+PyObject * iocp_fetchException()
+{
+    PyObject *value, *ex_type, *ex_val, *ex_tb;
+    if(PyErr_Occurred())
+    {
+        PyErr_Fetch(&ex_type, &ex_val, &ex_tb);
+        PyErr_NormalizeException(&ex_type, &ex_val, &ex_tb);
+        value = Py_BuildValue("OOO", ex_type, ex_val, ex_tb);
+        Py_DECREF(ex_val);
+        Py_DECREF(ex_type);
+        Py_DECREF(ex_tb);
+    }
+    else
+    {
+        value = Py_BuildValue("OOO", Py_None, Py_None, Py_None); 
+    }
+    return value;
 }

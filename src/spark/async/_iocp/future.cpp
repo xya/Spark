@@ -120,7 +120,7 @@ PyObject * Future_wait(Future *self, PyObject *args)
         Py_END_ALLOW_THREADS
         if(waitResult == WAIT_FAILED)
         {
-            iocp_win32error("Waiting for the result of the operation failed (%s)");
+            iocp_lastwin32error("Waiting for the result of the operation failed (%s)");
             return NULL;
         }
         Future_get_result(self, &state, &result, NULL);

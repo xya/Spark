@@ -26,11 +26,7 @@ import logging
 from ctypes import WinError
 from spark.async import Delegate
 from spark.async.aio import Reactor
-try:
-    from spark.async import _iocp as iocp
-    Future = iocp.Future
-except ImportError:
-    from spark.async import iocp, Future
+from spark.async._iocp import CompletionPort, Future
 
 __all__ = ["CompletionPortReactor"]
 
@@ -46,7 +42,7 @@ class CompletionPortReactor(Reactor):
         self.onClosed = Delegate(self.lock)
         self.active = False
         self.closed = False
-        self.cp = iocp.CompletionPort()
+        self.cp = CompletionPort()
     
     def socket(self, family, type, proto):
         """ Create a socket that uses the reactor to do asynchronous I/O. """
@@ -62,17 +58,13 @@ class CompletionPortReactor(Reactor):
     
     def send(self, fun, *args, **kwargs):
         """ Invoke a callable on the reactor's thread and return its result through a future. """
-        if fun is None:
-            raise TypeError("The callable must not be None")
         cont = Future()
-        self.cp.post(iocp.OP_INVOKE, cont, (fun, args, kwargs))
+        self.cp.invokeLater(fun, args, kwargs, cont)
         return cont
     
     def post(self, fun, *args, **kwargs):
         """ Submit a callable to be invoked on the reactor's thread later. """
-        if fun is None:
-            raise TypeError("The callable must not be None")
-        self.cp.post(iocp.OP_INVOKE, None, (fun, args, kwargs))
+        self.cp.invokeLater(fun, args, kwargs)
     
     def launch_thread(self):
         """ Start a background I/O thread to run the reactor. """
@@ -103,7 +95,7 @@ class CompletionPortReactor(Reactor):
         """ Close the reactor, terminating all pending operations. """
         with self.lock:
             if self.active:
-                self.cp.post(iocp.OP_CLOSE)
+                self.cp.eof()
     
     def __enter__(self):
         return self
@@ -117,15 +109,21 @@ class CompletionPortReactor(Reactor):
             while True:
                 if logging:
                     self.logger.log(LOG_VERBOSE, "Waiting for GetQueuedCompletionStatus()")
-                tag, error, bytes, opcode, cont, data = self.cp.wait()
+                success, val, cont = self.cp.wait()
                 if logging:
                     self.logger.log(LOG_VERBOSE, "Woke up from GetQueuedCompletionStatus()")
-                if opcode == iocp.OP_CLOSE:
-                    break
-                elif opcode == iocp.OP_INVOKE:
-                    self.handleCallback(cont, *data)
+                
+                if success:
+                    if cont is not None:
+                        cont.completed(val)
                 else:
-                    self.cp.complete(tag, error, bytes, opcode, cont, data)
+                    type, exc, tb = val
+                    if cont is not None:
+                        cont.failed(exc)
+                    else:
+                        raise exc
+        except EOFError:
+			pass
         finally:
             self.cleanup()
     
