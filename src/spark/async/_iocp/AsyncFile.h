@@ -1,14 +1,11 @@
 #ifndef PYTHON_IOCP_ASYNC_FILE
 #define PYTHON_IOCP_ASYNC_FILE
 
-#include "completionport.h"
-
 extern PyTypeObject AsyncFileType;
 
 typedef struct
 {
     PyObject_HEAD
-    CompletionPort *port;
     HANDLE hFile;
 } AsyncFile;
 

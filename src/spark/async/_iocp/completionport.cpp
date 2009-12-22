@@ -2,6 +2,7 @@
 #include <windows.h>
 #include "completionport.h"
 #include "AsyncFile.h"
+#include "AsyncSocket.h"
 #include "iocp.h"
 
 static PyMethodDef CompletionPort_methods[] =
@@ -18,6 +19,8 @@ static PyMethodDef CompletionPort_methods[] =
         "Create or open a file in asynchronous mode."},
     {"createPipe", (PyCFunction)CompletionPort_createPipe, METH_VARARGS, 
         "Create an asynchronous pipe."},
+    {"createSocket", (PyCFunction)CompletionPort_createSocket, METH_VARARGS, 
+        "Create a socket in asynchronous mode."},
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 
@@ -256,6 +259,35 @@ PyObject * CompletionPort_getResult(CompletionPort *self, ULONG_PTR tag,
                 return NULL;
         }
     }
+    else if(opcode == OP_CONNECT)
+    {
+        if(error == ERROR_SUCCESS)
+        {
+            /*
+            if(setsockopt(self->socket, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0) == SOCKET_ERROR)
+            {
+                success = FALSE;
+                iocp_lastwin32error("Error while updating the socket after ConnectEx (%s)");
+                value = iocp_fetchException();
+                if(!value)
+                    return NULL;
+            }
+            else
+            {
+            */
+            success = TRUE;
+            Py_INCREF(data);
+            value = data;
+        }
+        else
+        {
+            success = FALSE;
+            iocp_win32error(error, "The connect operation failed (%s)");
+            value = iocp_fetchException();
+            if(!value)
+                return NULL;
+        }
+    }
     else
     {
         if(error == ERROR_SUCCESS)
@@ -394,10 +426,35 @@ PyObject * CompletionPort_createPipe(CompletionPort *self, PyObject *args)
 PyObject * CompletionPort_createAsyncFile(CompletionPort *self, HANDLE hFile)
 {
     PyObject *fileArgs, *file;
-    fileArgs = Py_BuildValue("On", self, hFile);
+    fileArgs = Py_BuildValue("(n)", hFile);
     if(!fileArgs)
         return NULL;
     file = PyObject_CallObject((PyObject *)&AsyncFileType, fileArgs);
     Py_DECREF(fileArgs);
     return file;
+}
+
+PyObject * CompletionPort_createSocket(CompletionPort *self, PyObject *args)
+{
+    int family, type, protocol;
+    PyObject *ctorArgs, *sock;
+    if(!PyArg_ParseTuple(args, "lll", &family, &type, &protocol))
+        return NULL;
+    ctorArgs = Py_BuildValue("Olll", self, family, type, protocol);
+    sock = PyObject_CallObject((PyObject *)&AsyncSocketType, ctorArgs);
+    Py_DECREF(ctorArgs);
+    return sock;
+}
+
+BOOL CompletionPort_registerFile(CompletionPort *self, HANDLE hFile)
+{
+    if(!CreateIoCompletionPort((HANDLE)hFile, self->hPort, (ULONG_PTR)hFile, 0))
+    {
+        iocp_lastwin32error("Could not register file (%s)");
+        return FALSE;
+    }
+    else
+    {
+        return TRUE;
+    }
 }

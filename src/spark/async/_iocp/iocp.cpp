@@ -5,6 +5,7 @@
 #include "completionport.h"
 #include "future.h"
 #include "AsyncFile.h"
+#include "AsyncSocket.h"
 
 BOOL APIENTRY DllMain(HMODULE hModule,
                       DWORD  ul_reason_for_call,
@@ -30,6 +31,8 @@ PyMODINIT_FUNC init_iocp(void)
 {
     PyObject *m, *err;
 
+    iocp_loadWinSock();
+
     if(PyType_Ready(&CompletionPortType) < 0)
         return;
 
@@ -37,6 +40,9 @@ PyMODINIT_FUNC init_iocp(void)
         return;
 
     if(PyType_Ready(&AsyncFileType) < 0)
+        return;
+
+    if(PyType_Ready(&AsyncSocketType) < 0)
         return;
 
     m = Py_InitModule3("_iocp", iocp_Methods,
@@ -47,6 +53,9 @@ PyMODINIT_FUNC init_iocp(void)
 
     Py_INCREF(&AsyncFileType);
     PyModule_AddObject(m, "AsyncFile", (PyObject *)&AsyncFileType);
+
+    Py_INCREF(&AsyncSocketType);
+    PyModule_AddObject(m, "AsyncSocket", (PyObject *)&AsyncSocketType);
 
     Py_INCREF(&FutureType);
     PyModule_AddObject(m, "Future", (PyObject *)&FutureType);

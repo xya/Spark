@@ -46,7 +46,7 @@ class CompletionPortReactor(Reactor):
     
     def socket(self, family, type, proto):
         """ Create a socket that uses the reactor to do asynchronous I/O. """
-        raise NotImplementedError()
+        return self.cp.createSocket(family, type, proto)
     
     def open(self, file, mode=None):
         """ Open a file that uses the reactor to do asynchronous I/O. """

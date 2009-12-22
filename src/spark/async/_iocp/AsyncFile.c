@@ -1,6 +1,7 @@
 #include <Python.h>
 #include <windows.h>
 #include "AsyncFile.h"
+#include "completionport.h"
 #include "future.h"
 #include "iocp.h"
 
@@ -62,33 +63,22 @@ PyTypeObject AsyncFileType =
 void AsyncFile_dealloc(AsyncFile *self)
 {
     AsyncFile_close(self);
-    Py_CLEAR(self->port);
     self->ob_type->tp_free((PyObject*)self);
 }
 
 PyObject * AsyncFile_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
     AsyncFile *self;
-    PyObject *port;
     HANDLE hFile;
 
-    if(!PyArg_ParseTuple(args, "On", &port, &hFile))
+    if(!PyArg_ParseTuple(args, "n", &hFile))
     {
-        return NULL;
-    }
-    else if(!PyObject_TypeCheck(port, &CompletionPortType))
-    {
-        PyErr_SetString(PyExc_TypeError, "The first argument should be a CompletionPort instance");
         return NULL;
     }
 
     self = (AsyncFile *)type->tp_alloc(type, 0);
     if(self != NULL)
-    {
-        Py_INCREF(port);
-        self->port = (CompletionPort *)port;
         self->hFile = hFile;
-    }
     return (PyObject *)self;
 }
 

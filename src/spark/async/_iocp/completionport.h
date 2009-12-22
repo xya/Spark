@@ -32,5 +32,7 @@ PyObject * CompletionPort_getResult(CompletionPort *self, ULONG_PTR tag,
 PyObject * CompletionPort_createFile(CompletionPort *self, PyObject *args);
 PyObject * CompletionPort_createPipe(CompletionPort *self, PyObject *args);
 PyObject * CompletionPort_createAsyncFile(CompletionPort *self, HANDLE hFile);
+PyObject * CompletionPort_createSocket(CompletionPort *self, PyObject *args);
+BOOL CompletionPort_registerFile(CompletionPort *self, HANDLE hFile);
 
 #endif
