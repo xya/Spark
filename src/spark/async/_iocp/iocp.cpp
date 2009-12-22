@@ -147,7 +147,7 @@ PyObject * iocp_createWinError(DWORD error, const char *format)
         str = message;
     }
 
-    args = Py_BuildValue("ls", &error, &str);
+    args = Py_BuildValue("(ls)", error, str);
     if(!args)
         return NULL;
 
@@ -163,9 +163,14 @@ PyObject * iocp_fetchException()
     {
         PyErr_Fetch(&ex_type, &ex_val, &ex_tb);
         PyErr_NormalizeException(&ex_type, &ex_val, &ex_tb);
+        if(!ex_tb)
+        {
+            Py_INCREF(Py_None);
+            ex_tb = Py_None;
+        }
         value = Py_BuildValue("OOO", ex_type, ex_val, ex_tb);
-        Py_DECREF(ex_val);
         Py_DECREF(ex_type);
+        Py_DECREF(ex_val);
         Py_DECREF(ex_tb);
     }
     else

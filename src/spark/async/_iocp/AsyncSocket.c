@@ -1,6 +1,7 @@
 #include <Python.h>
 #include <winsock2.h>
 #include <mswsock.h>
+#include <Ws2tcpip.h>
 #include <windows.h>
 #include "AsyncSocket.h"
 #include "completionport.h"
@@ -9,6 +10,8 @@
 
 static PyMethodDef AsyncSocket_methods[] =
 {
+    {"bind", (PyCFunction)AsyncSocket_bind, METH_VARARGS, "Bind the socket to an interface."},
+    {"listen", (PyCFunction)AsyncSocket_listen, METH_VARARGS, "Put the socket in listening mode, waiting for new connections."},
     {"beginConnect", (PyCFunction)AsyncSocket_beginConnect, METH_VARARGS, "Start an asynchronous connect operation on the socket."},
     {"close", (PyCFunction)AsyncSocket_close, METH_NOARGS, "Close the socket."},
     {"__enter__", (PyCFunction)AsyncSocket_enter, METH_VARARGS, ""},
@@ -145,35 +148,105 @@ BOOL AsyncSocket_initExtensions(AsyncSocket *self)
     return TRUE;
 }
 
+BOOL AsyncSocket_bindDefault(AsyncSocket *self)
+{
+    struct sockaddr_in addr4;
+    struct sockaddr_in6 addr6;
+
+    if(self->family == AF_INET)
+    {
+        ZeroMemory(&addr4, sizeof(struct sockaddr_in));
+        addr4.sin_family = AF_INET;
+        if(bind(self->socket, &addr4, sizeof(struct sockaddr_in)) == SOCKET_ERROR)
+        {
+            iocp_lastwin32error("Could not bind the socket (%s)");
+            return FALSE;
+        }
+        return TRUE;
+    }
+    else if(self->family == AF_INET6)
+    {
+        ZeroMemory(&addr6, sizeof(struct sockaddr_in6));
+        addr6.sin6_family = AF_INET;
+        if(bind(self->socket, &addr6, sizeof(struct sockaddr_in6)) == SOCKET_ERROR)
+        {
+            iocp_lastwin32error("Could not bind the socket (%s)");
+            return FALSE;
+        }
+        return TRUE;
+    }
+    else
+    {
+        PyErr_SetString(PyExc_Exception, "Only IPv4 and IPv6 addresses are supported");
+        return FALSE;
+    }
+}
+
+PyObject * AsyncSocket_bind(AsyncSocket *self, PyObject *args)
+{
+    char *host;
+    int port;
+    struct sockaddr *addr;
+    int addrSize, ret;
+
+    if(!PyArg_ParseTuple(args, "(sl)", &host, &port))
+        return NULL;
+
+    addr = AsyncSocket_stringToSockAddr(self->family, host, port, &addrSize);
+    if(!addr)
+        return NULL;
+    ret = bind(self->socket, addr, addrSize);
+    free(addr);
+    if(ret == SOCKET_ERROR)
+    {
+        iocp_lastwin32error("Could not bind the socket (%s)");
+        return FALSE;
+    }
+    Py_RETURN_NONE;
+}
+
+PyObject * AsyncSocket_listen(AsyncSocket *self, PyObject *args)
+{
+    int backlog, ret;
+
+    if(!PyArg_ParseTuple(args, "l", &backlog))
+        return NULL;
+    ret = listen(self->socket, backlog);
+    if(ret == SOCKET_ERROR)
+    {
+        iocp_lastwin32error("Calling listen() failed (%s)");
+        return FALSE;
+    }
+    Py_RETURN_NONE;
+}
+
 PyObject * AsyncSocket_beginConnect(AsyncSocket *self, PyObject *args)
 {
     PyObject *cont;
     char *host;
     int port;
-    struct sockaddr_in addr;
+    struct sockaddr *addr;
+    int addrSize;
     LPFN_CONNECTEX connectEx = (LPFN_CONNECTEX)self->connectEx;
     IOCPOverlapped *over = NULL;
     DWORD error;
 
     if(!PyArg_ParseTuple(args, "(sl)", &host, &port))
-    {
         return NULL;
-    }
-    else if((port < 0x0000) || (port > 0xffff))
-    {
-        PyErr_SetString(PyExc_TypeError, "The port should be in [0,65535]");
+    else if(!AsyncSocket_bindDefault(self))
         return NULL;
-    }
+
+    addr = AsyncSocket_stringToSockAddr(self->family, host, port, &addrSize);
+    if(!addr)
+        return NULL;
 
     cont = PyObject_CallObject((PyObject *)&FutureType, NULL);
     if(!cont)
     {
+        free(addr);
         PyErr_SetString(PyExc_Exception, "Could not create the continuation");
         return NULL;
     }
-
-    ZeroMemory(&addr, sizeof(addr));
-    addr.sin_port = htons((u_short)port);
 
     over = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));
     ZeroMemory(&over->ov, sizeof(OVERLAPPED));
@@ -182,18 +255,20 @@ PyObject * AsyncSocket_beginConnect(AsyncSocket *self, PyObject *args)
     over->cont = cont;
     Py_INCREF(args);
     over->data = args;
-    if(!connectEx(self->socket, &addr, sizeof(addr), NULL, 0, NULL, over))
+    if(!connectEx(self->socket, addr, addrSize, NULL, 0, NULL, (LPOVERLAPPED)over))
     {
         error = WSAGetLastError();
         if((error != ERROR_IO_PENDING) && (error != WSA_IO_PENDING))
         {
             iocp_win32error(error, NULL);
+            free(addr);
             Py_DECREF(over->cont);
             Py_DECREF(over->data);
             free(over);
             return NULL;
         }
     }
+    free(addr);
     return cont;
 }
 
@@ -226,4 +301,67 @@ PyObject * AsyncSocket_exit(AsyncSocket *self, PyObject *args)
         return NULL;
     Py_DECREF(ret);
     Py_RETURN_NONE;
+}
+
+struct sockaddr * AsyncSocket_stringToSockAddr(int family, char *host, int port, int *pAddrSize)
+{
+    struct sockaddr_in *addr4;
+    struct sockaddr_in6 *addr6;
+
+    if((port < 0x0000) || (port > 0xffff))
+    {
+        PyErr_SetString(PyExc_TypeError, "The port should be in [0,65535]");
+        return NULL;
+    }
+    else if((family != AF_INET) && (family != AF_INET6))
+    {
+        PyErr_SetString(PyExc_Exception, "Only IPv4 and IPv6 addresses are supported");
+        return NULL;
+    }
+    else if(!pAddrSize)
+    {
+        PyErr_SetString(PyExc_Exception, "pAddrSize must not be NULL");
+        return NULL;
+    }
+    
+    if(family == AF_INET)
+    {
+        *pAddrSize = sizeof(struct sockaddr_in);
+        addr4 = (struct sockaddr_in *)malloc(*pAddrSize);
+        if(!addr4)
+        {
+            PyErr_SetString(PyExc_Exception, "Could not allocate address");
+            return NULL;
+        }
+        else if(WSAStringToAddressA(host, AF_INET, NULL, addr4, pAddrSize) == SOCKET_ERROR)
+        {
+            iocp_lastwin32error(NULL);
+            return NULL;
+        }
+        else
+        {
+            addr4->sin_port = htons(port);
+            return (struct sockaddr *)addr4;
+        }
+    }
+    else
+    {
+        *pAddrSize = sizeof(struct sockaddr_in6);
+        addr6 = (struct sockaddr_in6 *)malloc(*pAddrSize);
+        if(!addr6)
+        {
+            PyErr_SetString(PyExc_Exception, "Could not allocate address");
+            return NULL;
+        }
+        else if(WSAStringToAddressA(host, AF_INET6, NULL, addr6, pAddrSize) == SOCKET_ERROR)
+        {
+            iocp_lastwin32error(NULL);
+            return NULL;
+        }
+        else
+        {
+            addr6->sin6_port = htons(port);
+            return (struct sockaddr *)addr6;
+        }
+    }
 }
