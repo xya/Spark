@@ -134,8 +134,17 @@ PyObject * Future_wait(Future *self, PyObject *args)
     }
     else if(state == FUTURE_FAILED)
     {
-        PyErr_SetString(PyExc_Exception, "The operation failed for an unknown reason");
-        return NULL;
+        if(result == Py_None)
+        {
+            PyErr_SetString(PyExc_Exception, "The operation failed for an unknown reason");
+            return NULL;
+        }
+        else
+        {
+            Py_INCREF(result);
+            PyErr_SetObject(PyObject_Type(result), result);
+            return NULL;
+        }
     }
     else
     {
@@ -165,7 +174,7 @@ void Future_get_result(Future *self, int *pState, PyObject **pResult, HANDLE *pE
         *pEvent = hEvent;
 }
 
-BOOL Future_set_result(Future *self, int state, PyObject *result)
+PyObject * Future_set_result(Future *self, int state, PyObject *result)
 {
     PyObject *ret, *callback = Py_None, *args, *old;
     BOOL success;
@@ -200,7 +209,10 @@ BOOL Future_set_result(Future *self, int state, PyObject *result)
         else
             success = FALSE;
     }
-    return success;
+    if(!success)
+        return NULL;
+    else
+        Py_RETURN_NONE;
 }
 
 PyObject * Future_completed(Future *self, PyObject *args)
@@ -208,21 +220,34 @@ PyObject * Future_completed(Future *self, PyObject *args)
     PyObject *result = Py_None;
     if(!PyArg_ParseTuple(args, "|O", &result))
         return NULL;
-    else if(Future_set_result(self, FUTURE_COMPLETED, result))
-        Py_RETURN_NONE;
-    else
-        return NULL;
+    return Future_set_result(self, FUTURE_COMPLETED, result);
 }
 
 PyObject * Future_failed(Future *self, PyObject *args)
 {
-    PyObject *exc = Py_None;
+    PyObject *ret, *exc = Py_None;
+    PyObject *type, *val, *tb;
     if(!PyArg_ParseTuple(args, "|O", &exc))
         return NULL;
-    if(Future_set_result(self, FUTURE_FAILED, exc))
-        Py_RETURN_NONE;
+    if((exc == Py_None) && PyErr_Occurred())
+    {
+        PyErr_Fetch(&type, &val, &tb);
+        PyErr_NormalizeException(&type, &val, &tb);
+        ret = Future_set_result(self, FUTURE_FAILED, val);
+        if(!ret)
+        {
+            Py_XDECREF(type);
+            Py_XDECREF(val);
+            Py_XDECREF(tb);
+            return NULL;
+        }
+        PyErr_Restore(type, val, tb);
+        return ret;
+    }
     else
-        return NULL;
+    {
+        return Future_set_result(self, FUTURE_FAILED, exc);
+    }
 }
 
 PyObject * Future_after(Future *self, PyObject *args)

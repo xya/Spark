@@ -25,7 +25,7 @@ int CompletionPort_init(CompletionPort *self, PyObject *args, PyObject *kwds);
 PyObject * CompletionPort_close(CompletionPort *self, PyObject *args);
 PyObject * CompletionPort_post(CompletionPort *self, DWORD opcode, PyObject *cont, PyObject *data);
 PyObject * CompletionPort_invokeLater(CompletionPort *self, PyObject *args);
-PyObject * CompletionPort_eof(CompletionPort *self, PyObject *args);
+PyObject * CompletionPort_throw(CompletionPort *self, PyObject *args);
 PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args);
 PyObject * CompletionPort_getResult(CompletionPort *self, ULONG_PTR tag, 
         DWORD error, DWORD bytes, DWORD opcode, PyObject *cont, PyObject *data);

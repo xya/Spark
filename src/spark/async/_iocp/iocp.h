@@ -14,7 +14,7 @@ BOOL iocp_createAsyncPipe(PHANDLE hRead, PHANDLE hWrite);
 void iocp_addConstant(PyObject *module, char *name, DWORD value);
 
 // Type of operations handled by the completion port
-#define OP_CLOSE        0
+#define OP_THROW        0
 #define OP_INVOKE       1
 #define OP_READ         2
 #define OP_WRITE        3

@@ -228,9 +228,8 @@ PyObject * AsyncFile_beginWrite(AsyncFile *self, PyObject *args)
     }
     else if(error != ERROR_SUCCESS)
     {
-        arg = iocp_createWinError(error, NULL);
-        ret = PyObject_CallMethod(cont, "failed", "O", arg);
-        Py_DECREF(arg);
+        iocp_win32error(error, NULL);
+        ret = PyObject_CallMethod(cont, "failed", "");
         if(!ret)
         {
             Py_DECREF(cont);
@@ -254,7 +253,7 @@ BOOL AsyncFile_writeFile(AsyncFile *self, PyObject *buffer, Py_ssize_t position,
     if((PyObject_AsReadBuffer(buffer, &pBuffer, &bufferSize) != 0) || (bufferSize <= 0))
     {
         PyErr_SetString(PyExc_Exception, "Couldn't access the buffer for reading");
-        return NULL;
+        return FALSE;
     }
 
     over = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));

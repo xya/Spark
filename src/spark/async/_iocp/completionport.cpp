@@ -8,8 +8,8 @@ static PyMethodDef CompletionPort_methods[] =
 {
     {"close", (PyCFunction)CompletionPort_close, METH_VARARGS, 
         "Close the completion port."},
-    {"eof", (PyCFunction)CompletionPort_eof, METH_VARARGS, 
-        "Post an end-of-file marker to the completion port."},
+    {"throw", (PyCFunction)CompletionPort_throw, METH_VARARGS,
+        "Post an exception to the completion port. It will be raised by wait()."},
     {"invokeLater", (PyCFunction)CompletionPort_invokeLater, METH_VARARGS, 
         "Post a callable to the completion port. It will be invoked by wait()."},
     {"wait",  (PyCFunction)CompletionPort_wait, METH_VARARGS, 
@@ -152,9 +152,12 @@ PyObject * CompletionPort_invokeLater(CompletionPort *self, PyObject *args)
     return ret;
 }
 
-PyObject * CompletionPort_eof(CompletionPort *self, PyObject *args)
+PyObject * CompletionPort_throw(CompletionPort *self, PyObject *args)
 {
-    return CompletionPort_post(self, OP_CLOSE, Py_None, Py_None);
+    PyObject *exc;
+    if(!PyArg_ParseTuple(args, "O", &exc))
+        return NULL;
+    return CompletionPort_post(self, OP_THROW, Py_None, exc);
 }
 
 PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args)
@@ -210,6 +213,11 @@ PyObject * CompletionPort_getResult(CompletionPort *self, ULONG_PTR tag,
         {
             success = TRUE;
         }
+        else if(!cont)
+        {
+            // if there is no continuation, propagate the exception to the caller
+            return NULL;
+        }
         else
         {
             success = FALSE;
@@ -218,9 +226,9 @@ PyObject * CompletionPort_getResult(CompletionPort *self, ULONG_PTR tag,
                 return NULL;
         }
     }
-    else if(opcode == OP_CLOSE)
+    else if(opcode == OP_THROW)
     {
-        PyErr_SetString(PyExc_EOFError, "The completion port was closed.");
+        PyErr_SetObject(PyObject_Type(data), data);
         return NULL;
     }
     else if(opcode == OP_READ)

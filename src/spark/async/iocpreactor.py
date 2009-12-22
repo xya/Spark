@@ -95,7 +95,7 @@ class CompletionPortReactor(Reactor):
         """ Close the reactor, terminating all pending operations. """
         with self.lock:
             if self.active:
-                self.cp.eof()
+                self.cp.throw(EOFError())
     
     def __enter__(self):
         return self
@@ -113,17 +113,14 @@ class CompletionPortReactor(Reactor):
                 if logging:
                     self.logger.log(LOG_VERBOSE, "Woke up from GetQueuedCompletionStatus()")
                 
-                if success:
-                    if cont is not None:
+                if cont is not None:
+                    if success:
                         cont.completed(val)
-                else:
-                    type, exc, tb = val
-                    if cont is not None:
-                        cont.failed(exc)
                     else:
-                        raise exc
+                        type, exc, tb = val
+                        cont.failed(exc) 
         except EOFError:
-			pass
+            pass
         finally:
             self.cleanup()
     
@@ -137,21 +134,6 @@ class CompletionPortReactor(Reactor):
             self.onClosed()
         except Exception:
             self.logger.exception("onClosed() failed")
-    
-    def handleCallback(self, cont, func, args, kwargs):
-        self.logger.log(LOG_VERBOSE, "Invoking non-I/O callback")
-        if cont is None:
-            try:
-                func(*args, **kwargs)
-            except Exception:
-                self.logger.exception("Error in non-I/O callback")
-        else:
-            try:
-                result = func(*args, **kwargs)
-            except Exception:
-                cont.failed()
-            else:
-                cont.completed(result)
 
 # register the reactor
 Reactor.addType(CompletionPortReactor)
