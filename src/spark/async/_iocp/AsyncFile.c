@@ -118,7 +118,7 @@ PyObject * AsyncFile_beginRead(AsyncFile *self, PyObject *args)
         return NULL;
     }
 
-    if(!AsyncFile_readFile(self, size, position, cont, &error))
+    if(!AsyncFile_readFile(self->hFile, size, position, cont, &error))
     {
         Py_DECREF(cont);
         return NULL;
@@ -156,12 +156,12 @@ PyObject * AsyncFile_beginRead(AsyncFile *self, PyObject *args)
     return cont;
 }
 
-BOOL AsyncFile_readFile(AsyncFile *self, Py_ssize_t size, Py_ssize_t position, PyObject *cont, DWORD *pError)
+BOOL AsyncFile_readFile(HANDLE hFile, Py_ssize_t size, Py_ssize_t position, PyObject *cont, DWORD *pError)
 {
     PyObject *data, *buffer;
     IOCPOverlapped *over;
     DWORD error = ERROR_SUCCESS;
-    Py_ssize_t hFile, bufferSize;
+    Py_ssize_t bufferSize;
     void *pBuffer = 0;
 
     buffer = iocp_allocBuffer(size, &pBuffer);
@@ -174,7 +174,7 @@ BOOL AsyncFile_readFile(AsyncFile *self, Py_ssize_t size, Py_ssize_t position, P
     over->cont = cont;
     over->data = buffer;
     OVERLAPPED_setOffset(&over->ov, position);
-    if(!ReadFile(self->hFile, pBuffer, (DWORD)size, NULL, (LPOVERLAPPED)over))
+    if(!ReadFile(hFile, pBuffer, (DWORD)size, NULL, (LPOVERLAPPED)over))
     {
         error = GetLastError();
         if(error == ERROR_IO_PENDING)
@@ -220,7 +220,7 @@ PyObject * AsyncFile_beginWrite(AsyncFile *self, PyObject *args)
         return NULL;
     }
 
-    if(!AsyncFile_writeFile(self, buffer, position, cont, &error))
+    if(!AsyncFile_writeFile(self->hFile, buffer, position, cont, &error))
     {
         Py_DECREF(cont);
         return NULL;
@@ -242,7 +242,7 @@ PyObject * AsyncFile_beginWrite(AsyncFile *self, PyObject *args)
     return cont;
 }
 
-BOOL AsyncFile_writeFile(AsyncFile *self, PyObject *buffer, Py_ssize_t position, PyObject *cont, DWORD *pError)
+BOOL AsyncFile_writeFile(HANDLE hFile, PyObject *buffer, Py_ssize_t position, PyObject *cont, DWORD *pError)
 {
     IOCPOverlapped *over;
     DWORD error = ERROR_SUCCESS;
@@ -263,7 +263,7 @@ BOOL AsyncFile_writeFile(AsyncFile *self, PyObject *buffer, Py_ssize_t position,
     Py_INCREF(buffer);
     over->data = buffer;
     OVERLAPPED_setOffset(&over->ov, position);
-    if(!WriteFile(self->hFile, pBuffer, (DWORD)bufferSize, NULL, (LPOVERLAPPED)over))
+    if(!WriteFile(hFile, pBuffer, (DWORD)bufferSize, NULL, (LPOVERLAPPED)over))
     {
         error = GetLastError();
         if(error == ERROR_IO_PENDING)
@@ -324,7 +324,6 @@ PyObject * AsyncFile_exit(AsyncFile *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
-
 PyObject * iocp_getResult_read(DWORD error, DWORD bytes, PyObject *data, BOOL *success)
 {
     if(error == ERROR_SUCCESS)
@@ -332,7 +331,7 @@ PyObject * iocp_getResult_read(DWORD error, DWORD bytes, PyObject *data, BOOL *s
         *success = TRUE;
         return PySequence_GetSlice(data, 0, (Py_ssize_t)bytes);
     }
-    else if((error == ERROR_BROKEN_PIPE) || (error == ERROR_HANDLE_EOF))
+    else if((error == ERROR_BROKEN_PIPE) || (error == ERROR_HANDLE_EOF) || (error == ERROR_OPERATION_ABORTED))
     {
         *success = TRUE;
         return PyString_FromString("");

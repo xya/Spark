@@ -24,6 +24,7 @@
 #include <Ws2tcpip.h>
 #include <windows.h>
 #include "AsyncSocket.h"
+#include "AsyncFile.h"
 #include "completionport.h"
 #include "future.h"
 #include "iocp.h"
@@ -34,6 +35,11 @@ static PyMethodDef AsyncSocket_methods[] =
     {"listen", (PyCFunction)AsyncSocket_listen, METH_VARARGS, "Put the socket in listening mode, waiting for new connections."},
     {"beginConnect", (PyCFunction)AsyncSocket_beginConnect, METH_VARARGS, "Start an asynchronous connect operation on the socket."},
     {"beginAccept", (PyCFunction)AsyncSocket_beginAccept, METH_VARARGS, "Start accepting an incoming connection on the socket."},
+    {"beginRead", (PyCFunction)AsyncSocket_beginRead, METH_VARARGS, "Start an asynchronous read operation on the socket."},
+    {"beginWrite", (PyCFunction)AsyncSocket_beginWrite, METH_VARARGS, "Start an asynchronous write operation on the socket."},
+    {"read", (PyCFunction)AsyncSocket_read, METH_VARARGS, "Start a synchronous read operation on the socket."},
+    {"write", (PyCFunction)AsyncSocket_write, METH_VARARGS, "Start a synchronous write operation on the socket."},
+    {"shutdown", (PyCFunction)AsyncSocket_shutdown, METH_VARARGS, "Close the reading part or writing part or both parts of the socket."},
     {"close", (PyCFunction)AsyncSocket_close, METH_NOARGS, "Close the socket."},
     {"__enter__", (PyCFunction)AsyncSocket_enter, METH_VARARGS, ""},
     {"__exit__", (PyCFunction)AsyncSocket_exit, METH_VARARGS, ""},
@@ -294,7 +300,7 @@ PyObject * AsyncSocket_beginAccept(AsyncSocket *self, PyObject *args)
         return NULL;
     }
 
-    data = Py_BuildValue("OOl", conn, buffer, addrSize);
+    data = Py_BuildValue("OOOl", self, conn, buffer, addrSize);
     Py_DECREF(conn);
     Py_DECREF(buffer);
     if(!data)
@@ -334,7 +340,7 @@ PyObject * AsyncSocket_beginAccept(AsyncSocket *self, PyObject *args)
 
 PyObject * AsyncSocket_beginConnect(AsyncSocket *self, PyObject *args)
 {
-    PyObject *cont;
+    PyObject *cont, *data;
     char *host;
     int port;
     struct sockaddr *addr;
@@ -360,13 +366,20 @@ PyObject * AsyncSocket_beginConnect(AsyncSocket *self, PyObject *args)
         return NULL;
     }
 
+    data = Py_BuildValue("(OO)", self, args);
+    if(!data)
+    {
+        Py_DECREF(cont);
+        free(addr);
+        return NULL;
+    }
+
     over = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));
     ZeroMemory(&over->ov, sizeof(OVERLAPPED));
     over->opcode = OP_CONNECT;
     Py_INCREF(cont);
     over->cont = cont;
-    Py_INCREF(args);
-    over->data = args;
+    over->data = data;
     if(!connectEx(self->socket, addr, addrSize, NULL, 0, NULL, (LPOVERLAPPED)over))
     {
         error = WSAGetLastError();
@@ -385,6 +398,22 @@ PyObject * AsyncSocket_beginConnect(AsyncSocket *self, PyObject *args)
     // does addr has to stay alive until the completion is posted?
     free(addr);
     return cont;
+}
+
+PyObject * AsyncSocket_shutdown(AsyncSocket *self, PyObject *args)
+{
+    long how;
+    if(!PyArg_ParseTuple(args, "l", &how))
+        return NULL;
+    if(shutdown(self->socket, how) == SOCKET_ERROR)
+    {
+        iocp_lastwin32error(NULL);
+        return NULL;
+    }
+    else
+    {
+        Py_RETURN_NONE;
+    }
 }
 
 PyObject * AsyncSocket_close(AsyncSocket *self)
@@ -421,7 +450,7 @@ PyObject * AsyncSocket_exit(AsyncSocket *self, PyObject *args)
 PyObject * iocp_getResult_accept(DWORD error, DWORD bytes, PyObject *data, BOOL *success)
 {
     PyObject *buffer, *addressTuple, *ret;
-    AsyncSocket *conn;
+    AsyncSocket *conn, *listen;
     void *pBuffer;
     Py_ssize_t bufferSize;
     long addrSize;
@@ -431,26 +460,16 @@ PyObject * iocp_getResult_accept(DWORD error, DWORD bytes, PyObject *data, BOOL 
 
     if(error == ERROR_SUCCESS)
     {
-        /*
-        if(setsockopt(self->socket, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0) == SOCKET_ERROR)
-        {
-            success = FALSE;
-            iocp_lastwin32error("Error while updating the socket after ConnectEx (%s)");
-            value = iocp_fetchException();
-            if(!value)
-                return NULL;
-        }
-        */
-        
-        conn = (AsyncSocket *)PyTuple_GetItem(data, 0);
-        buffer = PyTuple_GetItem(data, 1);
+        listen = (AsyncSocket *)PyTuple_GetItem(data, 0);
+        conn = (AsyncSocket *)PyTuple_GetItem(data, 1);
+        buffer = PyTuple_GetItem(data, 2);
         if((PyObject_AsReadBuffer(buffer, &pBuffer, &bufferSize) != 0) || (bufferSize <= 0))
         {
             *success = FALSE;
             PyErr_SetString(PyExc_Exception, "Couldn't access the buffer for reading");
             return NULL;
         }
-        addrSize = PyInt_AsLong(PyTuple_GetItem(data, 2));
+        addrSize = PyInt_AsLong(PyTuple_GetItem(data, 3));
         getSockAddress = (LPFN_GETACCEPTEXSOCKADDRS)conn->getSockAddress;
         getSockAddress(pBuffer, 0, addrSize, addrSize, 
             &localAddr, &localSize, &remoteAddr, &remoteSize);
@@ -467,6 +486,13 @@ PyObject * iocp_getResult_accept(DWORD error, DWORD bytes, PyObject *data, BOOL 
             *success = FALSE;
             return NULL;
         }
+        if(setsockopt(conn->socket, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, 
+            (char *)&listen->socket, sizeof(listen->socket)) == SOCKET_ERROR)
+        {
+            *success = FALSE;
+            iocp_lastwin32error("Error while updating the socket after AcceptEx (%s)");
+            return iocp_fetchException();
+        }
         *success = TRUE;
         return ret;
     }
@@ -480,18 +506,16 @@ PyObject * iocp_getResult_accept(DWORD error, DWORD bytes, PyObject *data, BOOL 
 
 PyObject * iocp_getResult_connect(DWORD error, DWORD bytes, PyObject *data, BOOL *success)
 {
+    AsyncSocket *conn;
     if(error == ERROR_SUCCESS)
     {
-        /*
-        if(setsockopt(self->socket, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0) == SOCKET_ERROR)
+        conn = (AsyncSocket *)PyTuple_GetItem(data, 0);
+        if(setsockopt(conn->socket, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0) == SOCKET_ERROR)
         {
-            success = FALSE;
+            *success = FALSE;
             iocp_lastwin32error("Error while updating the socket after ConnectEx (%s)");
-            value = iocp_fetchException();
-            if(!value)
-                return NULL;
+            return iocp_fetchException();
         }
-        */
         *success = TRUE;
         Py_INCREF(data);
         return data;
@@ -502,6 +526,119 @@ PyObject * iocp_getResult_connect(DWORD error, DWORD bytes, PyObject *data, BOOL
         iocp_win32error(error, "The connect operation failed (%s)");
         return iocp_fetchException();
     }
+}
+
+PyObject * AsyncSocket_beginRead(AsyncSocket *self, PyObject *args)
+{
+    Py_ssize_t size;
+    PyObject *cont, *arg, *ret;
+    DWORD error;
+
+    if(!PyArg_ParseTuple(args, "n", &size))
+        return NULL;
+
+    cont = PyObject_CallObject((PyObject *)&FutureType, NULL);
+    if(!cont)
+    {
+        PyErr_SetString(PyExc_Exception, "Could not create the continuation");
+        return NULL;
+    }
+
+    if(!AsyncFile_readFile((HANDLE)self->socket, size, 0, cont, &error))
+    {
+        Py_DECREF(cont);
+        return NULL;
+    }
+    else if((error == ERROR_BROKEN_PIPE) || (error == ERROR_HANDLE_EOF))
+    {
+        arg = PyString_FromString("");
+        ret = PyObject_CallMethod(cont, "completed", "O", arg);
+        Py_DECREF(arg);
+        if(!ret)
+        {
+            Py_DECREF(cont);
+            return NULL;
+        }
+        else
+        {
+            Py_DECREF(ret);
+        }
+    }
+    else if(error != ERROR_SUCCESS)
+    {
+        arg = iocp_createWinError(error, NULL);
+        ret = PyObject_CallMethod(cont, "failed", "O", arg);
+        Py_DECREF(arg);
+        if(!ret)
+        {
+            Py_DECREF(cont);
+            return NULL;
+        }
+        else
+        {
+            Py_DECREF(ret);
+        }
+    }
+    return cont;
+}
+
+PyObject * AsyncSocket_read(AsyncSocket *self, PyObject *args)
+{
+    PyObject *cont, *ret;
+    cont = AsyncSocket_beginRead(self, args);
+    if(!cont)
+        return NULL;
+    ret = PyObject_CallMethod(cont, "wait", "");
+    Py_DECREF(cont);
+    return ret;
+}
+
+PyObject * AsyncSocket_beginWrite(AsyncSocket *self, PyObject *args)
+{
+    PyObject *buffer, *cont, *arg, *ret;
+    DWORD error;
+
+    if(!PyArg_ParseTuple(args, "O", &buffer))
+        return NULL;
+
+    cont = PyObject_CallObject((PyObject *)&FutureType, NULL);
+    if(!cont)
+    {
+        PyErr_SetString(PyExc_Exception, "Could not create the continuation");
+        return NULL;
+    }
+
+    if(!AsyncFile_writeFile((HANDLE)self->socket, buffer, 0, cont, &error))
+    {
+        Py_DECREF(cont);
+        return NULL;
+    }
+    else if(error != ERROR_SUCCESS)
+    {
+        iocp_win32error(error, NULL);
+        ret = PyObject_CallMethod(cont, "failed", "");
+        if(!ret)
+        {
+            Py_DECREF(cont);
+            return NULL;
+        }
+        else
+        {
+            Py_DECREF(ret);
+        }
+    }
+    return cont;
+}
+
+PyObject * AsyncSocket_write(AsyncSocket *self, PyObject *args)
+{
+    PyObject *cont, *ret;
+    cont = AsyncSocket_beginWrite(self, args);
+    if(!cont)
+        return NULL;
+    ret = PyObject_CallMethod(cont, "wait", "");
+    Py_DECREF(cont);
+    return ret;
 }
 
 struct sockaddr * AsyncSocket_stringToSockAddr(int family, char *host, int port, int *pAddrSize)
