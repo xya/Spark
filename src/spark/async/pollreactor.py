@@ -341,7 +341,23 @@ class InvokeOperation(IOOperation):
             except Exception:
                 self.reactor.logger.exception("Error in non-I/O callback")
         else:
-            self.cont.run(self.fun, *self.args, **self.kwargs)
+            try:
+                result = self.fun(*self.args, **self.kwargs)
+            except Exception:
+                self.cont.failed()
+            else:
+                # if the callable returns a future, "chain" it
+                if hasattr(result, "after"):
+                    def forward(prev):
+                        try:
+                            result = prev.result
+                        except Exception:
+                            self.cont.failed()
+                        else:
+                            self.cont.completed(result)
+                    result.after(forward)
+                else:
+                    self.cont.completed(result)
 
 class PipeReadOperation(IOOperation):
     def __init__(self, reactor, fd):

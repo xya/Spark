@@ -83,7 +83,7 @@ class TransferTable(object):
     
     def find(self, transferID, direction):
         try:
-            return entries[(transferID, direction)]
+            return self.entries[(transferID, direction)]
         except KeyError:
             return None
     

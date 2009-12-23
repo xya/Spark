@@ -20,7 +20,7 @@
 
 from collections import Mapping
 
-from spark.async import Future, Delegate
+from spark.async import Future, Delegate, coroutine
 from spark.messaging import Service
 from spark.fileshare import SharedFile, FileTable, TransferTable, UPLOAD, DOWNLOAD
 
@@ -28,6 +28,7 @@ __all__ = ["FileShare"]
 
 REQ_LIST_FILES = "list-files"
 REQ_CREATE_TRANSFER = "create-transfer"
+REQ_START_TRANSFER = "start-transfer"
 NOT_FILE_ADDED = "file-added"
 NOT_FILE_REMOVED = "file-removed"
 NOT_TRANSFER_STATE_CHANGED = "transfer-state-changed"
@@ -65,11 +66,19 @@ class FileShare(Service):
         """ Remove the file (local or remote) with the given ID from the list. """
         self.fileTable.removeFile(fileID, True)
     
+    @coroutine
     def startTransfer(self, fileID):
         """ Start receiving the remote file with the given ID. """
         file = self.fileTable[fileID]
         if file.transfer is None:
-            self.sendRequest(REQ_CREATE_TRANSFER, {"fileID": fileID})
+            resp = yield self.sendRequest(REQ_CREATE_TRANSFER, {"fileID": fileID})
+            transferID = resp.params.get("transferID")
+            file = self.fileTable[resp.params.get("fileID")]
+            transfer = self.transferTable.createTransfer(transferID, DOWNLOAD)
+            transfer.fileID = file.ID
+            file.transfer = transfer
+            self.filesUpdated()
+        yield self.sendRequest(REQ_START_TRANSFER, {"transferID": transferID})
     
     def stopTransfer(self, fileID):
         """ Stop receiving the remote file with the given ID. """
@@ -89,10 +98,12 @@ class FileShare(Service):
         if local and self.remoteNotifications and self.session.isActive:
             self.sendNotification(NOT_FILE_REMOVED, {"ID": fileID})
     
+    @coroutine
     def start(self):
         """ Start the service. The session must be currently active. """
-        self.sendRequest(REQ_LIST_FILES, {'register': True})
-    
+        resp = yield self.sendRequest(REQ_LIST_FILES, {'register': True})
+        self.fileTable.updateTable(resp.params, False)
+        
     def stop(self):
         """ Stop the service, probably because the session ended. """
         pass
@@ -129,11 +140,6 @@ class FileShare(Service):
         self.filesUpdated()
         self.sendNotification(NOT_TRANSFER_STATE_CHANGED, transfer)
     
-    def responseListFiles(self, prev):
-        """ The remote peer responded to our 'list-files' request. """
-        resp = prev.result
-        self.fileTable.updateTable(resp.params, False)
-    
     def notificationFileAdded(self, n):
         """ The remote peer sent a 'file-added' notification. """
         if isinstance(n.params, Mapping):
@@ -151,21 +157,3 @@ class FileShare(Service):
         transfer = self.transferTable.find(transferID, DOWNLOAD)
         transfer.state = transferState
         self.filesUpdated()
-    
-    def responseCreateTransfer(self, prev):
-        """ The remote peer responded to our 'create-transfer' request. """
-        resp = prev.result
-        transferID = resp.params.get("transferID")
-        file = self.fileTable[resp.params.get("fileID")]
-        transfer = self.transferTable.createTransfer(transferID, DOWNLOAD)
-        transfer.fileID = file.ID
-        file.transfer = transfer
-        self.filesUpdated()
-    
-    def responseStartTransfer(self, prev):
-        """ The remote peer responded to our 'start-transfer' request. """
-        resp = prev.result
-    
-    def responseCloseTransfer(self, prev):
-        """ The remote peer responded to our 'close-transfer' request. """
-        resp = prev.result

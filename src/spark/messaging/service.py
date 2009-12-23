@@ -25,6 +25,7 @@ import types
 import threading
 import socket
 import logging
+from collections import Mapping
 from functools import wraps
 from spark.async import Future, Delegate, coroutine, TaskFailedError
 from spark.messaging.common import AsyncMessenger, MessageDelivery
@@ -383,20 +384,25 @@ class Service(object):
     
     def sendRequest(self, tag, params=None):
         """
-        Send a request to the connected peer. When the peer answers,
-        invoke the relevant response handler.
+        Send a request to the connected peer.
         """
+        cont = Future()
         req = Request(tag, params)
-        self.session.sendRequest(req).after(self._responseReceived, tag)
+        self.session.sendRequest(req).after(self.endSendRequest, cont)
+        return cont
     
-    def _responseReceived(self, prev, tag):
-        """ Invoke the relevant response handler.  """
-        methodName = "response" + toPascalCase(tag)
-        if hasattr(self, methodName):
-            method = getattr(self, methodName)
-            method(prev)
+    def endSendRequest(self, prev, cont):
+        try:
+            resp = prev.result
+        except Exception:
+            cont.failed()
         else:
-            self.logger.error("Response handler '%s' not found" % tag)
+            if isinstance(resp.params, Mapping) and "error" in resp.params:
+                error = resp.params["error"]
+                cont.failed(Exception("The request failed: %s (%s)" %
+                    (error["message"], error["type"])))
+            else:
+                cont.completed(resp)
     
     def _sendErrorReponse(self, req, e):
         """ Send a response indicating the request failed because of the exception. """
