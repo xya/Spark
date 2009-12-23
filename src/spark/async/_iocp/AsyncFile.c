@@ -156,10 +156,9 @@ PyObject * AsyncFile_beginRead(AsyncFile *self, PyObject *args)
 
 BOOL AsyncFile_readFile(HANDLE hFile, Py_ssize_t size, Py_ssize_t position, PyObject *cont, DWORD *pError)
 {
-    PyObject *data, *buffer;
+    PyObject *buffer;
     IOCPOverlapped *over;
     DWORD error = ERROR_SUCCESS;
-    Py_ssize_t bufferSize;
     void *pBuffer = 0;
 
     buffer = iocp_allocBuffer(size, &pBuffer);
@@ -205,7 +204,7 @@ PyObject * AsyncFile_read(AsyncFile *self, PyObject *args)
 PyObject * AsyncFile_beginWrite(AsyncFile *self, PyObject *args)
 {
     Py_ssize_t position = 0;
-    PyObject *buffer, *cont, *arg, *ret;
+    PyObject *buffer, *cont;
     DWORD error;
 
     if(!PyArg_ParseTuple(args, "O|n", &buffer, &position))
@@ -287,7 +286,7 @@ PyObject * AsyncFile_fileno(AsyncFile *self, PyObject *args)
 {
     if(!PyArg_ParseTuple(args, ""))
         return NULL;
-    return PyInt_FromSize_t(self->hFile);
+    return PyInt_FromSize_t((size_t)self->hFile);
 }
 
 PyObject * AsyncFile_close(AsyncFile *self)
@@ -305,7 +304,7 @@ PyObject * AsyncFile_enter(AsyncFile *self, PyObject *args)
     if(!PyArg_ParseTuple(args, ""))
         return NULL;
     Py_INCREF(self);
-    return self;
+    return (PyObject *)self;
 }
 
 PyObject * AsyncFile_exit(AsyncFile *self, PyObject *args)

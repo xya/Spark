@@ -267,9 +267,8 @@ PyObject * CompletionPort_getResult(CompletionPort *self,
 
 PyObject * iocp_getResult_invoke(DWORD error, DWORD bytes, PyObject *data, BOOL *success)
 {
-    PyObject *result, *value;
+    PyObject *value;
     PyObject *func, *args, *kwargs;
-    PyObject *ex_type, *ex_val, *ex_tb;
 
     func = PyTuple_GetItem(data, 0);
     args = PyTuple_GetItem(data, 1);
@@ -296,7 +295,7 @@ PyObject * iocp_getResult_throw(DWORD error, DWORD bytes, PyObject *data, BOOL *
 
 PyObject * CompletionPort_createFile(CompletionPort *self, PyObject *args)
 {
-    PyObject *objMode, *fileArgs, *file;
+    PyObject *objMode;
     char *mode, *path;
     DWORD access, creation, flags;
     HANDLE hFile;

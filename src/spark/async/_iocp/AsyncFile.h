@@ -35,7 +35,9 @@ typedef struct
 void AsyncFile_dealloc(AsyncFile *self);
 PyObject * AsyncFile_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 PyObject * AsyncFile_beginRead(AsyncFile *self, PyObject *args);
+BOOL AsyncFile_readFile(HANDLE hFile, Py_ssize_t size, Py_ssize_t position, PyObject *cont, DWORD *pError);
 PyObject * AsyncFile_beginWrite(AsyncFile *self, PyObject *args);
+BOOL AsyncFile_writeFile(HANDLE hFile, PyObject *buffer, Py_ssize_t position, PyObject *cont, DWORD *pError);
 PyObject * AsyncFile_read(AsyncFile *self, PyObject *args);
 PyObject * AsyncFile_write(AsyncFile *self, PyObject *args);
 PyObject * AsyncFile_close(AsyncFile *self);
