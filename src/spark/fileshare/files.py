@@ -22,7 +22,7 @@ import os
 import hashlib
 from collections import Mapping
 from spark.async import Delegate
-from spark.fileshare.transfers import TransferInfo, TransferLocation
+from spark.fileshare.transfers import TransferInfo, UPLOAD, DOWNLOAD
 
 __all__ = ["SharedFile", "FileTable"]
 
@@ -75,12 +75,12 @@ class SharedFile(object):
     @property
     def isReceiving(self):
         """ Is the file being received from the remote peer? """
-        return self.transfer and (self.transfer.location == TransferLocation.REMOTE) or False
+        return self.transfer and (self.transfer.direction == DOWNLOAD) or False
     
     @property
     def isSending(self):
         """ Is the file being sent to the remote peer? """
-        return self.transfer and (self.transfer.location == TransferLocation.LOCAL) or False
+        return self.transfer and (self.transfer.direction == UPLOAD) or False
 
 class FileTable(object):
     """ Keep information about shared files, which could be local, remote or both. """

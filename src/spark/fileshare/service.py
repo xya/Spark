@@ -22,13 +22,15 @@ from collections import Mapping
 
 from spark.async import Future, Delegate
 from spark.messaging import Service
-from spark.fileshare import SharedFile, FileTable
+from spark.fileshare import SharedFile, FileTable, TransferTable, UPLOAD, DOWNLOAD
 
 __all__ = ["FileShare"]
 
 REQ_LIST_FILES = "list-files"
+REQ_CREATE_TRANSFER = "create-transfer"
 NOT_FILE_ADDED = "file-added"
 NOT_FILE_REMOVED = "file-removed"
+NOT_TRANSFER_STATE_CHANGED = "transfer-state-changed"
 
 class FileShare(Service):
     """ Service that shares files over a network. """
@@ -40,6 +42,7 @@ class FileShare(Service):
         self.fileTable.fileAdded += self.cacheFileAdded
         self.fileTable.fileUpdated += self.cacheFileUpdated
         self.fileTable.fileRemoved += self.cacheFileRemoved
+        self.transferTable = TransferTable()
         session.registerService(self)
     
     def files(self, excludeRemoved=True):
@@ -61,6 +64,16 @@ class FileShare(Service):
     def removeFile(self, fileID):
         """ Remove the file (local or remote) with the given ID from the list. """
         self.fileTable.removeFile(fileID, True)
+    
+    def startTransfer(self, fileID):
+        """ Start receiving the remote file with the given ID. """
+        file = self.fileTable[fileID]
+        if file.transfer is None:
+            self.sendRequest(REQ_CREATE_TRANSFER, {"fileID": fileID})
+    
+    def stopTransfer(self, fileID):
+        """ Stop receiving the remote file with the given ID. """
+        raise NotImplementedError()
     
     def cacheFileAdded(self, fileID, local):
         self.filesUpdated()
@@ -91,6 +104,31 @@ class FileShare(Service):
             self.remoteNotifications = True
         return self.fileTable.listFiles()
     
+    def requestCreateTransfer(self, req):
+        """ The remote peer sent a 'create-transfer' request. """
+        file = self.fileTable[req.params.get("fileID")]
+        transferID = self.transferTable.newTransferID()
+        transfer = self.transferTable.createTransfer(transferID, UPLOAD)
+        transfer.fileID = file.ID
+        transfer.state = "inactive"
+        file.transfer = transfer
+        self.filesUpdated()
+        return transfer
+    
+    def requestStartTransfer(self, req):
+        """ The remote peer sent a 'start-transfer' request. """
+        transfer = self.transferTable.find(req.params.get("transferID"), UPLOAD)
+        transfer.state = "starting"
+        self.filesUpdated()
+        self.sendNotification(NOT_TRANSFER_STATE_CHANGED, transfer)
+    
+    def requestCloseTransfer(self, req):
+        """ The remote peer sent a 'close-transfer' request. """
+        transfer = self.transferTable.find(req.params.get("transferID"), UPLOAD)
+        transfer.state = "closed"
+        self.filesUpdated()
+        self.sendNotification(NOT_TRANSFER_STATE_CHANGED, transfer)
+    
     def responseListFiles(self, prev):
         """ The remote peer responded to our 'list-files' request. """
         resp = prev.result
@@ -105,3 +143,29 @@ class FileShare(Service):
         """ The remote peer sent a 'file-removed' notification. """
         if isinstance(n.params, Mapping) and "ID" in n.params:
             self.fileTable.removeFile(n.params["ID"], False)
+
+    def notificationTransferStateChanged(self, n):
+        """ The remote peer sent a 'transfer-state-changed' notification. """
+        transferID = n.params.get("transferID")
+        transferState = n.params.get("transferState")
+        transfer = self.transferTable.find(transferID, DOWNLOAD)
+        transfer.state = transferState
+        self.filesUpdated()
+    
+    def responseCreateTransfer(self, prev):
+        """ The remote peer responded to our 'create-transfer' request. """
+        resp = prev.result
+        transferID = resp.params.get("transferID")
+        file = self.fileTable[resp.params.get("fileID")]
+        transfer = self.transferTable.createTransfer(transferID, DOWNLOAD)
+        transfer.fileID = file.ID
+        file.transfer = transfer
+        self.filesUpdated()
+    
+    def responseStartTransfer(self, prev):
+        """ The remote peer responded to our 'start-transfer' request. """
+        resp = prev.result
+    
+    def responseCloseTransfer(self, prev):
+        """ The remote peer responded to our 'close-transfer' request. """
+        resp = prev.result

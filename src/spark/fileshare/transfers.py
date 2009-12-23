@@ -20,23 +20,29 @@
 
 import types
 from datetime import datetime, timedelta
+from collections import Mapping
+from spark.async import Delegate
 
-__all__ = ["TransferInfo", "TransferLocation"]
+__all__ = ["TransferInfo", "TransferTable", "UPLOAD", "DOWNLOAD"]
 
-class TransferLocation(object):
-    LOCAL = 0       # a local file is being sent
-    REMOTE = 1      # a remite file is being received
-    
+UPLOAD = 0        # a local file is being sent
+DOWNLOAD = 1      # a remite file is being received
+
 class TransferInfo(object):
     """ Provides information about a file transfer. """
-    def __init__(self, transferID, location):
+    def __init__(self, transferID, direction):
         self.transferID = transferID
-        self.location = location
-        self.state = "created"
+        self.direction = direction
+        self.fileID = None
+        self.state = "invalid"
         self.completedSize = 0
         self.transferSpeed = 0
         self.started = None
         self.ended = None
+    
+    def __getstate__(self):
+        """ Return the object's state. Used for serialization. """
+        return {"transferID": self.transferID, "fileID": self.fileID, "state": self.state}
     
     @property
     def duration(self):
@@ -63,9 +69,30 @@ class TransferInfo(object):
     @property
     def progress(self):
         """ Return a number between 0.0 and 1.0 indicating the progress of the transfer. """
-        raise NotImplementedError()
+        return None
     
     @property
     def eta(self):
         """ Return an estimation of the time when the transfer will be completed. """
         raise NotImplementedError()
+
+class TransferTable(object):
+    def __init__(self):
+        self.nextID = 1
+        self.entries = {}
+    
+    def find(self, transferID, direction):
+        try:
+            return entries[(transferID, direction)]
+        except KeyError:
+            return None
+    
+    def newTransferID(self):
+        transferID = self.nextID
+        self.nextID += 1
+        return transferID
+    
+    def createTransfer(self, transferID, direction):
+        transfer = TransferInfo(transferID, direction)
+        self.entries[(transferID, direction)] = transfer
+        return transfer

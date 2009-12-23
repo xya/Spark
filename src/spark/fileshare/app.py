@@ -81,7 +81,7 @@ class SparkApplication(object):
                 return "%0.2f %s" % (size / float(count), unit)
         return "%d byte" % size
 
-_fileShareMethods = ["files", "addFile", "removeFile"]
+_fileShareMethods = ["files", "addFile", "removeFile", "startTransfer", "stopTransfer"]
 
 class Session(object):
     """

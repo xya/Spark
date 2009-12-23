@@ -55,7 +55,7 @@ class MessageDelivery(object):
         self.messageReceived = Delegate(self.__lock)
         self.requestReceived = Delegate(self.__lock)
         self.notificationReceived = Delegate(self.__lock)
-        self.nextID = 0
+        self.nextID = 1
         self.pendingRequests = {}
     
     def sendRequest(self, req):

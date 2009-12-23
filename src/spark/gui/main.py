@@ -23,7 +23,7 @@ import os
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from spark.gui.filelist import FileList, FileInfoWidget, iconPath
-from spark.fileshare import SharedFile, TransferInfo, TransferLocation
+from spark.fileshare import SharedFile, TransferInfo, UPLOAD, DOWNLOAD
 
 __all__ = ["MainView"]
 
@@ -88,6 +88,7 @@ class MainWindow(QMainWindow):
         QObject.connect(self.actions["disconnect"], SIGNAL("triggered()"), self.action_disconnect)
         QObject.connect(self.actions["add"], SIGNAL("triggered()"), self.action_add)
         QObject.connect(self.actions["remove"], SIGNAL("triggered()"), self.action_remove)
+        QObject.connect(self.actions["start"], SIGNAL("triggered()"), self.action_start)
     
     def updateToolBar(self):
         # connection-dependent actions
@@ -223,6 +224,14 @@ class MainWindow(QMainWindow):
                 onGuiThread(self.end_removeFile))
     
     def end_removeFile(self, prev):
+        result = prev.result
+    
+    def action_start(self):
+        if self.selectedID is not None:
+            self.app.session.startTransfer(self.selectedID).after(
+                onGuiThread(self.end_startTransfer))
+    
+    def end_startTransfer(self, prev):
         result = prev.result
     
     def sharedFilesUpdated(self):
