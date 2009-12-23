@@ -71,7 +71,7 @@ def sender(sourcePath, reactor, writer):
     position = 0
     messenger = messageWriter(writer)
     with reactor.open(sourcePath, 'r') as reader:
-        logging.info("sending from file %i to pipe %i" % (reader.fileno, writer.fileno))
+        logging.info("sending from file %i to pipe %i" % (reader.fileno(), writer.fileno()))
         try:
             while True:
                 data = yield reader.beginRead(4096, position)
@@ -86,7 +86,7 @@ def sender(sourcePath, reactor, writer):
                 blockID += 1
         except Exception:
             logging.exception("Error while sending the file")
-    logging.info("Closing pipe %i" % writer.fileno)
+    logging.info("Closing pipe %i" % writer.fileno())
     writer.close()
     yield position
 
@@ -111,7 +111,7 @@ def receiver(destPath, reactor, reader):
     messenger = messageReader(reader)
     position = 0
     with reactor.open(destPath, 'w') as writer:
-        logging.info("receiving from pipe %i to file %i" % (reader.fileno, writer.fileno))
+        logging.info("receiving from pipe %i to file %i" % (reader.fileno(), writer.fileno()))
         try:
             while True:
                 block = yield messenger.read()
@@ -121,7 +121,7 @@ def receiver(destPath, reactor, reader):
                 position += len(block.blockData)
         except Exception:
             logging.exception("Error while receiving the file")
-    logging.info("Closing pipe %i" % reader.fileno)
+    logging.info("Closing pipe %i" % reader.fileno())
     reader.close()
     reactor.close()
     yield position

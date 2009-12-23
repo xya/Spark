@@ -47,7 +47,7 @@ PyObject * CompletionPort_post(CompletionPort *self, DWORD opcode, PyObject *con
 PyObject * CompletionPort_invokeLater(CompletionPort *self, PyObject *args);
 PyObject * CompletionPort_throw(CompletionPort *self, PyObject *args);
 PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args);
-PyObject * CompletionPort_getResult(CompletionPort *self, ULONG_PTR tag, 
+PyObject * CompletionPort_getResult(CompletionPort *self,
         DWORD error, DWORD bytes, DWORD opcode, PyObject *cont, PyObject *data);
 PyObject * iocp_getResult_invoke(DWORD error, DWORD bytes, PyObject *data, BOOL *success);
 PyObject * iocp_getResult_throw(DWORD error, DWORD bytes, PyObject *data, BOOL *success);

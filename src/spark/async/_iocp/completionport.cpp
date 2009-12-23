@@ -139,7 +139,7 @@ PyObject * CompletionPort_post(CompletionPort *self, DWORD opcode, PyObject *con
     IOCPOverlapped *over = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));
     if(!over)
     {
-        PyErr_SetString(PyExc_Exception, "Could not create the overlapped object");
+        PyErr_SetString(PyExc_MemoryError, "Could not create the overlapped object");
         return NULL;
     }
 
@@ -151,8 +151,14 @@ PyObject * CompletionPort_post(CompletionPort *self, DWORD opcode, PyObject *con
     over->data = data;
     
     // don't decrement cont and data's refcount, so they remain alive until wait() returns
-    PostQueuedCompletionStatus(self->hPort, 0, 
-        (ULONG_PTR)INVALID_HANDLE_VALUE, (LPOVERLAPPED)over);
+    if(!PostQueuedCompletionStatus(self->hPort, 0, 
+        (ULONG_PTR)INVALID_HANDLE_VALUE, (LPOVERLAPPED)over))
+    {
+        Py_DECREF(cont);
+        Py_DECREF(data);
+        iocp_lastwin32error(NULL);
+        return NULL;
+    }
     Py_RETURN_NONE;
 }
 
@@ -211,7 +217,7 @@ PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args)
         }
     }
 
-    result = CompletionPort_getResult(self, tag, error, bytes, over->opcode, over->cont, over->data);
+    result = CompletionPort_getResult(self, error, bytes, over->opcode, over->cont, over->data);
     // INCREF was done in beginRead/beginWrite/post to keep these alive
     Py_DECREF(over->cont);
     Py_DECREF(over->data);
@@ -219,7 +225,7 @@ PyObject * CompletionPort_wait(CompletionPort *self, PyObject *args)
     return result;
 }
 
-PyObject * CompletionPort_getResult(CompletionPort *self, ULONG_PTR tag, 
+PyObject * CompletionPort_getResult(CompletionPort *self, 
         DWORD error, DWORD bytes, DWORD opcode, PyObject *cont, PyObject *data)
 {
     PyObject *result, *value;
@@ -400,7 +406,7 @@ PyObject * CompletionPort_createPipe(CompletionPort *self, PyObject *args)
 PyObject * CompletionPort_createAsyncFile(CompletionPort *self, HANDLE hFile)
 {
     PyObject *fileArgs, *file;
-    fileArgs = Py_BuildValue("(n)", hFile);
+    fileArgs = Py_BuildValue("(On)", self, hFile);
     if(!fileArgs)
         return NULL;
     file = PyObject_CallObject((PyObject *)&AsyncFileType, fileArgs);

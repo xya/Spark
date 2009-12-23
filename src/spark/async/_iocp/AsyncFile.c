@@ -31,6 +31,7 @@ static PyMethodDef AsyncFile_methods[] =
     {"beginWrite", (PyCFunction)AsyncFile_beginWrite, METH_VARARGS, "Start an asynchronous write operation."},
     {"read", (PyCFunction)AsyncFile_read, METH_VARARGS, "Start a synchronous read operation."},
     {"write", (PyCFunction)AsyncFile_write, METH_VARARGS, "Start a synchronous write operation."},
+    {"fileno", (PyCFunction)AsyncFile_fileno, METH_VARARGS, "Return the file's handle."},
     {"close", (PyCFunction)AsyncFile_close, METH_NOARGS, "Close the file."},
     {"__enter__", (PyCFunction)AsyncFile_enter, METH_VARARGS, ""},
     {"__exit__", (PyCFunction)AsyncFile_exit, METH_VARARGS, ""},
@@ -89,16 +90,26 @@ void AsyncFile_dealloc(AsyncFile *self)
 PyObject * AsyncFile_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
     AsyncFile *self;
+    PyObject *port;
     HANDLE hFile;
 
-    if(!PyArg_ParseTuple(args, "n", &hFile))
+    if(!PyArg_ParseTuple(args, "On", &port, &hFile))
     {
+        return NULL;
+    }
+    else if(!PyObject_TypeCheck(port, &CompletionPortType))
+    {
+        PyErr_SetString(PyExc_TypeError, "The first argument should be a CompletionPort instance");
         return NULL;
     }
 
     self = (AsyncFile *)type->tp_alloc(type, 0);
     if(self != NULL)
+    {
+        Py_INCREF(port);
+        self->port = (CompletionPort *)port;
         self->hFile = hFile;
+    }
     return (PyObject *)self;
 }
 
@@ -126,32 +137,19 @@ PyObject * AsyncFile_beginRead(AsyncFile *self, PyObject *args)
     else if((error == ERROR_BROKEN_PIPE) || (error == ERROR_HANDLE_EOF))
     {
         arg = PyString_FromString("");
-        ret = PyObject_CallMethod(cont, "completed", "O", arg);
+        ret = CompletionPort_post(self->port, OP_READ, cont, arg);
         Py_DECREF(arg);
         if(!ret)
         {
             Py_DECREF(cont);
             return NULL;
-        }
-        else
-        {
-            Py_DECREF(ret);
         }
     }
     else if(error != ERROR_SUCCESS)
     {
-        arg = iocp_createWinError(error, NULL);
-        ret = PyObject_CallMethod(cont, "failed", "O", arg);
-        Py_DECREF(arg);
-        if(!ret)
-        {
-            Py_DECREF(cont);
-            return NULL;
-        }
-        else
-        {
-            Py_DECREF(ret);
-        }
+        iocp_win32error(error, NULL);
+        Py_DECREF(cont);
+        return NULL;
     }
     return cont;
 }
@@ -228,16 +226,8 @@ PyObject * AsyncFile_beginWrite(AsyncFile *self, PyObject *args)
     else if(error != ERROR_SUCCESS)
     {
         iocp_win32error(error, NULL);
-        ret = PyObject_CallMethod(cont, "failed", "");
-        if(!ret)
-        {
-            Py_DECREF(cont);
-            return NULL;
-        }
-        else
-        {
-            Py_DECREF(ret);
-        }
+        Py_DECREF(cont);
+        return NULL;
     }
     return cont;
 }
@@ -291,6 +281,13 @@ PyObject * AsyncFile_write(AsyncFile *self, PyObject *args)
     ret = PyObject_CallMethod(cont, "wait", "");
     Py_DECREF(cont);
     return ret;
+}
+
+PyObject * AsyncFile_fileno(AsyncFile *self, PyObject *args)
+{
+    if(!PyArg_ParseTuple(args, ""))
+        return NULL;
+    return PyInt_FromSize_t(self->hFile);
 }
 
 PyObject * AsyncFile_close(AsyncFile *self)

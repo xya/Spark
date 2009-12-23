@@ -40,6 +40,7 @@ static PyMethodDef AsyncSocket_methods[] =
     {"read", (PyCFunction)AsyncSocket_read, METH_VARARGS, "Start a synchronous read operation on the socket."},
     {"write", (PyCFunction)AsyncSocket_write, METH_VARARGS, "Start a synchronous write operation on the socket."},
     {"shutdown", (PyCFunction)AsyncSocket_shutdown, METH_VARARGS, "Close the reading part or writing part or both parts of the socket."},
+    {"fileno", (PyCFunction)AsyncSocket_fileno, METH_VARARGS, "Return the socket's handle."},
     {"close", (PyCFunction)AsyncSocket_close, METH_NOARGS, "Close the socket."},
     {"__enter__", (PyCFunction)AsyncSocket_enter, METH_VARARGS, ""},
     {"__exit__", (PyCFunction)AsyncSocket_exit, METH_VARARGS, ""},
@@ -416,6 +417,13 @@ PyObject * AsyncSocket_shutdown(AsyncSocket *self, PyObject *args)
     }
 }
 
+PyObject * AsyncSocket_fileno(AsyncSocket *self, PyObject *args)
+{
+    if(!PyArg_ParseTuple(args, ""))
+        return NULL;
+    return PyInt_FromSize_t(self->socket);
+}
+
 PyObject * AsyncSocket_close(AsyncSocket *self)
 {
     if(self->socket)
@@ -552,32 +560,19 @@ PyObject * AsyncSocket_beginRead(AsyncSocket *self, PyObject *args)
     else if((error == ERROR_BROKEN_PIPE) || (error == ERROR_HANDLE_EOF))
     {
         arg = PyString_FromString("");
-        ret = PyObject_CallMethod(cont, "completed", "O", arg);
+        ret = CompletionPort_post(self->port, OP_READ, cont, arg);
         Py_DECREF(arg);
         if(!ret)
         {
             Py_DECREF(cont);
             return NULL;
-        }
-        else
-        {
-            Py_DECREF(ret);
         }
     }
     else if(error != ERROR_SUCCESS)
     {
-        arg = iocp_createWinError(error, NULL);
-        ret = PyObject_CallMethod(cont, "failed", "O", arg);
-        Py_DECREF(arg);
-        if(!ret)
-        {
-            Py_DECREF(cont);
-            return NULL;
-        }
-        else
-        {
-            Py_DECREF(ret);
-        }
+        iocp_win32error(error, NULL);
+        Py_DECREF(cont);
+        return NULL;
     }
     return cont;
 }
@@ -616,16 +611,8 @@ PyObject * AsyncSocket_beginWrite(AsyncSocket *self, PyObject *args)
     else if(error != ERROR_SUCCESS)
     {
         iocp_win32error(error, NULL);
-        ret = PyObject_CallMethod(cont, "failed", "");
-        if(!ret)
-        {
-            Py_DECREF(cont);
-            return NULL;
-        }
-        else
-        {
-            Py_DECREF(ret);
-        }
+        Py_DECREF(cont);
+        return NULL;
     }
     return cont;
 }
