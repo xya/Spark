@@ -25,8 +25,8 @@
 #include <windows.h>
 #include "AsyncSocket.h"
 #include "AsyncFile.h"
-#include "completionport.h"
-#include "future.h"
+#include "CompletionPort.h"
+#include "Future.h"
 #include "iocp.h"
 
 static PyMethodDef AsyncSocket_methods[] =

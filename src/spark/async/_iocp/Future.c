@@ -20,7 +20,7 @@
 
 #include <Python.h>
 #include <windows.h>
-#include "future.h"
+#include "Future.h"
 #include "iocp.h"
 
 static PyMethodDef Future_methods[] =

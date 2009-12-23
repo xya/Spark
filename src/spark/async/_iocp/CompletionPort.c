@@ -20,7 +20,7 @@
 
 #include <Python.h>
 #include <windows.h>
-#include "completionport.h"
+#include "CompletionPort.h"
 #include "AsyncFile.h"
 #include "AsyncSocket.h"
 #include "iocp.h"

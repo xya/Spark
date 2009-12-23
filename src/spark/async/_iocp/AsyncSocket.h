@@ -21,7 +21,7 @@
 #ifndef PYTHON_IOCP_ASYNC_SOCKET
 #define PYTHON_IOCP_ASYNC_SOCKET
 
-#include "completionport.h"
+#include "CompletionPort.h"
 
 extern PyTypeObject AsyncSocketType;
 

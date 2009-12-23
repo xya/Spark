@@ -21,7 +21,7 @@
 #ifndef PYTHON_IOCP_ASYNC_FILE
 #define PYTHON_IOCP_ASYNC_FILE
 
-#include "completionport.h"
+#include "CompletionPort.h"
 
 extern PyTypeObject AsyncFileType;
 
