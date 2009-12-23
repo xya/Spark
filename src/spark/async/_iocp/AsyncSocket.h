@@ -62,7 +62,7 @@ PyObject * AsyncSocket_exit(AsyncSocket *self, PyObject *args);
 PyObject * iocp_getResult_accept(DWORD error, DWORD bytes, PyObject *data, BOOL *success);
 PyObject * iocp_getResult_connect(DWORD error, DWORD bytes, PyObject *data, BOOL *success);
 
-struct sockaddr * AsyncSocket_stringToSockAddr(int family, char *host, int port, int *pAddrSize);
+PyObject * AsyncSocket_stringToSockAddr(int family, char *host, int port);
 PyObject * AsyncSocket_sockAddrToString(int family, struct sockaddr *addr, int addrSize);
 
 #endif

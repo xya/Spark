@@ -121,7 +121,7 @@ PyObject * Future_wait(Future *self, PyObject *args)
     DWORD timeoutMsec;
     DWORD waitResult;
     int state;
-    PyObject *result, *type, *val, *tb;
+    PyObject *result;
     HANDLE hEvent;
 
     if(!PyArg_ParseTuple(args, "|d", &timeoutSec))
@@ -306,7 +306,7 @@ PyObject * Future_after(Future *self, PyObject *args)
 
 BOOL Future_callback_args(Future *self, PyObject *args, PyObject **cb, PyObject **cbargs)
 {
-    PyObject *arglist, *argtuple;
+    PyObject *arglist;
     *cb = PySequence_GetItem(args, 0);
     arglist = PySequence_List(args);
     PySequence_SetItem(arglist, 0, (PyObject *)self);

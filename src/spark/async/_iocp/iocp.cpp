@@ -49,7 +49,7 @@ static PyMethodDef iocp_Methods[] =
 
 PyMODINIT_FUNC init_iocp(void)
 {
-    PyObject *m, *err;
+    PyObject *m;
 
     iocp_loadWinSock();
 

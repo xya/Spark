@@ -196,14 +196,16 @@ BOOL AsyncSocket_initExtensions(AsyncSocket *self)
 
 BOOL AsyncSocket_bindDefault(AsyncSocket *self)
 {
+    DWORD addrSize;
     struct sockaddr_in addr4;
     struct sockaddr_in6 addr6;
 
     if(self->family == AF_INET)
     {
-        ZeroMemory(&addr4, sizeof(struct sockaddr_in));
+        addrSize = sizeof(struct sockaddr_in);
+        ZeroMemory(&addr4, addrSize);
         addr4.sin_family = AF_INET;
-        if(bind(self->socket, &addr4, sizeof(struct sockaddr_in)) == SOCKET_ERROR)
+        if(bind(self->socket, (struct sockaddr *)&addr4, addrSize) == SOCKET_ERROR)
         {
             iocp_lastwin32error("Could not bind the socket (%s)");
             return FALSE;
@@ -212,9 +214,10 @@ BOOL AsyncSocket_bindDefault(AsyncSocket *self)
     }
     else if(self->family == AF_INET6)
     {
-        ZeroMemory(&addr6, sizeof(struct sockaddr_in6));
+        addrSize = sizeof(struct sockaddr_in6);
+        ZeroMemory(&addr6, addrSize);
         addr6.sin6_family = AF_INET;
-        if(bind(self->socket, &addr6, sizeof(struct sockaddr_in6)) == SOCKET_ERROR)
+        if(bind(self->socket, (struct sockaddr *)&addr6, addrSize) == SOCKET_ERROR)
         {
             iocp_lastwin32error("Could not bind the socket (%s)");
             return FALSE;
@@ -230,19 +233,27 @@ BOOL AsyncSocket_bindDefault(AsyncSocket *self)
 
 PyObject * AsyncSocket_bind(AsyncSocket *self, PyObject *args)
 {
-    char *host;
+    char *host, *addrString;
     int port;
-    struct sockaddr *addr;
-    int addrSize, ret;
+    PyObject *addr;
+    Py_ssize_t addrSize;
+    int ret;
 
     if(!PyArg_ParseTuple(args, "(sl)", &host, &port))
         return NULL;
 
-    addr = AsyncSocket_stringToSockAddr(self->family, host, port, &addrSize);
+    addr = AsyncSocket_stringToSockAddr(self->family, host, port);
     if(!addr)
+    {
         return NULL;
-    ret = bind(self->socket, addr, addrSize);
-    free(addr);
+    }
+    else if(PyObject_AsReadBuffer(addr, (char *)&addrString, &addrSize) != 0)
+    {
+        PyErr_SetString(PyExc_Exception, "Couldn't access the buffer for reading");
+        return NULL;
+    }
+    ret = bind(self->socket, addrString, (int)addrSize);
+    Py_DECREF(addr);
     if(ret == SOCKET_ERROR)
     {
         iocp_lastwin32error("Could not bind the socket (%s)");
@@ -341,11 +352,10 @@ PyObject * AsyncSocket_beginAccept(AsyncSocket *self, PyObject *args)
 
 PyObject * AsyncSocket_beginConnect(AsyncSocket *self, PyObject *args)
 {
-    PyObject *cont, *data;
-    char *host;
+    PyObject *cont, *data, *addr;
+    char *host, *addrString;
     int port;
-    struct sockaddr *addr;
-    int addrSize;
+    Py_ssize_t addrSize;
     LPFN_CONNECTEX connectEx = (LPFN_CONNECTEX)self->connectEx;
     IOCPOverlapped *over = NULL;
     DWORD error;
@@ -355,23 +365,27 @@ PyObject * AsyncSocket_beginConnect(AsyncSocket *self, PyObject *args)
     else if(!AsyncSocket_bindDefault(self))
         return NULL;
 
-    addr = AsyncSocket_stringToSockAddr(self->family, host, port, &addrSize);
+    addr = AsyncSocket_stringToSockAddr(self->family, host, port);
     if(!addr)
+    {
+        return NULL;
+    }
+    else if(PyObject_AsReadBuffer(addr, (char *)&addrString, &addrSize) != 0)
+    {
+        PyErr_SetString(PyExc_Exception, "Couldn't access the buffer for reading");
+        return NULL;
+    }
+
+    data = Py_BuildValue("(OOO)", self, args, addr);
+    Py_DECREF(addr);
+    if(!data)
         return NULL;
 
     cont = PyObject_CallObject((PyObject *)&FutureType, NULL);
     if(!cont)
     {
-        free(addr);
+        Py_DECREF(data);
         PyErr_SetString(PyExc_Exception, "Could not create the continuation");
-        return NULL;
-    }
-
-    data = Py_BuildValue("(OO)", self, args);
-    if(!data)
-    {
-        Py_DECREF(cont);
-        free(addr);
         return NULL;
     }
 
@@ -381,13 +395,12 @@ PyObject * AsyncSocket_beginConnect(AsyncSocket *self, PyObject *args)
     Py_INCREF(cont);
     over->cont = cont;
     over->data = data;
-    if(!connectEx(self->socket, addr, addrSize, NULL, 0, NULL, (LPOVERLAPPED)over))
+    if(!connectEx(self->socket, addrString, (DWORD)addrSize, NULL, 0, NULL, (LPOVERLAPPED)over))
     {
         error = WSAGetLastError();
         if((error != ERROR_IO_PENDING) && (error != WSA_IO_PENDING))
         {
             iocp_win32error(error, NULL);
-            free(addr);
             // 2 references to cont, one for the return value and one for wait()
             Py_DECREF(over->cont);
             Py_DECREF(over->cont);
@@ -396,8 +409,6 @@ PyObject * AsyncSocket_beginConnect(AsyncSocket *self, PyObject *args)
             return NULL;
         }
     }
-    // does addr has to stay alive until the completion is posted?
-    free(addr);
     return cont;
 }
 
@@ -628,8 +639,10 @@ PyObject * AsyncSocket_write(AsyncSocket *self, PyObject *args)
     return ret;
 }
 
-struct sockaddr * AsyncSocket_stringToSockAddr(int family, char *host, int port, int *pAddrSize)
+PyObject * AsyncSocket_stringToSockAddr(int family, char *host, int port)
 {
+    PyObject *ret;
+    INT addrSize = 0;
     struct sockaddr_in *addr4;
     struct sockaddr_in6 *addr6;
 
@@ -643,22 +656,17 @@ struct sockaddr * AsyncSocket_stringToSockAddr(int family, char *host, int port,
         PyErr_SetString(PyExc_Exception, "Only IPv4 and IPv6 addresses are supported");
         return NULL;
     }
-    else if(!pAddrSize)
-    {
-        PyErr_SetString(PyExc_Exception, "pAddrSize must not be NULL");
-        return NULL;
-    }
     
     if(family == AF_INET)
     {
-        *pAddrSize = sizeof(struct sockaddr_in);
-        addr4 = (struct sockaddr_in *)malloc(*pAddrSize);
+        addrSize = sizeof(struct sockaddr_in);
+        addr4 = (struct sockaddr_in *)malloc(addrSize);
         if(!addr4)
         {
             PyErr_SetString(PyExc_Exception, "Could not allocate address");
             return NULL;
         }
-        else if(WSAStringToAddressA(host, AF_INET, NULL, addr4, pAddrSize) == SOCKET_ERROR)
+        else if(WSAStringToAddressA(host, AF_INET, NULL, addr4, &addrSize) == SOCKET_ERROR)
         {
             iocp_lastwin32error(NULL);
             return NULL;
@@ -666,19 +674,21 @@ struct sockaddr * AsyncSocket_stringToSockAddr(int family, char *host, int port,
         else
         {
             addr4->sin_port = htons(port);
-            return (struct sockaddr *)addr4;
+            ret = PyString_FromStringAndSize((char *)addr4, addrSize);
+            free(addr4);
+            return ret;
         }
     }
     else
     {
-        *pAddrSize = sizeof(struct sockaddr_in6);
-        addr6 = (struct sockaddr_in6 *)malloc(*pAddrSize);
+        addrSize = sizeof(struct sockaddr_in6);
+        addr6 = (struct sockaddr_in6 *)malloc(addrSize);
         if(!addr6)
         {
             PyErr_SetString(PyExc_Exception, "Could not allocate address");
             return NULL;
         }
-        else if(WSAStringToAddressA(host, AF_INET6, NULL, addr6, pAddrSize) == SOCKET_ERROR)
+        else if(WSAStringToAddressA(host, AF_INET6, NULL, addr6, &addrSize) == SOCKET_ERROR)
         {
             iocp_lastwin32error(NULL);
             return NULL;
@@ -686,7 +696,9 @@ struct sockaddr * AsyncSocket_stringToSockAddr(int family, char *host, int port,
         else
         {
             addr6->sin6_port = htons(port);
-            return (struct sockaddr *)addr6;
+            ret = PyString_FromStringAndSize((char *)addr6, addrSize);
+            free(addr6);
+            return ret;
         }
     }
 }
