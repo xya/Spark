@@ -124,6 +124,7 @@ class TcpTransport(Transport):
             sock = self.reactor.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
             if initiating:
                 self.connState = Transport.CONNECTING
+                sock.bind(("0.0.0.0", 0))
                 yield sock.beginConnect(address)
                 self.conn, self.remoteAddr = sock, address
             else:

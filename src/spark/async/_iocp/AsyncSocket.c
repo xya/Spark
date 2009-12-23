@@ -194,43 +194,6 @@ BOOL AsyncSocket_initExtensions(AsyncSocket *self)
     return TRUE;
 }
 
-BOOL AsyncSocket_bindDefault(AsyncSocket *self)
-{
-    DWORD addrSize;
-    struct sockaddr_in addr4;
-    struct sockaddr_in6 addr6;
-
-    if(self->family == AF_INET)
-    {
-        addrSize = sizeof(struct sockaddr_in);
-        ZeroMemory(&addr4, addrSize);
-        addr4.sin_family = AF_INET;
-        if(bind(self->socket, (struct sockaddr *)&addr4, addrSize) == SOCKET_ERROR)
-        {
-            iocp_lastwin32error("Could not bind the socket (%s)");
-            return FALSE;
-        }
-        return TRUE;
-    }
-    else if(self->family == AF_INET6)
-    {
-        addrSize = sizeof(struct sockaddr_in6);
-        ZeroMemory(&addr6, addrSize);
-        addr6.sin6_family = AF_INET;
-        if(bind(self->socket, (struct sockaddr *)&addr6, addrSize) == SOCKET_ERROR)
-        {
-            iocp_lastwin32error("Could not bind the socket (%s)");
-            return FALSE;
-        }
-        return TRUE;
-    }
-    else
-    {
-        PyErr_SetString(PyExc_Exception, "Only IPv4 and IPv6 addresses are supported");
-        return FALSE;
-    }
-}
-
 PyObject * AsyncSocket_bind(AsyncSocket *self, PyObject *args)
 {
     char *host, *addrString;
@@ -362,8 +325,6 @@ PyObject * AsyncSocket_beginConnect(AsyncSocket *self, PyObject *args)
 
     if(!PyArg_ParseTuple(args, "(sl)", &host, &port))
         return NULL;
-    else if(!AsyncSocket_bindDefault(self))
-        return NULL;
 
     addr = AsyncSocket_stringToSockAddr(self->family, host, port);
     if(!addr)
@@ -400,7 +361,10 @@ PyObject * AsyncSocket_beginConnect(AsyncSocket *self, PyObject *args)
         error = WSAGetLastError();
         if((error != ERROR_IO_PENDING) && (error != WSA_IO_PENDING))
         {
-            iocp_win32error(error, NULL);
+            if(error == WSAEINVAL)
+                iocp_win32error(error, "The socket is not bound or in listening mode.");
+            else
+                iocp_win32error(error, NULL);
             // 2 references to cont, one for the return value and one for wait()
             Py_DECREF(over->cont);
             Py_DECREF(over->cont);
