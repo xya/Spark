@@ -133,4 +133,4 @@ try:
 except ImportError:
     pass
 
-import spark.async.threadpoolreactor
+#import spark.async.threadpoolreactor

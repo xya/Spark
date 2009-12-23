@@ -428,7 +428,7 @@ class WriteOperation(IOOperation):
 class ConnectOperation(IOOperation):
     def __init__(self, reactor, nbsock, address, cont):
         super(ConnectOperation, self).__init__(reactor)
-        self.fd = nbsock.fileno
+        self.fd = nbsock.fileno()
         self.event = select.POLLOUT
         self.nbsock = nbsock
         self.address = address
@@ -456,7 +456,7 @@ class ConnectOperation(IOOperation):
 class AcceptOperation(IOOperation):
     def __init__(self, reactor, nbsock, cont):
         super(AcceptOperation, self).__init__(reactor)
-        self.fd = nbsock.fileno
+        self.fd = nbsock.fileno()
         self.event = select.POLLIN
         self.nbsock = nbsock
         self.conn = None
@@ -481,7 +481,6 @@ class NonBlockingFile(object):
         self.reactor = reactor
         self.fd = fd
     
-    @property
     def fileno(self):
         return self.fd
     
@@ -532,7 +531,6 @@ class NonBlockingSocket(object):
         self.socket = sock
         sock.setblocking(0)
     
-    @property
     def fileno(self):
         return self.socket.fileno()
     

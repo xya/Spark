@@ -271,7 +271,6 @@ class ThreadPoolFile(object):
         self.reactor = reactor
         self.fd = fd
     
-    @property
     def fileno(self):
         return self.fd
     
@@ -340,7 +339,6 @@ class ThreadPoolSocket(object):
         self.reactor = reactor
         self.socket = sock
     
-    @property
     def fileno(self):
         return self.socket.fileno()
     

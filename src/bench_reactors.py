@@ -39,7 +39,7 @@ def run_bench():
     sourcePath = os.path.join(TestDir, TestFile)
     destPath = sourcePath + ".1"
     reactors = Reactor.available()
-    reactors.pop(1)
+    #reactors.pop(1)
     for reactorType in reactors:
         with reactorType() as reactor:
             run_reactor(sourcePath, destPath, reactor)
