@@ -1,3 +1,23 @@
+/*
+ Copyright (C) 2009 Pierre-André Saulais <pasaulais@free.fr>
+
+ This file is part of the Spark File-transfer Tool.
+
+ Spark is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; either version 2 of the License, or
+ (at your option) any later version.
+
+ Spark is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with Spark; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+*/
+
 #include <Python.h>
 #include <windows.h>
 #include "completionport.h"
@@ -203,115 +223,69 @@ PyObject * CompletionPort_getResult(CompletionPort *self, ULONG_PTR tag,
         DWORD error, DWORD bytes, DWORD opcode, PyObject *cont, PyObject *data)
 {
     PyObject *result, *value;
-    PyObject *func, *args, *kwargs;
-    PyObject *ex_type, *ex_val, *ex_tb;
     BOOL success;
-    if(opcode == OP_INVOKE)
+    switch(opcode)
     {
-        func = PyTuple_GetItem(data, 0);
-        args = PyTuple_GetItem(data, 1);
-        kwargs = PyTuple_GetItem(data, 2);
-        value = PyObject_Call(func, args, kwargs);
-        if(value)
-        {
-            success = TRUE;
-        }
-        else if(!cont)
-        {
-            // if there is no continuation, propagate the exception to the caller
-            return NULL;
-        }
-        else
-        {
-            success = FALSE;
-            value = iocp_fetchException();
-            if(!value)
-                return NULL;
-        }
-    }
-    else if(opcode == OP_THROW)
-    {
-        PyErr_SetObject(PyObject_Type(data), data);
+    case OP_THROW:
+        value = iocp_getResult_throw(error, bytes, data, &success);
+        break;
+    case OP_INVOKE:
+        value = iocp_getResult_invoke(error, bytes, data, &success);
+        break;
+    case OP_READ:
+        value = iocp_getResult_read(error, bytes, data, &success);
+        break;
+    case OP_WRITE:
+        value = iocp_getResult_write(error, bytes, data, &success);
+        break;
+    case OP_CONNECT:
+        value = iocp_getResult_connect(error, bytes, data, &success);
+        break;
+    case OP_ACCEPT:
+        value = iocp_getResult_accept(error, bytes, data, &success);
+        break;
+    default:
+        PyErr_Format(PyExc_Exception, "Unknown operation type '%i'", opcode);
         return NULL;
     }
-    else if(opcode == OP_READ)
-    {
-        if(error == ERROR_SUCCESS)
-        {
-            success = TRUE;
-            value = PySequence_GetSlice(data, 0, (Py_ssize_t)bytes);
-            if(!value)
-                return NULL;
-        }
-        else if((error == ERROR_BROKEN_PIPE) || (error == ERROR_HANDLE_EOF))
-        {
-            success = TRUE;
-            value = PyString_FromString("");
-            if(!value)
-                return NULL;
-        }
-        else
-        {
-            success = FALSE;
-            iocp_win32error(error, "The read operation failed (%s)");
-            value = iocp_fetchException();
-            if(!value)
-                return NULL;
-        }
-    }
-    else if(opcode == OP_CONNECT)
-    {
-        if(error == ERROR_SUCCESS)
-        {
-            /*
-            if(setsockopt(self->socket, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0) == SOCKET_ERROR)
-            {
-                success = FALSE;
-                iocp_lastwin32error("Error while updating the socket after ConnectEx (%s)");
-                value = iocp_fetchException();
-                if(!value)
-                    return NULL;
-            }
-            else
-            {
-            */
-            success = TRUE;
-            Py_INCREF(data);
-            value = data;
-        }
-        else
-        {
-            success = FALSE;
-            iocp_win32error(error, "The connect operation failed (%s)");
-            value = iocp_fetchException();
-            if(!value)
-                return NULL;
-        }
-    }
-    else
-    {
-        if(error == ERROR_SUCCESS)
-        {
-            success = TRUE;
-            Py_INCREF(Py_None);
-            value = Py_None;
-        }
-        else
-        {
-            success = FALSE;
-            iocp_win32error(error, "The operation failed (%s)");
-            value = iocp_fetchException();
-            if(!value)
-                return NULL;
-        }
-    }
 
-    if(success)
+    if(!value)
+        return NULL;
+    else if(success)
         result = Py_BuildValue("OOO", Py_True, value, cont);
     else
         result = Py_BuildValue("OOO", Py_False, value, cont);
     Py_DECREF(value);
     return result;
+}
+
+PyObject * iocp_getResult_invoke(DWORD error, DWORD bytes, PyObject *data, BOOL *success)
+{
+    PyObject *result, *value;
+    PyObject *func, *args, *kwargs;
+    PyObject *ex_type, *ex_val, *ex_tb;
+
+    func = PyTuple_GetItem(data, 0);
+    args = PyTuple_GetItem(data, 1);
+    kwargs = PyTuple_GetItem(data, 2);
+    value = PyObject_Call(func, args, kwargs);
+    if(value)
+    {
+        *success = TRUE;
+        return value;
+    }
+    else
+    {
+        *success = FALSE;
+        return iocp_fetchException();
+    }
+}
+
+PyObject * iocp_getResult_throw(DWORD error, DWORD bytes, PyObject *data, BOOL *success)
+{
+    Py_INCREF(data);
+    PyErr_SetObject(PyObject_Type(data), data);
+    return NULL;
 }
 
 PyObject * CompletionPort_createFile(CompletionPort *self, PyObject *args)

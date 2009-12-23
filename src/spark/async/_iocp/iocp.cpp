@@ -1,3 +1,23 @@
+/*
+ Copyright (C) 2009 Pierre-André Saulais <pasaulais@free.fr>
+
+ This file is part of the Spark File-transfer Tool.
+
+ Spark is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; either version 2 of the License, or
+ (at your option) any later version.
+
+ Spark is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with Spark; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+*/
+
 #include <Python.h>
 #include <stdio.h>
 #include <windows.h>
@@ -178,4 +198,31 @@ PyObject * iocp_fetchException()
         value = Py_BuildValue("OOO", Py_None, Py_None, Py_None); 
     }
     return value;
+}
+
+PyObject * iocp_allocBuffer(Py_ssize_t size, void **pBuffer)
+{
+    PyObject *buffer;
+    void *tempBuffer = NULL;
+    Py_ssize_t bufferSize;
+
+    if(pBuffer)
+        *pBuffer = NULL;
+    buffer = PyBuffer_New(size);
+    if(!buffer)
+        return NULL;
+    
+    bufferSize = buffer->ob_type->tp_as_buffer->bf_getwritebuffer(buffer, 0, &tempBuffer);
+    if((size > bufferSize) || !tempBuffer)
+    {
+        PyErr_SetString(PyExc_Exception, "Couldn't allocate the buffer");
+        Py_DECREF(buffer);
+        return NULL;
+    }
+    else
+    {
+        if(pBuffer)
+            *pBuffer = tempBuffer;
+        return buffer;
+    }
 }

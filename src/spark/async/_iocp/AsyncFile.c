@@ -1,3 +1,23 @@
+/*
+ Copyright (C) 2009 Pierre-André Saulais <pasaulais@free.fr>
+
+ This file is part of the Spark File-transfer Tool.
+
+ Spark is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; either version 2 of the License, or
+ (at your option) any later version.
+
+ Spark is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with Spark; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+*/
+
 #include <Python.h>
 #include <windows.h>
 #include "AsyncFile.h"
@@ -144,20 +164,9 @@ BOOL AsyncFile_readFile(AsyncFile *self, Py_ssize_t size, Py_ssize_t position, P
     Py_ssize_t hFile, bufferSize;
     void *pBuffer = 0;
 
-    buffer = PyBuffer_New(size);
+    buffer = iocp_allocBuffer(size, &pBuffer);
     if(!buffer)
-    {
         return FALSE;
-    }
-    
-    bufferSize = buffer->ob_type->tp_as_buffer->bf_getwritebuffer(buffer, 0, &pBuffer);
-    if((size > bufferSize) || !pBuffer)
-    {
-        PyErr_SetString(PyExc_Exception, "Couldn't allocate the buffer");
-        Py_DECREF(buffer);
-        return FALSE;
-    }
-
     over = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));
     ZeroMemory(&over->ov, sizeof(OVERLAPPED));
     over->opcode = OP_READ;
@@ -313,4 +322,40 @@ PyObject * AsyncFile_exit(AsyncFile *self, PyObject *args)
         return NULL;
     Py_DECREF(ret);
     Py_RETURN_NONE;
+}
+
+
+PyObject * iocp_getResult_read(DWORD error, DWORD bytes, PyObject *data, BOOL *success)
+{
+    if(error == ERROR_SUCCESS)
+    {
+        *success = TRUE;
+        return PySequence_GetSlice(data, 0, (Py_ssize_t)bytes);
+    }
+    else if((error == ERROR_BROKEN_PIPE) || (error == ERROR_HANDLE_EOF))
+    {
+        *success = TRUE;
+        return PyString_FromString("");
+    }
+    else
+    {
+        *success = FALSE;
+        iocp_win32error(error, "The read operation failed (%s)");
+        return iocp_fetchException();
+    }
+}
+
+PyObject * iocp_getResult_write(DWORD error, DWORD bytes, PyObject *data, BOOL *success)
+{
+    if(error == ERROR_SUCCESS)
+    {
+        *success = TRUE;
+        Py_RETURN_NONE;
+    }
+    else
+    {
+        *success = FALSE;
+        iocp_win32error(error, "The operation failed (%s)");
+        return iocp_fetchException();
+    }
 }

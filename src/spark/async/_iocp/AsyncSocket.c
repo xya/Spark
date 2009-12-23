@@ -1,3 +1,23 @@
+/*
+ Copyright (C) 2009 Pierre-André Saulais <pasaulais@free.fr>
+
+ This file is part of the Spark File-transfer Tool.
+
+ Spark is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; either version 2 of the License, or
+ (at your option) any later version.
+
+ Spark is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with Spark; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+*/
+
 #include <Python.h>
 #include <winsock2.h>
 #include <mswsock.h>
@@ -13,6 +33,7 @@ static PyMethodDef AsyncSocket_methods[] =
     {"bind", (PyCFunction)AsyncSocket_bind, METH_VARARGS, "Bind the socket to an interface."},
     {"listen", (PyCFunction)AsyncSocket_listen, METH_VARARGS, "Put the socket in listening mode, waiting for new connections."},
     {"beginConnect", (PyCFunction)AsyncSocket_beginConnect, METH_VARARGS, "Start an asynchronous connect operation on the socket."},
+    {"beginAccept", (PyCFunction)AsyncSocket_beginAccept, METH_VARARGS, "Start accepting an incoming connection on the socket."},
     {"close", (PyCFunction)AsyncSocket_close, METH_NOARGS, "Close the socket."},
     {"__enter__", (PyCFunction)AsyncSocket_enter, METH_VARARGS, ""},
     {"__exit__", (PyCFunction)AsyncSocket_exit, METH_VARARGS, ""},
@@ -94,6 +115,11 @@ PyObject * AsyncSocket_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         PyErr_SetString(PyExc_TypeError, "The first argument should be a completion port");
         return NULL;
     }
+    else if((sock_family != AF_INET) && (sock_family != AF_INET6))
+    {
+        PyErr_SetString(PyExc_Exception, "Only IPv4 and IPv6 sockets are supported");
+        return NULL;
+    }
 
     self = (AsyncSocket *)type->tp_alloc(type, 0);
     if(self != NULL)
@@ -121,12 +147,13 @@ BOOL AsyncSocket_initExtensions(AsyncSocket *self)
     DWORD dwBytes;
     GUID GuidAcceptEx = WSAID_ACCEPTEX;
     GUID GuidConnectEx = WSAID_CONNECTEX;
+    GUID GuidGetSockAddress = WSAID_GETACCEPTEXSOCKADDRS;
 
     ret = WSAIoctl(self->socket, 
         SIO_GET_EXTENSION_FUNCTION_POINTER, 
         &GuidAcceptEx, 
         sizeof(GuidAcceptEx),
-        (LPFN_ACCEPTEX)&self->acceptEx, 
+        &self->acceptEx, 
         sizeof(self->acceptEx), 
         &dwBytes, 
         NULL, 
@@ -138,8 +165,20 @@ BOOL AsyncSocket_initExtensions(AsyncSocket *self)
         SIO_GET_EXTENSION_FUNCTION_POINTER, 
         &GuidConnectEx, 
         sizeof(GuidConnectEx),
-        (LPFN_CONNECTEX)&self->connectEx, 
+        &self->connectEx, 
         sizeof(self->connectEx), 
+        &dwBytes, 
+        NULL, 
+        NULL);
+    if(ret == SOCKET_ERROR)
+        return FALSE;
+
+    ret = WSAIoctl(self->socket, 
+        SIO_GET_EXTENSION_FUNCTION_POINTER, 
+        &GuidGetSockAddress, 
+        sizeof(GuidGetSockAddress),
+        &self->getSockAddress, 
+        sizeof(self->getSockAddress), 
         &dwBytes, 
         NULL, 
         NULL);
@@ -220,6 +259,79 @@ PyObject * AsyncSocket_listen(AsyncSocket *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+PyObject * AsyncSocket_beginAccept(AsyncSocket *self, PyObject *args)
+{
+    PyObject *connArgs, *conn, *cont, *buffer, *data;
+    void *pBuffer;
+    long addrSize;
+    LPFN_ACCEPTEX acceptEx = (LPFN_ACCEPTEX)self->acceptEx;
+    IOCPOverlapped *over = NULL;
+    DWORD error;
+
+    if(!PyArg_ParseTuple(args, ""))
+        return NULL;
+
+    connArgs = Py_BuildValue("Olll", self->port, self->family, self->type, self->protocol);
+    if(!connArgs)
+        return NULL;
+    conn = PyObject_CallObject((PyObject *)&AsyncSocketType, connArgs);
+    Py_DECREF(connArgs);
+    if(!conn)
+    {
+        PyErr_SetString(PyExc_Exception, "Could not create the socket for the connection");
+        return NULL;
+    }
+    
+    if(self->family == AF_INET)
+        addrSize = sizeof(struct sockaddr_in) + 16;
+    else
+        addrSize = sizeof(struct sockaddr_in6) + 16;
+
+    buffer = iocp_allocBuffer(addrSize * 2, &pBuffer);
+    if(!buffer)
+    {
+        Py_DECREF(conn);
+        return NULL;
+    }
+
+    data = Py_BuildValue("OOl", conn, buffer, addrSize);
+    Py_DECREF(conn);
+    Py_DECREF(buffer);
+    if(!data)
+        return NULL;
+
+    cont = PyObject_CallObject((PyObject *)&FutureType, NULL);
+    if(!cont)
+    {
+        Py_DECREF(data);
+        PyErr_SetString(PyExc_Exception, "Could not create the continuation");
+        return NULL;
+    }
+
+    over = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));
+    ZeroMemory(&over->ov, sizeof(OVERLAPPED));
+    over->opcode = OP_ACCEPT;
+    Py_INCREF(cont);
+    over->cont = cont;
+    over->data = data;
+    if(!acceptEx(self->socket, ((AsyncSocket *)conn)->socket, pBuffer, 0, 
+        (DWORD)addrSize, (DWORD)addrSize, NULL, (LPOVERLAPPED)over))
+    {
+        error = WSAGetLastError();
+        if((error != ERROR_IO_PENDING) && (error != WSA_IO_PENDING))
+        {
+            iocp_win32error(error, NULL);
+            // 2 references to cont, one for the return value and one for wait()
+            Py_DECREF(over->cont);
+            Py_DECREF(over->cont);
+            Py_DECREF(over->data);
+            free(over);
+            return NULL;
+        }
+    }
+    return cont;
+}
+
 PyObject * AsyncSocket_beginConnect(AsyncSocket *self, PyObject *args)
 {
     PyObject *cont;
@@ -262,12 +374,15 @@ PyObject * AsyncSocket_beginConnect(AsyncSocket *self, PyObject *args)
         {
             iocp_win32error(error, NULL);
             free(addr);
+            // 2 references to cont, one for the return value and one for wait()
+            Py_DECREF(over->cont);
             Py_DECREF(over->cont);
             Py_DECREF(over->data);
             free(over);
             return NULL;
         }
     }
+    // does addr has to stay alive until the completion is posted?
     free(addr);
     return cont;
 }
@@ -301,6 +416,92 @@ PyObject * AsyncSocket_exit(AsyncSocket *self, PyObject *args)
         return NULL;
     Py_DECREF(ret);
     Py_RETURN_NONE;
+}
+
+PyObject * iocp_getResult_accept(DWORD error, DWORD bytes, PyObject *data, BOOL *success)
+{
+    PyObject *buffer, *addressTuple, *ret;
+    AsyncSocket *conn;
+    void *pBuffer;
+    Py_ssize_t bufferSize;
+    long addrSize;
+    LPFN_GETACCEPTEXSOCKADDRS getSockAddress;
+    struct sockaddr *localAddr, *remoteAddr;
+    int localSize, remoteSize;
+
+    if(error == ERROR_SUCCESS)
+    {
+        /*
+        if(setsockopt(self->socket, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0) == SOCKET_ERROR)
+        {
+            success = FALSE;
+            iocp_lastwin32error("Error while updating the socket after ConnectEx (%s)");
+            value = iocp_fetchException();
+            if(!value)
+                return NULL;
+        }
+        */
+        
+        conn = (AsyncSocket *)PyTuple_GetItem(data, 0);
+        buffer = PyTuple_GetItem(data, 1);
+        if((PyObject_AsReadBuffer(buffer, &pBuffer, &bufferSize) != 0) || (bufferSize <= 0))
+        {
+            *success = FALSE;
+            PyErr_SetString(PyExc_Exception, "Couldn't access the buffer for reading");
+            return NULL;
+        }
+        addrSize = PyInt_AsLong(PyTuple_GetItem(data, 2));
+        getSockAddress = (LPFN_GETACCEPTEXSOCKADDRS)conn->getSockAddress;
+        getSockAddress(pBuffer, 0, addrSize, addrSize, 
+            &localAddr, &localSize, &remoteAddr, &remoteSize);
+        addressTuple = AsyncSocket_sockAddrToString(conn->family, remoteAddr, remoteSize);
+        if(!addressTuple)
+        {
+            *success = FALSE;
+            return NULL;
+        }
+        ret = Py_BuildValue("OO", conn, addressTuple);
+        Py_DECREF(addressTuple);
+        if(!ret)
+        {
+            *success = FALSE;
+            return NULL;
+        }
+        *success = TRUE;
+        return ret;
+    }
+    else
+    {
+        *success = FALSE;
+        iocp_win32error(error, "The accept operation failed (%s)");
+        return iocp_fetchException();
+    }
+}
+
+PyObject * iocp_getResult_connect(DWORD error, DWORD bytes, PyObject *data, BOOL *success)
+{
+    if(error == ERROR_SUCCESS)
+    {
+        /*
+        if(setsockopt(self->socket, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0) == SOCKET_ERROR)
+        {
+            success = FALSE;
+            iocp_lastwin32error("Error while updating the socket after ConnectEx (%s)");
+            value = iocp_fetchException();
+            if(!value)
+                return NULL;
+        }
+        */
+        *success = TRUE;
+        Py_INCREF(data);
+        return data;
+    }
+    else
+    {
+        *success = FALSE;
+        iocp_win32error(error, "The connect operation failed (%s)");
+        return iocp_fetchException();
+    }
 }
 
 struct sockaddr * AsyncSocket_stringToSockAddr(int family, char *host, int port, int *pAddrSize)
@@ -364,4 +565,54 @@ struct sockaddr * AsyncSocket_stringToSockAddr(int family, char *host, int port,
             return (struct sockaddr *)addr6;
         }
     }
+}
+
+// Convert a socket address to a (address string, port numner) tuple
+PyObject * AsyncSocket_sockAddrToString(int family, struct sockaddr *addr, int addrSize)
+{
+    DWORD error, port, stringSize = 0;
+    char dummy = '\0';
+    char *addressString = NULL;
+    PyObject *tuple;
+
+    if(!addr)
+    {
+        PyErr_SetString(PyExc_Exception, "addr must not be NULL");
+        return NULL;
+    }
+    else if(family == AF_INET)
+    {
+        port = ntohs(((struct sockaddr_in *)addr)->sin_port);
+    }
+    else if(family == AF_INET6)
+    {
+        port = ntohs(((struct sockaddr_in6 *)addr)->sin6_port);
+    }
+    else
+    {
+        PyErr_SetString(PyExc_Exception, "Only IPv4 and IPv6 addresses are supported");
+        return NULL;
+    }
+    
+    WSAAddressToStringA(addr, addrSize, NULL, &dummy, &stringSize);
+    if(stringSize <= 0)
+    {
+        iocp_win32error(error, "Could not translate the address to a string (%s)");
+        return NULL;
+    }
+    addressString = (char *)malloc(stringSize);
+    if(!addressString)
+    {
+        PyErr_SetString(PyExc_MemoryError, "Could not allocate memory for the address");
+        return NULL;
+    }
+    else if(WSAAddressToStringA(addr, addrSize, NULL, addressString, &stringSize) == SOCKET_ERROR)
+    {
+        iocp_lastwin32error("Could not translate the address to a string (%s)");
+        free(addressString);
+        return NULL;
+    }
+    tuple = Py_BuildValue("(sl)", addressString, port);
+    free(addressString);
+    return tuple;
 }
