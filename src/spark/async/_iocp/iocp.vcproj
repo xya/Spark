@@ -192,15 +192,15 @@
 				>
 			</File>
 			<File
-				RelativePath=".\completionport.cpp"
+				RelativePath=".\CompletionPort.c"
 				>
 			</File>
 			<File
-				RelativePath=".\future.cpp"
+				RelativePath=".\Future.c"
 				>
 			</File>
 			<File
-				RelativePath=".\iocp.cpp"
+				RelativePath=".\iocp.c"
 				>
 			</File>
 		</Filter>
@@ -218,11 +218,11 @@
 				>
 			</File>
 			<File
-				RelativePath=".\completionport.h"
+				RelativePath=".\CompletionPort.h"
 				>
 			</File>
 			<File
-				RelativePath=".\future.h"
+				RelativePath=".\Future.h"
 				>
 			</File>
 			<File
