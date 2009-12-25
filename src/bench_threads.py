@@ -24,7 +24,6 @@ import time
 import threading
 import logging
 import pdb
-from spark.async import coroutine, Reactor
 
 if sys.platform.startswith("win32"):
     TestDir = os.path.join(os.path.expanduser("~"), "Mes documents\\Spark")
@@ -37,25 +36,17 @@ TestFile = "I'm a lagger.mp3"
 def run_bench():
     sourcePath = os.path.join(TestDir, TestFile)
     destPath = sourcePath + ".1"
-    reactors = Reactor.available()
-    #reactors.pop(1)
-    for reactorType in reactors:
-        with reactorType() as reactor:
-            run_reactor(sourcePath, destPath, reactor)
-
-def run_reactor(sourcePath, destPath, reactor):
-    r, w = reactor.pipe()
-    fSend = sender(sourcePath, reactor, w)
-    fReceive = receiver(destPath, reactor, r)
-    fSend.after(fileSent)
-    fReceive.after(fileReceived)
+    r, w = os.pipe()
+    #fr, fw = os.fdopen(r, 'r'), os.fdopen(w, 'w')
+    tSend = threading.Thread(target=sender, args=(sourcePath, w))
     started = time.time()
-    reactor.run()
+    tSend.start()
+    size = receiver(destPath, r)
+    tSend.join()
     duration = time.time() - started
-    size = fSend.result
     speed = size / duration
-    print "[%s] Transfered %s in %f seconds (%s/s)" % (reactor.__class__.__name__,
-        formatSize(size), duration, formatSize(speed))
+    print "[Threads] Transfered %s in %f seconds (%s/s)" % (formatSize(size),
+        duration, formatSize(speed))
 
 Units = [("KiB", 1024), ("MiB", 1024 * 1024), ("GiB", 1024 * 1024 * 1024)]
 def formatSize(size):
@@ -64,63 +55,43 @@ def formatSize(size):
             return "%0.2f %s" % (size / float(count), unit)
     return "%d byte" % size
 
-@coroutine
-def sender(sourcePath, reactor, writer):
+def sender(sourcePath, writeFD):
     position = 0
-    with reactor.open(sourcePath, 'r') as reader:
-        logging.info("sending from file %i to pipe %i" % (reader.fileno(), writer.fileno()))
+    with open(sourcePath, 'r') as reader:
+        logging.info("sending from file %i to pipe %i" % (reader.fileno(), writeFD))
         try:
             while True:
-                data = yield reader.beginRead(4096, position)
+                data = reader.read(4096)
                 read = len(data)
                 #logging.info("Read %i bytes from the file" % read)
                 if read == 0:
                     break
                 else:
                     position += read
-                yield writer.beginWrite(data, position)
+                os.write(writeFD, data)
         except Exception:
             logging.exception("Error while sending the file")
-    logging.info("Closing pipe %i" % writer.fileno())
-    writer.close()
-    yield position
+    logging.info("Closing pipe %i" % writeFD)
+    os.close(writeFD)
 
-def fileSent(prev):
-    try:
-        size = prev.result
-    except Exception:
-        logging.exception("Error while sending the file")
-    else:
-        logging.info("Sent %i bytes" % size)
-
-def fileReceived(prev):
-    try:
-        size = prev.result
-    except Exception:
-        logging.exception("Error while receiving the file")
-    else:
-        logging.info("Received %i bytes" % size)
-
-@coroutine
-def receiver(destPath, reactor, reader):
+def receiver(destPath, readFD):
     position = 0
-    with reactor.open(destPath, 'w') as writer:
-        logging.info("receiving from pipe %i to file %i" % (reader.fileno(), writer.fileno()))
+    with open(destPath, 'w') as writer:
+        logging.info("receiving from pipe %i to file %i" % (readFD, writer.fileno()))
         try:
             while True:
-                data = yield reader.beginRead(4096, position)
+                data = os.read(readFD, 4096)
                 if len(data) == 0:
                     break
-                yield writer.beginWrite(data, position)
+                writer.write(data)
                 position += len(data)
         except Exception:
             logging.exception("Error while receiving the file")
-    logging.info("Closing pipe %i" % reader.fileno())
-    reader.close()
-    reactor.close()
-    yield position
+    logging.info("Closing pipe %i" % readFD)
+    os.close(readFD)
+    return position
 
-profiling = True
+profiling = False
 if profiling:
     import cProfile
     command = """run_bench()"""
