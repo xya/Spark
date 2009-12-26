@@ -24,7 +24,8 @@ import time
 import threading
 import logging
 import pdb
-from spark.async import coroutine, Reactor
+import stackless
+from spark.async import Reactor
 
 if sys.platform.startswith("win32"):
     TestDir = os.path.join(os.path.expanduser("~"), "Mes documents\\Spark")
@@ -45,14 +46,12 @@ def run_bench():
 
 def run_reactor(sourcePath, destPath, reactor):
     r, w = reactor.pipe()
-    fSend = sender(sourcePath, reactor, w)
-    fReceive = receiver(destPath, reactor, r)
-    fSend.after(fileSent)
-    fReceive.after(fileReceived)
+    stackless.tasklet(sender)(sourcePath, reactor, w)
+    stackless.tasklet(receiver)(destPath, reactor, r)
     started = time.time()
     reactor.run()
     duration = time.time() - started
-    size = fSend.result
+    size = os.path.getsize(sourcePath)
     speed = size / duration
     print "[%s] Transfered %s in %f seconds (%s/s)" % (reactor.__class__.__name__,
         formatSize(size), duration, formatSize(speed))
@@ -64,63 +63,44 @@ def formatSize(size):
             return "%0.2f %s" % (size / float(count), unit)
     return "%d byte" % size
 
-@coroutine
 def sender(sourcePath, reactor, writer):
     position = 0
     with reactor.open(sourcePath, 'r') as reader:
         logging.info("sending from file %i to pipe %i" % (reader.fileno(), writer.fileno()))
         try:
             while True:
-                data = yield reader.beginRead(4096, position)
+                data = reader.read(4096, position)
                 read = len(data)
                 #logging.info("Read %i bytes from the file" % read)
                 if read == 0:
                     break
                 else:
                     position += read
-                yield writer.beginWrite(data, position)
+                writer.write(data, position)
         except Exception:
             logging.exception("Error while sending the file")
     logging.info("Closing pipe %i" % writer.fileno())
     writer.close()
-    yield position
+    return position
 
-def fileSent(prev):
-    try:
-        size = prev.result
-    except Exception:
-        logging.exception("Error while sending the file")
-    else:
-        logging.info("Sent %i bytes" % size)
-
-def fileReceived(prev):
-    try:
-        size = prev.result
-    except Exception:
-        logging.exception("Error while receiving the file")
-    else:
-        logging.info("Received %i bytes" % size)
-
-@coroutine
 def receiver(destPath, reactor, reader):
     position = 0
     with reactor.open(destPath, 'w') as writer:
         logging.info("receiving from pipe %i to file %i" % (reader.fileno(), writer.fileno()))
         try:
             while True:
-                data = yield reader.beginRead(4096, position)
+                data = reader.read(4096, position)
                 if len(data) == 0:
                     break
-                yield writer.beginWrite(data, position)
+                writer.write(data, position)
                 position += len(data)
         except Exception:
             logging.exception("Error while receiving the file")
     logging.info("Closing pipe %i" % reader.fileno())
     reader.close()
     reactor.close()
-    yield position
 
-profiling = True
+profiling = False
 if profiling:
     import cProfile
     command = """run_bench()"""

@@ -25,6 +25,7 @@ import select
 import threading
 import socket
 import logging
+import stackless
 from spark.async import Future, BlockingQueue, QueueClosedError, Delegate
 from spark.async.aio import Reactor
 
@@ -50,11 +51,11 @@ class PollReactor(Reactor):
             self.lock = lock
         else:
             self.lock = threading.RLock()
-        self.queue = BlockingQueue(64, lock=self.lock)
         self.pending = {}
         self.onClosed = Delegate(self.lock)
         self.active = False
         self.thread = None
+        self.requestChan = stackless.channel()
         self.req_r, self.req_w = os.pipe()
         blocking_mode(self.req_r, False)
         blocking_mode(self.req_w, False)
@@ -121,15 +122,10 @@ class PollReactor(Reactor):
         called on the reactor's thread the operation will be started immediatly;
         otherwise it will be started when it gets dequeued by the reactor's thread.
         """
-        with self.lock:
-            executeDirectly = (self.thread == threading.currentThread())
-        if not forceAsync and executeDirectly:
-            self.logger.log(LOG_VERBOSE, "Executing operation %s" % str(op))
-            self.execute(op, False)
-        else:
-            self.logger.log(LOG_VERBOSE, "Submitting operation %s" % str(op))
-            self.queue.put(op)
-            os.write(self.req_w, '\0')
+        self.logger.log(LOG_VERBOSE, "Submitting operation %s" % str(op))
+        os.write(self.req_w, '\0')
+        self.requestChan.send(op)
+        return op.channel.receive()
     
     def close(self):
         """ Close the reactor, terminating all pending operations. """
@@ -137,7 +133,6 @@ class PollReactor(Reactor):
             if self.req_w is not None:
                 os.close(self.req_w)
                 self.req_w = None
-        self.queue.close()
     
     def __enter__(self):
         return self
@@ -153,7 +148,6 @@ class PollReactor(Reactor):
             if self.req_w:
                 os.close(self.req_w)
                 self.req_w = None
-        self.queue.close()
         for fd, op_queue in self.pending.iteritems():
             for op in op_queue:
                 op.canceled()
@@ -173,6 +167,7 @@ class PollReactor(Reactor):
             self.execute(PipeReadOperation(self, self.req_r), False)
             self.empty_queue()
             while True:
+                stackless.run()
                 if logging:
                     self.logger.log(LOG_VERBOSE, "Waiting for poll()")
                 events = self.poll.poll()
@@ -186,7 +181,8 @@ class PollReactor(Reactor):
             self.cleanup()
     
     def empty_queue(self):
-        for op in self.queue.iter_nowait():
+        while self.requestChan.balance > 0:
+            op = self.requestChan.receive()
             self.execute(op, False)
     
     def execute(self, op, scheduled):
@@ -249,20 +245,17 @@ class PollReactor(Reactor):
             self.poll.modify(op.fd, self.event_mask(op.fd))
 
 def _beginRead(reactor, fd, size):
-    cont = Future()
-    op = ReadOperation(reactor, fd, size, cont)
-    reactor.submit(op)
-    return cont
+    op = ReadOperation(reactor, fd, size, None)
+    return reactor.submit(op)
 
 def _beginWrite(reactor, fd, data):
-    cont = Future()
-    op = WriteOperation(reactor, fd, data, cont)
-    reactor.submit(op)
-    return cont
+    op = WriteOperation(reactor, fd, data, None)
+    return reactor.submit(op)
 
 class IOOperation(object):
     def __init__(self, reactor):
         self.reactor = reactor
+        self.channel = stackless.channel()
         
     def complete(self):
         raise NotImplementedError()
@@ -284,26 +277,14 @@ class IOOperation(object):
         self.raise_completed()
     
     def raise_completed(self, result=None):
-        if self.reactor.logger.isEnabledFor(LOG_VERBOSE):
-            self.reactor.logger.log(LOG_VERBOSE, "Completed operation %s" % str(self))
-        try:
-            self.cont.completed(result)
-        except Exception:
-            self.reactor.logger.exception("Error in I/O completed() callback")
+        self.channel.send(result)
     
     def raise_failed(self):
-        self.reactor.logger.debug("Failed operation of %s" % str(self))
-        try:
-            self.cont.failed()
-        except Exception:
-            self.reactor.logger.exception("Error in I/O failed() callback")
+        type, val = sys.exc_info()[:2]
+        self.channel.send_exception(type, *val.args)
     
     def raise_canceled(self):
-        self.reactor.logger.debug("Canceled operation of %s" % str(self))
-        try:
-            self.cont.cancel()
-        except Exception:
-            self.reactor.logger.exception("Error in I/O canceled() callback")
+        self.channel.send_exception(Exception, "Operation was canceled")
     
     def nonblock(self, func, args=(), errno=os.errno.EAGAIN):
         try:
@@ -517,17 +498,11 @@ class NonBlockingFile(object):
         fd = os.open(file, flags | os.O_NONBLOCK, 0o666)
         return cls(reactor, fd)
     
-    def beginRead(self, size, position=-1):
+    def read(self, size, position=-1):
         return _beginRead(self.reactor, self.fd, size)
     
-    def beginWrite(self, data, position=-1):
+    def write(self, data, position=-1):
         return _beginWrite(self.reactor, self.fd, data)
-    
-    def read(self, size):
-        return self.beginRead(size).result
-    
-    def write(self, data):
-        self.beginWrite(data).wait()
     
     def close(self):
         if self.fd:
@@ -561,22 +536,19 @@ class NonBlockingSocket(object):
     def listen(self, backlog=1):
         return self.socket.listen(backlog)
     
-    def beginConnect(self, address):
-        cont = Future()
-        op = ConnectOperation(self.reactor, self, address, cont)
-        self.reactor.submit(op)
-        return cont
+    def connect(self, address):
+        op = ConnectOperation(self.reactor, self, address, None)
+        return self.reactor.submit(op)
     
-    def beginAccept(self):
-        cont = Future()
-        op = AcceptOperation(self.reactor, self, cont)
+    def accept(self):
+        op = AcceptOperation(self.reactor, self, None)
         self.reactor.submit(op)
-        return cont
+        return self.reactor.submit(op)
     
-    def beginRead(self, size):
+    def read(self, size):
         return _beginRead(self.reactor, self.socket.fileno(), size)
     
-    def beginWrite(self, data):
+    def write(self, data):
         return _beginWrite(self.reactor, self.socket.fileno(), data)
     
     def shutdown(self, how):
