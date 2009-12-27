@@ -21,11 +21,9 @@
 import os
 import sys
 import time
-import threading
 import logging
 import pdb
-import stackless
-from spark.async import Reactor
+from spark.async import flow
 
 if sys.platform.startswith("win32"):
     TestDir = os.path.join(os.path.expanduser("~"), "Mes documents\\Spark")
@@ -38,22 +36,15 @@ TestFile = "I'm a lagger.mp3"
 def run_bench():
     sourcePath = os.path.join(TestDir, TestFile)
     destPath = sourcePath + ".1"
-    reactors = Reactor.available()
-    #reactors.pop(1)
-    for reactorType in reactors:
-        with reactorType() as reactor:
-            run_reactor(sourcePath, destPath, reactor)
-
-def run_reactor(sourcePath, destPath, reactor):
-    r, w = reactor.pipe()
-    stackless.tasklet(sender)(sourcePath, reactor, w)
-    stackless.tasklet(receiver)(destPath, reactor, r)
+    r, w = flow.new_pipe()
+    flow.new_task(sender, sourcePath, w)
+    flow.new_task(receiver, destPath, r)
     started = time.time()
-    reactor.run()
+    flow.run()
     duration = time.time() - started
     size = os.path.getsize(sourcePath)
     speed = size / duration
-    print "[%s] Transfered %s in %f seconds (%s/s)" % (reactor.__class__.__name__,
+    print "Transfered %s in %f seconds (%s/s)" % (
         formatSize(size), duration, formatSize(speed))
 
 Units = [("KiB", 1024), ("MiB", 1024 * 1024), ("GiB", 1024 * 1024 * 1024)]
@@ -63,42 +54,35 @@ def formatSize(size):
             return "%0.2f %s" % (size / float(count), unit)
     return "%d byte" % size
 
-def sender(sourcePath, reactor, writer):
-    position = 0
-    with reactor.open(sourcePath, 'r') as reader:
+def sender(sourcePath, writer):
+    with flow.open_file(sourcePath, 'r') as reader:
         logging.info("sending from file %i to pipe %i" % (reader.fileno(), writer.fileno()))
         try:
             while True:
-                data = reader.read(4096, position)
+                data = reader.read(4096)
                 read = len(data)
                 #logging.info("Read %i bytes from the file" % read)
                 if read == 0:
                     break
-                else:
-                    position += read
-                writer.write(data, position)
+                writer.write(data)
         except Exception:
             logging.exception("Error while sending the file")
     logging.info("Closing pipe %i" % writer.fileno())
     writer.close()
-    return position
 
-def receiver(destPath, reactor, reader):
-    position = 0
-    with reactor.open(destPath, 'w') as writer:
+def receiver(destPath, reader):
+    with flow.open_file(destPath, 'w') as writer:
         logging.info("receiving from pipe %i to file %i" % (reader.fileno(), writer.fileno()))
         try:
             while True:
-                data = reader.read(4096, position)
+                data = reader.read(4096)
                 if len(data) == 0:
                     break
-                writer.write(data, position)
-                position += len(data)
+                writer.write(data)
         except Exception:
             logging.exception("Error while receiving the file")
     logging.info("Closing pipe %i" % reader.fileno())
     reader.close()
-    reactor.close()
 
 profiling = False
 if profiling:

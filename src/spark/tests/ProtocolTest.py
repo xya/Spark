@@ -22,9 +22,8 @@
 import unittest
 import copy
 import sys
-import threading
 import os
-from spark.async import Future
+from spark.async import Future, flow
 from spark.messaging import *
 from spark.tests.common import run_tests
 from StringIO import StringIO
@@ -129,20 +128,20 @@ def formatMessage(m):
     return "%04x%s" % (len(data), data)
 
 class MockPipe(object):
-    def __init__(self, readFD, writeFD):
-        self.readFD = readFD
-        self.writeFD = writeFD
+    def __init__(self, readFile, writeFile):
+        self.r = readFile
+        self.w = writeFile
         
     def read(self, size):
-        return os.read(self.readFD, size)
+        return self.r.read(size)
     
     def write(self, data):
-        os.write(self.writeFD, data)
+        self.w.write(data)
     
     @classmethod
     def create(cls):
-        read_a, write_a = os.pipe()
-        read_b, write_b = os.pipe()
+        read_a, write_a = flow.new_pipe()
+        read_b, write_b = flow.new_pipe()
         return MockPipe(read_a, write_b), MockPipe(read_b, write_a)
 
 class MockFile(object):
@@ -260,13 +259,10 @@ class ProtocolNegociationTest(unittest.TestCase):
             clientDone.run(negociateProtocol, c, True)
         def server():
             serverDone.run(negociateProtocol, s, False)
-        clientThread = threading.Thread(target=client)
-        clientThread.daemon = True
-        clientThread.start()
-        serverThread = threading.Thread(target=server)
-        serverThread.daemon = True
-        serverThread.start()
-        clientName = clientDone.wait(0.9)
+        flow.new_task(client)
+        flow.new_task(server)
+        flow.run()
+        clientName = clientDone.wait(0.1)
         serverName = serverDone.wait(0.1)
         for name in (clientName, serverName):
             self.assertTrue(name in Supported)
