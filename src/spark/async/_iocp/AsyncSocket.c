@@ -19,6 +19,7 @@
 */
 
 #include <Python.h>
+#include <stackless_api.h>
 #include <winsock2.h>
 #include <mswsock.h>
 #include <Ws2tcpip.h>
@@ -26,19 +27,16 @@
 #include "AsyncSocket.h"
 #include "AsyncFile.h"
 #include "CompletionPort.h"
-#include "Future.h"
 #include "iocp.h"
 
 static PyMethodDef AsyncSocket_methods[] =
 {
     {"bind", (PyCFunction)AsyncSocket_bind, METH_VARARGS, "Bind the socket to an interface."},
     {"listen", (PyCFunction)AsyncSocket_listen, METH_VARARGS, "Put the socket in listening mode, waiting for new connections."},
-    {"beginConnect", (PyCFunction)AsyncSocket_beginConnect, METH_VARARGS, "Start an asynchronous connect operation on the socket."},
-    {"beginAccept", (PyCFunction)AsyncSocket_beginAccept, METH_VARARGS, "Start accepting an incoming connection on the socket."},
-    {"beginRead", (PyCFunction)AsyncSocket_beginRead, METH_VARARGS, "Start an asynchronous read operation on the socket."},
-    {"beginWrite", (PyCFunction)AsyncSocket_beginWrite, METH_VARARGS, "Start an asynchronous write operation on the socket."},
-    {"read", (PyCFunction)AsyncSocket_read, METH_VARARGS, "Start a synchronous read operation on the socket."},
-    {"write", (PyCFunction)AsyncSocket_write, METH_VARARGS, "Start a synchronous write operation on the socket."},
+    {"connect", (PyCFunction)AsyncSocket_beginConnect, METH_VARARGS, "Start an asynchronous connect operation on the socket."},
+    {"accept", (PyCFunction)AsyncSocket_beginAccept, METH_VARARGS, "Start accepting an incoming connection on the socket."},
+    {"read", (PyCFunction)AsyncSocket_beginRead, METH_VARARGS, "Start an asynchronous read operation on the socket."},
+    {"write", (PyCFunction)AsyncSocket_beginWrite, METH_VARARGS, "Start an asynchronous write operation on the socket."},
     {"shutdown", (PyCFunction)AsyncSocket_shutdown, METH_VARARGS, "Close the reading part or writing part or both parts of the socket."},
     {"fileno", (PyCFunction)AsyncSocket_fileno, METH_VARARGS, "Return the socket's handle."},
     {"close", (PyCFunction)AsyncSocket_close, METH_NOARGS, "Close the socket."},
@@ -235,7 +233,8 @@ PyObject * AsyncSocket_listen(AsyncSocket *self, PyObject *args)
 
 PyObject * AsyncSocket_beginAccept(AsyncSocket *self, PyObject *args)
 {
-    PyObject *connArgs, *conn, *cont, *buffer, *data;
+    PyObject *connArgs, *conn, *buffer, *data, *ret;
+    PyChannelObject *chan;
     void *pBuffer;
     long addrSize;
     LPFN_ACCEPTEX acceptEx = (LPFN_ACCEPTEX)self->acceptEx;
@@ -274,19 +273,19 @@ PyObject * AsyncSocket_beginAccept(AsyncSocket *self, PyObject *args)
     if(!data)
         return NULL;
 
-    cont = PyObject_CallObject((PyObject *)&FutureType, NULL);
-    if(!cont)
+    chan = PyChannel_New(NULL);
+    if(!chan)
     {
         Py_DECREF(data);
-        PyErr_SetString(PyExc_Exception, "Could not create the continuation");
+        PyErr_SetString(PyExc_Exception, "Could not create the channel");
         return NULL;
     }
 
     over = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));
     ZeroMemory(&over->ov, sizeof(OVERLAPPED));
     over->opcode = OP_ACCEPT;
-    Py_INCREF(cont);
-    over->cont = cont;
+    Py_INCREF(chan);
+    over->cont = (PyObject *)chan;
     over->data = data;
     if(!acceptEx(self->socket, ((AsyncSocket *)conn)->socket, pBuffer, 0, 
         (DWORD)addrSize, (DWORD)addrSize, NULL, (LPOVERLAPPED)over))
@@ -295,7 +294,7 @@ PyObject * AsyncSocket_beginAccept(AsyncSocket *self, PyObject *args)
         if((error != ERROR_IO_PENDING) && (error != WSA_IO_PENDING))
         {
             iocp_win32error(error, NULL);
-            // 2 references to cont, one for the return value and one for wait()
+            // 2 references to chan, one for this function and one for wait()
             Py_DECREF(over->cont);
             Py_DECREF(over->cont);
             Py_DECREF(over->data);
@@ -303,12 +302,15 @@ PyObject * AsyncSocket_beginAccept(AsyncSocket *self, PyObject *args)
             return NULL;
         }
     }
-    return cont;
+    ret = PyChannel_Receive(chan);
+    Py_DECREF(chan);
+    return ret;
 }
 
 PyObject * AsyncSocket_beginConnect(AsyncSocket *self, PyObject *args)
 {
-    PyObject *cont, *data, *addr;
+    PyObject *data, *addr, *ret;
+    PyChannelObject *chan;
     char *host;
     int port;
     LPFN_CONNECTEX connectEx = (LPFN_CONNECTEX)self->connectEx;
@@ -327,19 +329,19 @@ PyObject * AsyncSocket_beginConnect(AsyncSocket *self, PyObject *args)
     if(!data)
         return NULL;
 
-    cont = PyObject_CallObject((PyObject *)&FutureType, NULL);
-    if(!cont)
+    chan = PyChannel_New(NULL);
+    if(!chan)
     {
         Py_DECREF(data);
-        PyErr_SetString(PyExc_Exception, "Could not create the continuation");
+        PyErr_SetString(PyExc_Exception, "Could not create the channel");
         return NULL;
     }
 
     over = (IOCPOverlapped *)malloc(sizeof(IOCPOverlapped));
     ZeroMemory(&over->ov, sizeof(OVERLAPPED));
     over->opcode = OP_CONNECT;
-    Py_INCREF(cont);
-    over->cont = cont;
+    Py_INCREF(chan);
+    over->cont = (PyObject *)chan;
     over->data = data;
     if(!connectEx(self->socket, (struct sockaddr *)PyByteArray_AsString(addr), 
         (DWORD)PyByteArray_Size(addr), NULL, 0, NULL, (LPOVERLAPPED)over))
@@ -351,7 +353,7 @@ PyObject * AsyncSocket_beginConnect(AsyncSocket *self, PyObject *args)
                 iocp_win32error(error, "The socket is not bound or in listening mode.");
             else
                 iocp_win32error(error, NULL);
-            // 2 references to cont, one for the return value and one for wait()
+            // 2 references to chan, one for this function and one for wait()
             Py_DECREF(over->cont);
             Py_DECREF(over->cont);
             Py_DECREF(over->data);
@@ -359,7 +361,9 @@ PyObject * AsyncSocket_beginConnect(AsyncSocket *self, PyObject *args)
             return NULL;
         }
     }
-    return cont;
+    ret = PyChannel_Receive(chan);
+    Py_DECREF(chan);
+    return ret;
 }
 
 PyObject * AsyncSocket_shutdown(AsyncSocket *self, PyObject *args)
@@ -500,94 +504,80 @@ PyObject * iocp_getResult_connect(DWORD error, DWORD bytes, PyObject *data, BOOL
 PyObject * AsyncSocket_beginRead(AsyncSocket *self, PyObject *args)
 {
     Py_ssize_t size;
-    PyObject *cont, *arg, *ret;
+    PyObject *arg, *ret;
+    PyChannelObject *chan;
     DWORD error;
 
     if(!PyArg_ParseTuple(args, "n", &size))
         return NULL;
 
-    cont = PyObject_CallObject((PyObject *)&FutureType, NULL);
-    if(!cont)
+    chan = PyChannel_New(NULL);
+    if(!chan)
     {
-        PyErr_SetString(PyExc_Exception, "Could not create the continuation");
+        PyErr_SetString(PyExc_Exception, "Could not create the channel");
         return NULL;
     }
 
-    if(!AsyncFile_readFile((HANDLE)self->socket, size, 0, cont, &error))
+    if(!AsyncFile_readFile((HANDLE)self->socket, size, 0, (PyObject *)chan, &error))
     {
-        Py_DECREF(cont);
+        Py_DECREF(chan);
         return NULL;
     }
     else if((error == ERROR_BROKEN_PIPE) || (error == ERROR_HANDLE_EOF))
     {
         arg = PyString_FromString("");
-        ret = CompletionPort_post(self->port, OP_READ, cont, arg);
+        ret = CompletionPort_post(self->port, OP_READ, (PyObject *)chan, arg);
         Py_DECREF(arg);
         if(!ret)
         {
-            Py_DECREF(cont);
+            Py_DECREF(chan);
             return NULL;
         }
+        Py_DECREF(ret);
     }
     else if(error != ERROR_SUCCESS)
     {
         iocp_win32error(error, NULL);
-        Py_DECREF(cont);
+        Py_DECREF(chan);
         return NULL;
     }
-    return cont;
-}
-
-PyObject * AsyncSocket_read(AsyncSocket *self, PyObject *args)
-{
-    PyObject *cont, *ret;
-    cont = AsyncSocket_beginRead(self, args);
-    if(!cont)
-        return NULL;
-    ret = PyObject_CallMethod(cont, "wait", "");
-    Py_DECREF(cont);
+    ret = PyChannel_Receive(chan);
+    Py_DECREF(chan);
     return ret;
 }
 
 PyObject * AsyncSocket_beginWrite(AsyncSocket *self, PyObject *args)
 {
-    PyObject *buffer, *cont;
+    PyObject *buffer, *ret;
+    PyChannelObject *chan;
     DWORD error;
 
     if(!PyArg_ParseTuple(args, "O", &buffer))
         return NULL;
 
-    cont = PyObject_CallObject((PyObject *)&FutureType, NULL);
-    if(!cont)
+    chan = PyChannel_New(NULL);
+    if(!chan)
     {
-        PyErr_SetString(PyExc_Exception, "Could not create the continuation");
+        PyErr_SetString(PyExc_Exception, "Could not create the channel");
         return NULL;
     }
 
-    if(!AsyncFile_writeFile((HANDLE)self->socket, buffer, 0, cont, &error))
+    if(!AsyncFile_writeFile((HANDLE)self->socket, buffer, 0, (PyObject *)chan, &error))
     {
-        Py_DECREF(cont);
+        Py_DECREF(chan);
         return NULL;
     }
     else if(error != ERROR_SUCCESS)
     {
         iocp_win32error(error, NULL);
-        Py_DECREF(cont);
+        Py_DECREF(chan);
         return NULL;
     }
-    return cont;
-}
-
-PyObject * AsyncSocket_write(AsyncSocket *self, PyObject *args)
-{
-    PyObject *cont, *ret;
-    cont = AsyncSocket_beginWrite(self, args);
-    if(!cont)
-        return NULL;
-    ret = PyObject_CallMethod(cont, "wait", "");
-    Py_DECREF(cont);
+    ret = PyChannel_Receive(chan);
+    Py_DECREF(chan);
     return ret;
 }
+
 
 PyObject * AsyncSocket_stringToSockAddr(int family, char *host, int port)
 {

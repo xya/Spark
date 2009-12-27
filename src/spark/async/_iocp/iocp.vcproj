@@ -121,7 +121,7 @@
 				Name="VCCLCompilerTool"
 				Optimization="2"
 				EnableIntrinsicFunctions="true"
-				AdditionalIncludeDirectories="C:\Python26\include"
+				AdditionalIncludeDirectories="C:\Python26\include\Stackless;C:\Python26\include"
 				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;_USRDLL;_IOCP_EXPORTS"
 				RuntimeLibrary="2"
 				EnableFunctionLevelLinking="true"

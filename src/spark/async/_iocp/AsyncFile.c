@@ -19,18 +19,16 @@
 */
 
 #include <Python.h>
+#include <stackless_api.h>
 #include <windows.h>
 #include "AsyncFile.h"
 #include "CompletionPort.h"
-#include "Future.h"
 #include "iocp.h"
 
 static PyMethodDef AsyncFile_methods[] =
 {
-    {"beginRead", (PyCFunction)AsyncFile_beginRead, METH_VARARGS, "Start an asynchronous read operation."},
-    {"beginWrite", (PyCFunction)AsyncFile_beginWrite, METH_VARARGS, "Start an asynchronous write operation."},
-    {"read", (PyCFunction)AsyncFile_read, METH_VARARGS, "Start a synchronous read operation."},
-    {"write", (PyCFunction)AsyncFile_write, METH_VARARGS, "Start a synchronous write operation."},
+    {"read", (PyCFunction)AsyncFile_beginRead, METH_VARARGS, "Start an asynchronous read operation."},
+    {"write", (PyCFunction)AsyncFile_beginWrite, METH_VARARGS, "Start an asynchronous write operation."},
     {"fileno", (PyCFunction)AsyncFile_fileno, METH_VARARGS, "Return the file's handle."},
     {"close", (PyCFunction)AsyncFile_close, METH_NOARGS, "Close the file."},
     {"__enter__", (PyCFunction)AsyncFile_enter, METH_VARARGS, ""},
@@ -116,42 +114,46 @@ PyObject * AsyncFile_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 PyObject * AsyncFile_beginRead(AsyncFile *self, PyObject *args)
 {
     Py_ssize_t size, position = 0;
-    PyObject *cont, *arg, *ret;
+    PyObject *arg, *ret;
+    PyChannelObject *chan;
     DWORD error;
 
     if(!PyArg_ParseTuple(args, "n|n", &size, &position))
         return NULL;
-
-    cont = PyObject_CallObject((PyObject *)&FutureType, NULL);
-    if(!cont)
+    
+    chan = PyChannel_New(NULL);
+    if(!chan)
     {
-        PyErr_SetString(PyExc_Exception, "Could not create the continuation");
+        PyErr_SetString(PyExc_Exception, "Could not create the channel");
         return NULL;
     }
 
-    if(!AsyncFile_readFile(self->hFile, size, position, cont, &error))
+    if(!AsyncFile_readFile(self->hFile, size, position, (PyObject *)chan, &error))
     {
-        Py_DECREF(cont);
+        Py_DECREF(chan);
         return NULL;
     }
     else if((error == ERROR_BROKEN_PIPE) || (error == ERROR_HANDLE_EOF))
     {
         arg = PyString_FromString("");
-        ret = CompletionPort_post(self->port, OP_READ, cont, arg);
+        ret = CompletionPort_post(self->port, OP_READ, (PyObject *)chan, arg);
         Py_DECREF(arg);
         if(!ret)
         {
-            Py_DECREF(cont);
+            Py_DECREF(chan);
             return NULL;
         }
+        Py_DECREF(ret);
     }
     else if(error != ERROR_SUCCESS)
     {
         iocp_win32error(error, NULL);
-        Py_DECREF(cont);
+        Py_DECREF(chan);
         return NULL;
     }
-    return cont;
+    ret = PyChannel_Receive(chan);
+    Py_DECREF(chan);
+    return ret;
 }
 
 BOOL AsyncFile_readFile(HANDLE hFile, Py_ssize_t size, Py_ssize_t position, PyObject *cont, DWORD *pError)
@@ -190,45 +192,37 @@ BOOL AsyncFile_readFile(HANDLE hFile, Py_ssize_t size, Py_ssize_t position, PyOb
     return TRUE;
 }
 
-PyObject * AsyncFile_read(AsyncFile *self, PyObject *args)
-{
-    PyObject *cont, *ret;
-    cont = AsyncFile_beginRead(self, args);
-    if(!cont)
-        return NULL;
-    ret = PyObject_CallMethod(cont, "wait", "");
-    Py_DECREF(cont);
-    return ret;
-}
-
 PyObject * AsyncFile_beginWrite(AsyncFile *self, PyObject *args)
 {
     Py_ssize_t position = 0;
-    PyObject *buffer, *cont;
+    PyObject *buffer, *ret;
+    PyChannelObject *chan;
     DWORD error;
 
     if(!PyArg_ParseTuple(args, "O|n", &buffer, &position))
         return NULL;
 
-    cont = PyObject_CallObject((PyObject *)&FutureType, NULL);
-    if(!cont)
+    chan = PyChannel_New(NULL);
+    if(!chan)
     {
-        PyErr_SetString(PyExc_Exception, "Could not create the continuation");
+        PyErr_SetString(PyExc_Exception, "Could not create the channel");
         return NULL;
     }
 
-    if(!AsyncFile_writeFile(self->hFile, buffer, position, cont, &error))
+    if(!AsyncFile_writeFile(self->hFile, buffer, position, (PyObject *)chan, &error))
     {
-        Py_DECREF(cont);
+        Py_DECREF(chan);
         return NULL;
     }
     else if(error != ERROR_SUCCESS)
     {
         iocp_win32error(error, NULL);
-        Py_DECREF(cont);
+        Py_DECREF(chan);
         return NULL;
     }
-    return cont;
+    ret = PyChannel_Receive(chan);
+    Py_DECREF(chan);
+    return ret;
 }
 
 BOOL AsyncFile_writeFile(HANDLE hFile, PyObject *buffer, Py_ssize_t position, PyObject *cont, DWORD *pError)
@@ -269,17 +263,6 @@ BOOL AsyncFile_writeFile(HANDLE hFile, PyObject *buffer, Py_ssize_t position, Py
     if(pError)
         *pError = error;
     return TRUE;
-}
-
-PyObject * AsyncFile_write(AsyncFile *self, PyObject *args)
-{
-    PyObject *cont, *ret;
-    cont = AsyncFile_beginWrite(self, args);
-    if(!cont)
-        return NULL;
-    ret = PyObject_CallMethod(cont, "wait", "");
-    Py_DECREF(cont);
-    return ret;
 }
 
 PyObject * AsyncFile_fileno(AsyncFile *self, PyObject *args)
