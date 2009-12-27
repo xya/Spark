@@ -20,7 +20,6 @@
 
 import json
 from struct import Struct
-from spark.async import Future
 
 __all__ = ["Message", "TextMessage", "Request", "Response", "Notification", "Blob", "Block"]
 
@@ -112,4 +111,4 @@ class MessageWriter(object):
     
     def write(self, m):
         """ Asynchronously write a message to the file. """
-        return self.file.beginWrite(self.format(m))
+        return self.file.write(self.format(m))

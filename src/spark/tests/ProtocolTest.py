@@ -22,8 +22,9 @@
 import unittest
 import copy
 import sys
+import threading
 import os
-from spark.async import Future, TaskFailedError, coroutine
+from spark.async import Future
 from spark.messaging import *
 from spark.tests.common import run_tests
 from StringIO import StringIO
@@ -69,33 +70,6 @@ testResponse = TestItemProperty(1)
 testNotification = TestItemProperty(2)
 testBlock = TestItemProperty(8)
 
-class AsyncWrapper(object):
-    """
-    Provides beginRead and beginWrite methods for testing purposes,
-    calling the file's read and write methods.
-    """
-    def __init__(self, file):
-        self.file = file
-        self.read = file.read
-        self.write = file.write
-        self.seek = file.seek
-    
-    def beginRead(self, size):
-        try:
-            data = self.file.read(size)
-        except:
-            return Future.error()
-        else:
-            return Future.done(data)
-    
-    def beginWrite(self, data):
-        try:
-            self.file.write(data)
-        except:
-            return Future.error()
-        else:
-            return Future.done()
-
 class ProtocolTest(unittest.TestCase):
     def assertMessagesEqual(self, expected, actual):
         if expected is None:
@@ -109,27 +83,25 @@ class ProtocolTest(unittest.TestCase):
             self.assertMessagesEqual(expected, actual)
     
     def readAllMessages(self, reader):
-        @coroutine
-        def messageLoop():
-            messages = []
-            while True:
-                message = yield reader.read()
-                if message is not None:
-                    messages.append(message)
-                else:
-                    yield messages
-        return messageLoop().wait(0.1)
+        messages = []
+        while True:
+            message = reader.read()
+            if message is not None:
+                messages.append(message)
+            else:
+                break
+        return messages
     
     def testParseTextString(self):
         """ Ensure that messageReader() can read messages from a text string """
-        p = messageReader(AsyncWrapper(StringIO(TestText)))
+        p = messageReader(StringIO(TestText))
         actualItems = self.readAllMessages(p)
         self.assertSeqsEqual(TestItems, actualItems)
     
     def testParseTextFile(self):
         """ Ensure that messageReader() can read messages from a text file """
         with open(TestFile, "r") as f:
-            p = messageReader(AsyncWrapper(f))
+            p = messageReader(f)
             actualItems = self.readAllMessages(p)
             self.assertSeqsEqual(TestItems, actualItems)
     
@@ -137,17 +109,17 @@ class ProtocolTest(unittest.TestCase):
         """ Ensure that messages written by messageWriter() can be read by messageReader() """
         # first individual messages
         for item in TestItems:
-            f = AsyncWrapper(StringIO())
-            messageWriter(f).write(item).wait(0.1)
+            f = StringIO()
+            messageWriter(f).write(item)
             f.seek(0)
-            actual = messageReader(f).read().wait(0.1)
+            actual = messageReader(f).read()
             self.assertMessagesEqual(item, actual)
         
         # then a stream of messages
-        f =  AsyncWrapper(StringIO())
+        f =  StringIO()
         writer = messageWriter(f)
         for item in TestItems:
-            writer.write(item).wait(0.1)
+            writer.write(item)
         f.seek(0)
         actualItems = self.readAllMessages(messageReader(f))
         self.assertSeqsEqual(TestItems, actualItems)
@@ -156,63 +128,27 @@ def formatMessage(m):
     data = " %s\r\n" % str(m)
     return "%04x%s" % (len(data), data)
 
-class MockAsyncPipe(object):
-    def __init__(self, readList):
-        self.readList = readList
-        self.readRequests = []
-        self.remoteEnd = None
+class MockPipe(object):
+    def __init__(self, readFD, writeFD):
+        self.readFD = readFD
+        self.writeFD = writeFD
+        
+    def read(self, size):
+        return os.read(self.readFD, size)
     
-    def _available(self):
-        return sum((len(buf) for buf in self.readList))
-    
-    def _read(self, size):
-        data = "".join(self.readList)
-        read, remaining = data[:size], data[size:]
-        while len(self.readList):
-            self.readList.pop()
-        self.readList.append(remaining)
-        return read
-    
-    def _onWrite(self):
-        while self.readRequests:
-            req, size = self.readRequests[0]
-            if size <= self._available():
-                self.readRequests.pop(0)
-                req.completed(self._read(size))
-            else:
-                break
-    
-    def beginRead(self, size):
-        if (size is None) or (size < 1):
-            return Future.error(ValueError("size should be >= 1"))
-        if not self.readRequests and (size <= self._available()):
-            return Future.done(self._read(size))
-        else:
-            cont = Future()
-            self.readRequests.append((cont, size))
-            return cont
-    
-    def beginWrite(self, data):
-        self.remoteEnd.readList.append(data)
-        self.remoteEnd._onWrite()
-        return Future.done()
+    def write(self, data):
+        os.write(self.writeFD, data)
     
     @classmethod
     def create(cls):
-        pipeA = MockAsyncPipe([])
-        pipeB = MockAsyncPipe([])
-        pipeA.remoteEnd = pipeB
-        pipeB.remoteEnd = pipeA
-        return pipeA, pipeB
+        read_a, write_a = os.pipe()
+        read_b, write_b = os.pipe()
+        return MockPipe(read_a, write_b), MockPipe(read_b, write_a)
 
 class MockFile(object):
     def __init__(self):
         self.readBuffer = ""
         self.writeBuffer = ""
-        
-    def beginRead(self, count):
-        data = self.read(count)
-        return Future.done(data)
     
     def read(self, count):
         if (count is None) or (count <= 0):
@@ -222,10 +158,6 @@ class MockFile(object):
             return data
         else:
             raise EOFError("Read would have blocked forever")
-    
-    def beginWrite(self, data):
-        self.write(data)
-        return Future.done()
     
     def write(self, data):
         self.writeBuffer += data
@@ -297,59 +229,48 @@ class ProtocolNegociationTest(unittest.TestCase):
         """ Negociation should work out if there is at last one supported protocol. """
         supported = ["SPARKv2", "SPARKv1"]
         f = ClientSocket(supported)
-        name = negociateProtocol(f, False).wait(1.0)
+        name = negociateProtocol(f, False)
         self.assertTrue(name in supported)
     
     def testServerNegociationNotSupported(self):
         """ Negociation should not work out if there is no supported protocol. """
         supported = ["SPARKv2"]
         f = ClientSocket(supported)
-        try:
-            name = negociateProtocol(f, False).wait(1.0)
-            self.fail("Protocol negociation should have failed, no supported protocol")
-        except TaskFailedError as e:
-            type, val, tb = e.inner()
-            if type != NegociationError:
-                raise
-        except NegociationError:
-            pass
+        self.assertRaises(NegociationError, negociateProtocol, f, False)
 
     def testClientNegociationSupported(self):
         """ Negociation should work out if there is at last one supported protocol. """
         supported = ["SPARKv2", "SPARKv1"]
         f = ServerSocket(supported)
-        name = negociateProtocol(f, True).wait(1.0)
+        name = negociateProtocol(f, True)
         self.assertTrue(name in supported)
     
     def testClientNegociationNotSupported(self):
         """ Negociation should not work out if there is no supported protocol. """
         supported = ["SPARKv2"]
         f = ServerSocket(supported)
-        try:
-            name = negociateProtocol(f, True).wait(1.0)
-            self.fail("Protocol negociation should have failed, no supported protocol")
-        except NegociationError:
-            pass
-        except TaskFailedError as e:
-            type, val, tb = e.inner()
-            if type != NegociationError:
-                raise
+        self.assertRaises(NegociationError, negociateProtocol, f, True)
     
     def testClientServerNegociation(self):
         """ Negociation should work out with client and server using the same negociation code. """
-        names = []
-        def completed(prev):
-            try:
-                names.append(prev.result)
-            except Exception as e:
-                names.append(e)
-        c, s = MockAsyncPipe.create()
-        self.assertFalse(negociateProtocol(s, False).after(completed))
-        self.assertTrue(negociateProtocol(c, True).after(completed))
-        self.assertEqual(2, len(names))
-        for name in names:
+        clientDone = Future()
+        serverDone = Future()
+        c, s = MockPipe.create()
+        def client():
+            clientDone.run(negociateProtocol, c, True)
+        def server():
+            serverDone.run(negociateProtocol, s, False)
+        clientThread = threading.Thread(target=client)
+        clientThread.daemon = True
+        clientThread.start()
+        serverThread = threading.Thread(target=server)
+        serverThread.daemon = True
+        serverThread.start()
+        clientName = clientDone.wait(0.9)
+        serverName = serverDone.wait(0.1)
+        for name in (clientName, serverName):
             self.assertTrue(name in Supported)
-        self.assertEqual(names[0], names[1])
+        self.assertEqual(clientName, serverName)
 
 if __name__ == '__main__':
     run_tests()
