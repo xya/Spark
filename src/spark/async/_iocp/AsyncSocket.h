@@ -50,8 +50,6 @@ PyObject * AsyncSocket_beginConnect(AsyncSocket *self, PyObject *args);
 PyObject * AsyncSocket_beginAccept(AsyncSocket *self, PyObject *args);
 PyObject * AsyncSocket_beginRead(AsyncSocket *self, PyObject *args);
 PyObject * AsyncSocket_beginWrite(AsyncSocket *self, PyObject *args);
-PyObject * AsyncSocket_read(AsyncSocket *self, PyObject *args);
-PyObject * AsyncSocket_write(AsyncSocket *self, PyObject *args);
 PyObject * AsyncSocket_shutdown(AsyncSocket *self, PyObject *args);
 PyObject * AsyncSocket_fileno(AsyncSocket *self, PyObject *args);
 PyObject * AsyncSocket_close(AsyncSocket *self);

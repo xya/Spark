@@ -23,6 +23,7 @@ import os
 import threading
 import socket
 import logging
+import stackless
 from ctypes import WinError
 from spark.async import Delegate
 from spark.async.aio import Reactor
@@ -107,18 +108,19 @@ class CompletionPortReactor(Reactor):
         try:
             logging = self.logger.isEnabledFor(LOG_VERBOSE)
             while True:
+                stackless.run()
                 if logging:
                     self.logger.log(LOG_VERBOSE, "Waiting for GetQueuedCompletionStatus()")
-                success, val, cont = self.cp.wait()
+                success, val, chan = self.cp.wait()
                 if logging:
                     self.logger.log(LOG_VERBOSE, "Woke up from GetQueuedCompletionStatus()")
                 
-                if cont is not None:
+                if chan is not None:
                     if success:
-                        cont.completed(val)
+						chan.send(val)
                     else:
                         type, exc, tb = val
-                        cont.failed(exc) 
+                        chan.send_exception(type, *exc.args)
         except EOFError:
             pass
         finally:
