@@ -69,33 +69,6 @@ testResponse = TestItemProperty(1)
 testNotification = TestItemProperty(2)
 testBlock = TestItemProperty(8)
 
-class AsyncWrapper(object):
-    """
-    Provides beginRead and beginWrite methods for testing purposes,
-    calling the file's read and write methods.
-    """
-    def __init__(self, file):
-        self.file = file
-        self.read = file.read
-        self.write = file.write
-        self.seek = file.seek
-    
-    def beginRead(self, size):
-        try:
-            data = self.file.read(size)
-        except:
-            return Future.error()
-        else:
-            return Future.done(data)
-    
-    def beginWrite(self, data):
-        try:
-            self.file.write(data)
-        except:
-            return Future.error()
-        else:
-            return Future.done()
-
 class ProtocolTest(unittest.TestCase):
     def assertMessagesEqual(self, expected, actual):
         if expected is None:
@@ -109,27 +82,24 @@ class ProtocolTest(unittest.TestCase):
             self.assertMessagesEqual(expected, actual)
     
     def readAllMessages(self, reader):
-        @coroutine
-        def messageLoop():
-            messages = []
-            while True:
-                message = yield reader.read()
-                if message is not None:
-                    messages.append(message)
-                else:
-                    yield messages
-        return messageLoop().wait(0.1)
+        messages = []
+        while True:
+            message = reader.read()
+            if message is not None:
+                messages.append(message)
+            else:
+                return messages
     
     def testParseTextString(self):
         """ Ensure that messageReader() can read messages from a text string """
-        p = messageReader(AsyncWrapper(StringIO(TestText)))
+        p = messageReader(StringIO(TestText))
         actualItems = self.readAllMessages(p)
         self.assertSeqsEqual(TestItems, actualItems)
     
     def testParseTextFile(self):
         """ Ensure that messageReader() can read messages from a text file """
         with open(TestFile, "r") as f:
-            p = messageReader(AsyncWrapper(f))
+            p = messageReader(f)
             actualItems = self.readAllMessages(p)
             self.assertSeqsEqual(TestItems, actualItems)
     
@@ -137,17 +107,17 @@ class ProtocolTest(unittest.TestCase):
         """ Ensure that messages written by messageWriter() can be read by messageReader() """
         # first individual messages
         for item in TestItems:
-            f = AsyncWrapper(StringIO())
-            messageWriter(f).write(item).wait(0.1)
+            f = StringIO()
+            messageWriter(f).write(item)
             f.seek(0)
-            actual = messageReader(f).read().wait(0.1)
+            actual = messageReader(f).read()
             self.assertMessagesEqual(item, actual)
         
         # then a stream of messages
-        f =  AsyncWrapper(StringIO())
+        f =  StringIO()
         writer = messageWriter(f)
         for item in TestItems:
-            writer.write(item).wait(0.1)
+            writer.write(item)
         f.seek(0)
         actualItems = self.readAllMessages(messageReader(f))
         self.assertSeqsEqual(TestItems, actualItems)
@@ -173,63 +143,10 @@ class Pipe(object):
         r2, w2 = os.pipe()
         return (cls(r1, w2), cls(r2, w1))
 
-class MockAsyncPipe(object):
-    def __init__(self, readList):
-        self.readList = readList
-        self.readRequests = []
-        self.remoteEnd = None
-    
-    def _available(self):
-        return sum((len(buf) for buf in self.readList))
-    
-    def _read(self, size):
-        data = "".join(self.readList)
-        read, remaining = data[:size], data[size:]
-        while len(self.readList):
-            self.readList.pop()
-        self.readList.append(remaining)
-        return read
-    
-    def _onWrite(self):
-        while self.readRequests:
-            req, size = self.readRequests[0]
-            if size <= self._available():
-                self.readRequests.pop(0)
-                req.completed(self._read(size))
-            else:
-                break
-    
-    def beginRead(self, size):
-        if (size is None) or (size < 1):
-            return Future.error(ValueError("size should be >= 1"))
-        if not self.readRequests and (size <= self._available()):
-            return Future.done(self._read(size))
-        else:
-            cont = Future()
-            self.readRequests.append((cont, size))
-            return cont
-    
-    def beginWrite(self, data):
-        self.remoteEnd.readList.append(data)
-        self.remoteEnd._onWrite()
-        return Future.done()
-    
-    @classmethod
-    def create(cls):
-        pipeA = MockAsyncPipe([])
-        pipeB = MockAsyncPipe([])
-        pipeA.remoteEnd = pipeB
-        pipeB.remoteEnd = pipeA
-        return pipeA, pipeB
-
 class MockFile(object):
     def __init__(self):
         self.readBuffer = ""
         self.writeBuffer = ""
-        
-    def beginRead(self, count):
-        data = self.read(count)
-        return Future.done(data)
     
     def read(self, count):
         if (count is None) or (count <= 0):
@@ -239,10 +156,6 @@ class MockFile(object):
             return data
         else:
             raise EOFError("Read would have blocked forever")
-    
-    def beginWrite(self, data):
-        self.write(data)
-        return Future.done()
     
     def write(self, data):
         self.writeBuffer += data
@@ -372,4 +285,5 @@ class ProtocolNegociationTest(unittest.TestCase):
         self.assertEqual(firstName, secondName)
 
 if __name__ == '__main__':
+    import logging
     run_tests(level=logging.INFO)
