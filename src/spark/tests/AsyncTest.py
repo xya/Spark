@@ -210,14 +210,48 @@ class ProcessTest(unittest.TestCase):
     
     def tearDown(self):
         process.detach()
-        
-    def testSendMessage(self):
+    
+    def testSpawn(self):
+        """ process.spawn should invoke the callable """
+        result = Future()
+        def entry():
+            result.completed("foo")
+        process.spawn(entry)
+        self.assertEqual("foo", result.wait(1.0))
+    
+    def testSendReceiveMessage(self):
+        """ Messages sent to a PID using process.send should be received when calling process.receive """
         result = Future()
         def entry():
             result.completed(process.receive())
         p = process.spawn(entry)
         process.send(p, "foo")
         self.assertEqual("foo", result.wait(1.0))
+    
+    def testSendReceiveOrder(self):
+        """ Messages should be received in the order they are sent """
+        result = Future()
+        def entry():
+            messages = []
+            while True:
+                m = process.receive()
+                if m is None:
+                    break
+                messages.append(m)
+            result.completed(messages)
+        p = process.spawn(entry)
+        process.send(p, "foo")
+        process.send(p, "bar")
+        process.send(p, "baz")
+        process.send(p, None)
+        self.assertEqual(["foo", "bar", "baz"], result.wait(1.0))
+    
+    def testAttach(self):
+        """ Threads that have been attached should be able to receive messages """
+        def entry():
+            process.send(self.pid, "foo")
+        process.spawn(entry)
+        self.assertEqual("foo", process.receive())
 
 if __name__ == '__main__':
     run_tests()

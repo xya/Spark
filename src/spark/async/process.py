@@ -98,6 +98,17 @@ def receive():
         raise Exception("The current thread has no PID")
     return queue.get()
 
+def try_receive():
+    """
+    Retrieve a message from the current process' queue and return (True, message).
+    If a message can't be retrieved now, return (False, None).
+    """
+    try:
+        queue = _current.queue
+    except NameError:
+        raise Exception("The current thread has no PID")
+    return queue.get_nowait()
+
 def _new_id():
     global _nextID
     id = _nextID
