@@ -20,8 +20,9 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 import unittest
+import threading
 from spark.async import Future, TaskError, process
-from spark.tests.common import run_tests
+from spark.tests.common import run_tests, processTimeout
 
 class FutureTest(unittest.TestCase):
     def testCompleted(self):
@@ -205,32 +206,29 @@ class FutureTest(unittest.TestCase):
             self.fail("wait() should have raised an exception")
 
 class ProcessTest(unittest.TestCase):
-    def setUp(self):
-        self.pid = process.attach()
-    
-    def tearDown(self):
-        process.detach()
-    
+    @processTimeout(1.0)
     def testSpawn(self):
         """ process.spawn should invoke the callable """
-        result = Future()
+        f = Future()
         def entry():
-            result.completed("foo")
+            f.completed("foo")
         process.spawn(entry)
-        self.assertEqual("foo", result.wait(1.0))
+        self.assertEqual("foo", f.result)
     
+    @processTimeout(1.0)
     def testSendReceiveMessage(self):
         """ Messages sent to a PID using process.send should be received when calling process.receive """
-        result = Future()
+        pid = process.current()
         def entry():
-            result.completed(process.receive())
+            process.send(pid, process.receive() + "bar")
         p = process.spawn(entry)
         process.send(p, "foo")
-        self.assertEqual("foo", result.wait(1.0))
+        self.assertEqual("foobar", process.receive())
     
+    @processTimeout(1.0)
     def testSendReceiveOrder(self):
         """ Messages should be received in the order they are sent """
-        result = Future()
+        pid = process.current()
         def entry():
             messages = []
             while True:
@@ -238,20 +236,28 @@ class ProcessTest(unittest.TestCase):
                 if m is None:
                     break
                 messages.append(m)
-            result.completed(messages)
+            process.send(pid, messages)
         p = process.spawn(entry)
         process.send(p, "foo")
         process.send(p, "bar")
         process.send(p, "baz")
         process.send(p, None)
-        self.assertEqual(["foo", "bar", "baz"], result.wait(1.0))
+        self.assertEqual(["foo", "bar", "baz"], process.receive())
     
     def testAttach(self):
         """ Threads that have been attached should be able to receive messages """
+        cont = Future()
         def entry():
-            process.send(self.pid, "foo")
-        process.spawn(entry)
-        self.assertEqual("foo", process.receive())
+            pid = process.attach()
+            try:
+                process.spawn(process.send, pid, "foo")
+                cont.completed(process.receive())
+            finally:
+                process.detach()
+        t = threading.Thread(target=entry)
+        t.daemon = True
+        t.start()
+        self.assertEqual("foo", cont.wait(1.0))
 
 if __name__ == '__main__':
     run_tests()

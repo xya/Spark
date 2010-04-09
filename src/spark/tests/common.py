@@ -23,7 +23,7 @@ import sys
 import unittest
 from unittest import TestCase, TestLoader, TestSuite
 import logging
-from spark.async import Reactor
+from spark.async import Reactor, Future, process
 
 class ReactorTestBase(TestCase):
     def __init__(self, reactorType, methodName):
@@ -67,3 +67,16 @@ def run_tests(modules=None, level=logging.ERROR):
         modules = ["__main__"]
     moduleTests = [loader.loadTestsFromName(m) for m in modules]
     unittest.TextTestRunner(verbosity=verbosity).run(TestSuite(moduleTests))
+
+def processTimeout(timeout):
+    """
+    Decorator that runs the callable in a new process. It eventually returns
+    the callable's return value or raise an exception if its execution takes too long.
+    """
+    def decorator(fun):
+        def wrapper(*args, **kw):
+            cont = Future()
+            process.spawn(cont.run, *((fun, ) + args), **kw)
+            return cont.wait(timeout)
+        return wrapper
+    return decorator

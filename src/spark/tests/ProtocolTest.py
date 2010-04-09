@@ -25,7 +25,7 @@ import sys
 import os
 from spark.async import Future, TaskFailedError, coroutine, process
 from spark.messaging import *
-from spark.tests.common import run_tests
+from spark.tests.common import run_tests, processTimeout
 from StringIO import StringIO
 
 TestFile = os.path.join(os.path.dirname(__file__), 'ProtocolTest.log')
@@ -352,20 +352,11 @@ class ProtocolNegociationTest(unittest.TestCase):
             if type != NegociationError:
                 raise
     
+    @processTimeout(1.0)
     def testClientServerNegociation(self):
         """ Negociation should work out with client and server using the same negociation code. """
-        f = Future()
-        def monitor():
-            names = []
-            try:
-                names.append(process.receive())
-                names.append(process.receive())
-            except Exception:
-                f.failed()
-            else:
-                f.completed(names)
+        pid = process.current()
         c, s = Pipe.create()
-        pid = process.spawn(monitor)
         def server():
             name = negociateProtocol(s, False)
             process.send(pid, name)
@@ -374,11 +365,11 @@ class ProtocolNegociationTest(unittest.TestCase):
             process.send(pid, name)
         process.spawn(server)
         process.spawn(client)
-        names = f.wait(1.0)
-        self.assertEqual(2, len(names))
-        for name in names:
+        firstName = process.receive()
+        secondName = process.receive()
+        for name in (firstName, secondName):
             self.assertTrue(name in Supported)
-        self.assertEqual(names[0], names[1])
+        self.assertEqual(firstName, secondName)
 
 if __name__ == '__main__':
     run_tests()
