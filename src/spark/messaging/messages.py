@@ -25,18 +25,22 @@ from spark.async import Future
 __all__ = ["Message", "TextMessage", "Request", "Response",
            "Notification", "Blob", "Block", "match"]
 
-def match(o, pattern):
+def match(pattern, o):
     """ Try to match an object against a pattern. Return True if the pattern is matched. """
+    messageAttr = ("type", "tag", "params", "transID")
     if pattern is None:
         return True
     if type(pattern) is type:
         return type(o) is pattern
+    elif all(hasattr(pattern, at) for at in messageAttr):
+        # match a message
+        return all(match(getattr(pattern, at), getattr(o, at)) for at in messageAttr)
     elif hasattr(pattern, "__len__") and hasattr(o, "__len__"):
         if len(pattern) != len(o):
             return False
         else:
             for i in range(0, len(pattern) - 1):
-                if not match(o[i], pattern[i]):
+                if not match(pattern[i], o[i]):
                     return False
             return True
     else:

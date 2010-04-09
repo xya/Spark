@@ -27,7 +27,7 @@ import traceback
 from cStringIO import StringIO
 
 __all__ = ["Future", "FutureFrozenError", "TaskError", "TaskFailedError", "TaskCanceledError",
-           "Delegate", "threadedMethod", "coroutine"]
+           "WaitTimeoutError", "Delegate", "threadedMethod", "coroutine"]
 
 def threadedMethod(func):
     """

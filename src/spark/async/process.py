@@ -25,7 +25,7 @@ import logging
 from spark.async import BlockingQueue, QueueClosedError
 
 __all__ = ["all", "current", "run_main", "spawn", "send", "try_send", "receive", "try_receive",
-           "ProcessExited", "match"]
+           "ProcessExited", "ProcessKilled", "match"]
 
 _lock = threading.RLock()
 _processes = {}
@@ -123,7 +123,10 @@ def receive():
         queue = _current.queue
     except NameError:
         raise Exception("The current thread has no PID")
-    return queue.get()
+    try:
+        return queue.get()
+    except QueueClosedError:
+        raise ProcessKilled("The process got killed (PID: %i)" % current())
 
 def try_receive():
     """
@@ -135,6 +138,18 @@ def try_receive():
     except NameError:
         raise Exception("The current thread has no PID")
     return queue.get_nowait()
+
+def kill(pid, flushQueue=True):
+    """ Kill the specified process by closing its message queue. Return False on error. """
+    with _lock:
+        try:
+            p = _processes[pid]
+            queue = p.queue
+        except KeyError:
+            return False
+    logger().info("Killing process %i.", pid)
+    queue.close(flushQueue)
+    return True
 
 def _new_id():
     global _nextID
@@ -167,4 +182,7 @@ class Process(object):
         self.thread = None
 
 class ProcessExited(Exception):
+    pass
+
+class ProcessKilled(Exception):
     pass

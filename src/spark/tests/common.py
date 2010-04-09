@@ -23,7 +23,7 @@ import sys
 import unittest
 from unittest import TestCase, TestLoader, TestSuite
 import logging
-from spark.async import Reactor, Future, process
+from spark.async import Reactor, Future, process, WaitTimeoutError
 
 class ReactorTestBase(TestCase):
     def __init__(self, reactorType, methodName):
@@ -76,7 +76,11 @@ def processTimeout(timeout):
     def decorator(fun):
         def wrapper(*args, **kw):
             cont = Future()
-            process.spawn(cont.run, *((fun, ) + args), **kw)
-            return cont.wait(timeout)
+            pid = process.spawn(cont.run, *((fun, ) + args), **kw)
+            try:
+                return cont.wait(timeout)
+            except WaitTimeoutError:
+                process.kill(pid)
+                raise
         return wrapper
     return decorator

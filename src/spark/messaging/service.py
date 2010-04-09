@@ -430,6 +430,9 @@ class TcpMessenger(object):
     
     def listen(self, addr):
         process.send(self.pid, ("listen", addr))
+    
+    def disconnect(self):
+        process.send(self.pid, ("disconnect", ))
 
     def set_receiver(self, pid):
         process.send(self.pid, ("set-receiver", pid))
@@ -439,20 +442,25 @@ class TcpMessenger(object):
 
     def _entry(self):
         state = TcpProcessState()
-        while True:
-            m = process.receive()
-            if match(m, ("connect", None)):
-                self._connect(m, state)
-            elif match(m, ("listen", None)):
-                self._listen(m, state)
-            elif match(m, ("disconnect", )):
-                self._disconnect(m, state)
-            elif match(m, ("set-receiver", int)):
-                state.receiver = m[1]
-            elif match(m, ("send", None)):
-                self._send(m, state)
-            elif match(m, ("stop", )):
-                break
+        try:
+            while True:
+                m = process.receive()
+                if match(("connect", None), m):
+                    self._connect(m, state)
+                elif match(("listen", None), m):
+                    self._listen(m, state)
+                elif match(("disconnect", ), m):
+                    self._disconnect(m, state)
+                elif match(("set-receiver", int), m):
+                    state.receiver = m[1]
+                elif match(("send", None), m):
+                    self._send(m[1], state)
+                elif match(("stop", ), m):
+                    break
+                else:
+                    self._send(m, state)
+        finally:
+            self._close(state)
 
     def _connect(self, m, state):
         if state.connState != Transport.DISCONNECTED:
@@ -460,7 +468,7 @@ class TcpMessenger(object):
             return
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
         sock.bind(("0.0.0.0", 0))
-        state.logger.info("Connecting to %s", repr(m[1]))
+        state.logger.info("Connecting to %s.", repr(m[1]))
         sock.connect(m[1])
         self._connected(state, sock, m[1], True)
     
@@ -472,7 +480,7 @@ class TcpMessenger(object):
         try:
             sock.bind(m[1])
             sock.listen(1)
-            state.logger.info("Waiting for connections on %s", repr(m[1]))
+            state.logger.info("Waiting for connections on %s.", repr(m[1]))
             conn, remoteAddr = sock.accept()
         finally:
             sock.close()
@@ -482,19 +490,36 @@ class TcpMessenger(object):
         state.connState = Transport.CONNECTED
         state.conn = conn
         state.remoteAddr = remoteAddr
-        state.logger.info("Connected to %s", repr(remoteAddr))
+        state.logger.info("Connected to %s.", repr(remoteAddr))
         if state.receiver:
-            process.send(state.receiver, ("connected", remoteAddr))
+            process.send(state.receiver, Notification("connected", remoteAddr))
         stream = SocketWrapper(state.conn)
         name = negociateProtocol(stream, initiating)
+        state.logger.info("Negociated protocol '%s'.", name)
         state.reader = messageReader(stream, name)
         state.writer = messageWriter(stream, name)
         if state.receiver:
-            process.send(state.receiver, ("protocol-negociated", name))
+            process.send(state.receiver, Notification("protocol-negociated", name))
+            process.spawn(self._receiveMessages, stream, name, state.receiver)
+    
+    def _receiveMessages(self, f, protocol, receiverPid):
+        reader = messageReader(f, protocol)
+        log = process.logger()
+        while True:
+            m = reader.read()
+            if m is None:
+                log.info("End of stream.")
+                break
+            else:
+                log.info("Received message: '%s'." % str(m))
+            process.send(receiverPid, m)
     
     def _disconnect(self, m, state):
+        self._close(state)
+    
+    def _close(self, state):
         if state.conn:
-            state.logger.info("Disconnecting from %s" % repr(state.remoteAddr))
+            state.logger.info("Disconnecting from %s." % repr(state.remoteAddr))
             # force threads blocked on recv (and send?) to return
             try:
                 state.conn.shutdown(socket.SHUT_RDWR)
@@ -516,7 +541,7 @@ class TcpMessenger(object):
             wasDisconnected = False
         # notifiy the receiver if the connection was closed
         if wasDisconnected and state.receiver:
-            process.send(state.receiver, ("disconnected", ))
+            process.send(state.receiver, Notification("disconnected"))
     
     def _send(self, m, state):
         if state.connState != Transport.CONNECTED:
@@ -525,6 +550,7 @@ class TcpMessenger(object):
         elif state.writer is None:
             state.logger.error("Session not started")
             return
+        state.logger.info("Sending message: '%s'." % str(m))
         state.writer.write(m)
 
 class TcpProcessState(object):
