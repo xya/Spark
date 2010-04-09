@@ -27,8 +27,8 @@ __all__ = ["all", "current", "run_main", "spawn", "send", "receive"]
 
 _lock = threading.RLock()
 _processes = {}
-_main = None
 _nextID = 0
+_current = threading.local()
 
 def all():
     """ Enumerates the IDs of all processes. """
@@ -38,27 +38,35 @@ def all():
 def current():
     """ Return the ID of the currently executing process. """
     try:
-        return threading.local.pid
-    except NameError:
+        return _current.pid
+    except AttributeError:
         return None
 
-def run_main(fun, *args, **kargs):
-    """ Executes a callable as the main process. """
+def attach(name=None):
+    """ Associate the current thread with a PID and message queue. Return the PID. """
+    current_pid = current()
+    if current_pid is not None:
+        raise Exception("This thread already has a PID")
     with _lock:
-        if _main is not None:
-            raise Exception("A main process is already executing")
-        _main = _new_id()
-        _create_process(_main, "Main")
-        _set_current_process(_main)
-    fun(*args, **kargs)
-
-def spawn(name, fun, *args, **kargs):
-    """ Create a new process and return its ID. """
-    with _lock:
-        if _main is None:
-            raise Exception("You must call 'run_main' first")
         pid = _new_id()
         p = _create_process(pid, name)
+        _set_current_process(pid)
+        p.thread = threading.current_thread()
+    return pid
+
+def detach():
+    """ Disassociate the current thread from its PID and message queue. """
+    current_pid = current()
+    if current_pid is None:
+        raise Exception("The current thread has no PID")
+    with _lock:
+        _remove_current_process(current_pid)
+
+def spawn(fun, *args, **kargs):
+    """ Create a new process and return its PID. """
+    with _lock:
+        pid = _new_id()
+        p = _create_process(pid, None)
     def entry():
         with _lock:
             _set_current_process(pid)
@@ -66,10 +74,11 @@ def spawn(name, fun, *args, **kargs):
             fun(*args, **kargs)
         finally:
             with _lock:
-                del _processes[pid]
+                _remove_current_process(pid)
     p.thread = threading.Thread(target=entry)
     p.thread.daemon = False
     p.thread.start()
+    return pid
 
 def send(pid, m):
     """ Send a message to the specified process. """
@@ -84,15 +93,16 @@ def send(pid, m):
 def receive():
     """ Retrieve a message from the current process' queue. """
     try:
-        queue = threading.local.queue
+        queue = _current.queue
     except NameError:
         raise Exception("The current thread has no PID")
     return queue.get()
 
 def _new_id():
+    global _nextID
     id = _nextID
     _nextID += 1
-    return 1
+    return id
 
 def _create_process(pid, name):
     p = Process(pid, name)
@@ -101,8 +111,15 @@ def _create_process(pid, name):
 
 def _set_current_process(pid):
     p = _processes[pid]
-    threading.local.pid = pid
-    threading.local.queue = p.queue
+    _current.pid = pid
+    _current.queue = p.queue
+
+def _remove_current_process(current_pid):
+    queue = _current.queue
+    queue.close()
+    _current.pid = None
+    _current.queue = None
+    del _processes[current_pid]
 
 class Process(object):
     def __init__(self, pid, name):

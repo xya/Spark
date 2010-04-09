@@ -23,7 +23,7 @@ import unittest
 import threading
 import functools
 import time
-from spark.async import Future, coroutine
+from spark.async import Future, coroutine, process
 from spark.messaging.messages import *
 from spark.messaging import TcpTransport, PipeTransport, MessagingSession, Service
 from spark.fileshare import FileShare
@@ -89,6 +89,15 @@ class BasicIntegrationTest(ReactorTestBase):
         response = yield clientService.foo()
         yield clientTransport.disconnect()
         yield response.params
+
+#class ProcessIntegrationTest(unittest.TestCase):
+#    def testTcpSession(self):
+#        testPid = process.attach("Test")
+#        clientService = TestClient(testPid)
+#        serverService = TestServer()
+#        process.send(serverService.pid, "bind to 127.0.0.1:4550")
+#        process.send(clientService.pid, "connect to 127.0.0.1:4550")
+#        process.send(clientService.pid, "send foo request")
 
 if __name__ == '__main__':
     run_tests()

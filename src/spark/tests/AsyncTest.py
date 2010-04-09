@@ -20,7 +20,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 import unittest
-from spark.async import Future, TaskError
+from spark.async import Future, TaskError, process
 from spark.tests.common import run_tests
 
 class FutureTest(unittest.TestCase):
@@ -203,6 +203,21 @@ class FutureTest(unittest.TestCase):
             pass
         else:
             self.fail("wait() should have raised an exception")
+
+class ProcessTest(unittest.TestCase):
+    def setUp(self):
+        self.pid = process.attach()
+    
+    def tearDown(self):
+        process.detach()
+        
+    def testSendMessage(self):
+        result = Future()
+        def entry():
+            result.completed(process.receive())
+        p = process.spawn(entry)
+        process.send(p, "foo")
+        self.assertEqual("foo", result.wait(1.0))
 
 if __name__ == '__main__':
     run_tests()
