@@ -23,7 +23,7 @@ import unittest
 import copy
 import sys
 import os
-from spark.async import Future, TaskFailedError, coroutine
+from spark.async import Future, TaskFailedError, coroutine, process
 from spark.messaging import *
 from spark.tests.common import run_tests
 from StringIO import StringIO
@@ -155,6 +155,23 @@ class ProtocolTest(unittest.TestCase):
 def formatMessage(m):
     data = " %s\r\n" % str(m)
     return "%04x%s" % (len(data), data)
+
+class Pipe(object):
+    def __init__(self, readFD, writeFD):
+        self.readFD = readFD
+        self.writeFD = writeFD
+    
+    def read(self, size):
+        return os.read(self.readFD, size)
+    
+    def write(self, data):
+        os.write(self.writeFD, data)
+    
+    @classmethod
+    def create(cls):
+        r1, w1 = os.pipe()
+        r2, w2 = os.pipe()
+        return (cls(r1, w2), cls(r2, w1))
 
 class MockAsyncPipe(object):
     def __init__(self, readList):
@@ -297,7 +314,7 @@ class ProtocolNegociationTest(unittest.TestCase):
         """ Negociation should work out if there is at last one supported protocol. """
         supported = ["SPARKv2", "SPARKv1"]
         f = ClientSocket(supported)
-        name = negociateProtocol(f, False).wait(1.0)
+        name = negociateProtocol(f, False)
         self.assertTrue(name in supported)
     
     def testServerNegociationNotSupported(self):
@@ -305,7 +322,7 @@ class ProtocolNegociationTest(unittest.TestCase):
         supported = ["SPARKv2"]
         f = ClientSocket(supported)
         try:
-            name = negociateProtocol(f, False).wait(1.0)
+            name = negociateProtocol(f, False)
             self.fail("Protocol negociation should have failed, no supported protocol")
         except TaskFailedError as e:
             type, val, tb = e.inner()
@@ -318,7 +335,7 @@ class ProtocolNegociationTest(unittest.TestCase):
         """ Negociation should work out if there is at last one supported protocol. """
         supported = ["SPARKv2", "SPARKv1"]
         f = ServerSocket(supported)
-        name = negociateProtocol(f, True).wait(1.0)
+        name = negociateProtocol(f, True)
         self.assertTrue(name in supported)
     
     def testClientNegociationNotSupported(self):
@@ -326,7 +343,7 @@ class ProtocolNegociationTest(unittest.TestCase):
         supported = ["SPARKv2"]
         f = ServerSocket(supported)
         try:
-            name = negociateProtocol(f, True).wait(1.0)
+            name = negociateProtocol(f, True)
             self.fail("Protocol negociation should have failed, no supported protocol")
         except NegociationError:
             pass
@@ -337,15 +354,27 @@ class ProtocolNegociationTest(unittest.TestCase):
     
     def testClientServerNegociation(self):
         """ Negociation should work out with client and server using the same negociation code. """
-        names = []
-        def completed(prev):
+        f = Future()
+        def monitor():
+            names = []
             try:
-                names.append(prev.result)
-            except Exception as e:
-                names.append(e)
-        c, s = MockAsyncPipe.create()
-        self.assertFalse(negociateProtocol(s, False).after(completed))
-        self.assertTrue(negociateProtocol(c, True).after(completed))
+                names.append(process.receive())
+                names.append(process.receive())
+            except Exception:
+                f.failed()
+            else:
+                f.completed(names)
+        c, s = Pipe.create()
+        pid = process.spawn(monitor)
+        def server():
+            name = negociateProtocol(s, False)
+            process.send(pid, name)
+        def client():
+            name = negociateProtocol(c, True)
+            process.send(pid, name)
+        process.spawn(server)
+        process.spawn(client)
+        names = f.wait(1.0)
         self.assertEqual(2, len(names))
         for name in names:
             self.assertTrue(name in Supported)

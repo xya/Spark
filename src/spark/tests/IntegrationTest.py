@@ -91,6 +91,12 @@ class BasicIntegrationTest(ReactorTestBase):
         yield response.params
 
 #class ProcessIntegrationTest(unittest.TestCase):
+#    def testLocalSession(self):
+#        process.attach()
+#        clientMessenger = Messenger()
+#        serverMessenger = Messenger()
+#        serverMessenger.listen((BIND_ADDRESS, BIND_PORT))
+#        clientMessenger.connect((BIND_ADDRESS, BIND_PORT))
 #    def testTcpSession(self):
 #        testPid = process.attach("Test")
 #        clientService = TestClient(testPid)
