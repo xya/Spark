@@ -22,7 +22,25 @@ import json
 from struct import Struct
 from spark.async import Future
 
-__all__ = ["Message", "TextMessage", "Request", "Response", "Notification", "Blob", "Block"]
+__all__ = ["Message", "TextMessage", "Request", "Response",
+           "Notification", "Blob", "Block", "match"]
+
+def match(o, pattern):
+    """ Try to match an object against a pattern. Return True if the pattern is matched. """
+    if pattern is None:
+        return True
+    if type(pattern) is type:
+        return type(o) is pattern
+    elif hasattr(pattern, "__len__") and hasattr(o, "__len__"):
+        if len(pattern) != len(o):
+            return False
+        else:
+            for i in range(0, len(pattern) - 1):
+                if not match(o[i], pattern[i]):
+                    return False
+            return True
+    else:
+        return pattern == o
 
 class Message(object):
     def __str__(self):
@@ -111,5 +129,5 @@ class MessageWriter(object):
         return "%04x%s" % (len(data), data)
     
     def write(self, m):
-        """ Asynchronously write a message to the file. """
-        return self.file.beginWrite(self.format(m))
+        """ Write a message to the file. """
+        return self.file.write(self.format(m))

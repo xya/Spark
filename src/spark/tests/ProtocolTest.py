@@ -372,4 +372,4 @@ class ProtocolNegociationTest(unittest.TestCase):
         self.assertEqual(firstName, secondName)
 
 if __name__ == '__main__':
-    run_tests()
+    run_tests(level=logging.INFO)

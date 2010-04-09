@@ -27,10 +27,10 @@ import socket
 import logging
 from collections import Mapping
 from functools import wraps
-from spark.async import Future, Delegate, coroutine, TaskFailedError
+from spark.async import Future, Delegate, coroutine, TaskFailedError, process
 from spark.messaging.common import AsyncMessenger, MessageDelivery
-from spark.messaging.protocol import negociateProtocol
-from spark.messaging.messages import Request, Response, Notification
+from spark.messaging.protocol import negociateProtocol, messageReader, messageWriter
+from spark.messaging.messages import Request, Response, Notification, match
 
 __all__ = ["Service", "Transport", "TcpTransport", "PipeTransport", "MessagingSession"]
 
@@ -420,3 +420,125 @@ class Service(object):
         if hasattr(self, methodName):
             method = getattr(self, methodName)
             method(n)
+
+class TcpMessenger(object):
+    def __init__(self):
+        self.pid = process.spawn(self._entry)
+    
+    def connect(self, addr):
+        process.send(self.pid, ("connect", addr))
+    
+    def listen(self, addr):
+        process.send(self.pid, ("listen", addr))
+
+    def set_receiver(self, pid):
+        process.send(self.pid, ("set-receiver", pid))
+    
+    def send(self, message):
+        process.send(self.pid, ("send", message))
+
+    def _entry(self):
+        state = TcpProcessState()
+        while True:
+            m = process.receive()
+            if match(m, ("connect", None)):
+                self._connect(m, state)
+            elif match(m, ("listen", None)):
+                self._listen(m, state)
+            elif match(m, ("disconnect", )):
+                self._disconnect(m, state)
+            elif match(m, ("set-receiver", int)):
+                state.receiver = m[1]
+            elif match(m, ("send", None)):
+                self._send(m, state)
+            elif match(m, ("stop", )):
+                break
+
+    def _connect(self, m, state):
+        if state.connState != Transport.DISCONNECTED:
+            state.logger.error("Invalid state '%i', should be DISCONNECTED", state.connState)
+            return
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
+        sock.bind(("0.0.0.0", 0))
+        state.logger.info("Connecting to %s", repr(m[1]))
+        sock.connect(m[1])
+        self._connected(state, sock, m[1], True)
+    
+    def _listen(self, m, state):
+        if state.connState != Transport.DISCONNECTED:
+            state.logger.error("Invalid state '%i', should be DISCONNECTED", state.connState)
+            return
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
+        try:
+            sock.bind(m[1])
+            sock.listen(1)
+            state.logger.info("Waiting for connections on %s", repr(m[1]))
+            conn, remoteAddr = sock.accept()
+        finally:
+            sock.close()
+        self._connected(state, conn, remoteAddr, False)
+
+    def _connected(self, state, conn, remoteAddr, initiating):
+        state.connState = Transport.CONNECTED
+        state.conn = conn
+        state.remoteAddr = remoteAddr
+        state.logger.info("Connected to %s", repr(remoteAddr))
+        if state.receiver:
+            process.send(state.receiver, ("connected", remoteAddr))
+        stream = SocketWrapper(state.conn)
+        name = negociateProtocol(stream, initiating)
+        state.reader = messageReader(stream, name)
+        state.writer = messageWriter(stream, name)
+        if state.receiver:
+            process.send(state.receiver, ("protocol-negociated", name))
+    
+    def _disconnect(self, m, state):
+        if state.conn:
+            state.logger.info("Disconnecting from %s" % repr(state.remoteAddr))
+            # force threads blocked on recv (and send?) to return
+            try:
+                state.conn.shutdown(socket.SHUT_RDWR)
+            except socket.error as e:
+                if e.errno != os.errno.ENOTCONN:
+                    raise
+            except Exception:
+                state.logger.exception("socket.shutdown() failed")
+            # close the connection
+            try:
+                state.conn.close()
+            except Exception:
+                state.logger.exception("socket.close() failed")
+            state.conn = None
+            state.remoteAddr = None
+            wasDisconnected = (state.connState == Transport.CONNECTED)
+            state.connState = Transport.DISCONNECTED
+        else:
+            wasDisconnected = False
+        # notifiy the receiver if the connection was closed
+        if wasDisconnected and state.receiver:
+            process.send(state.receiver, ("disconnected", ))
+    
+    def _send(self, m, state):
+        if state.connState != Transport.CONNECTED:
+            state.logger.error("Not connected")
+            return
+        elif state.writer is None:
+            state.logger.error("Session not started")
+            return
+        state.writer.write(m)
+
+class TcpProcessState(object):
+    def __init__(self):
+        self.connState = Transport.DISCONNECTED
+        self.conn = None
+        self.remoteAddr = None
+        self.receiver = None
+        self.reader = None
+        self.writer = None
+        self.logger = process.logger()
+
+class SocketWrapper(object):
+    def __init__(self, sock):
+        self.sock = sock
+        self.read = sock.recv
+        self.write = sock.send

@@ -22,12 +22,14 @@
 import unittest
 import threading
 import functools
+import logging
 import time
 from spark.async import Future, coroutine, process
 from spark.messaging.messages import *
 from spark.messaging import TcpTransport, PipeTransport, MessagingSession, Service
 from spark.fileshare import FileShare
-from spark.tests.common import ReactorTestBase, run_tests
+from spark.messaging.service import TcpMessenger
+from spark.tests.common import ReactorTestBase, run_tests, processTimeout
 
 BIND_ADDRESS = "127.0.0.1"
 BIND_PORT = 4550
@@ -45,19 +47,19 @@ class TestService(Service):
         return {'foo': 'bar'}
 
 class BasicIntegrationTest(ReactorTestBase):
-    def testTcpSession(self):
-        """ Two services connected by TCP/IP sockets should be able to exchange messages. """
-        response = self.beginTestTcpSession(self.reactor).wait(1.0)
-        self.assertTrue(isinstance(response, dict))
-        self.assertEqual(1, len(response))
-        self.assertEqual("bar", response["foo"])
+    #def testTcpSession(self):
+    #    """ Two services connected by TCP/IP sockets should be able to exchange messages. """
+    #    response = self.beginTestTcpSession(self.reactor).wait(1.0)
+    #    self.assertTrue(isinstance(response, dict))
+    #    self.assertEqual(1, len(response))
+    #    self.assertEqual("bar", response["foo"])
     
-    def testPipeSession(self):
-        """ Two services connected by pipes should be able to exchange messages. """
-        response = self.beginTestPipeSession(self.reactor).wait(1.0)
-        self.assertTrue(isinstance(response, dict))
-        self.assertEqual(1, len(response))
-        self.assertEqual("bar", response["foo"])
+    #def testPipeSession(self):
+    #    """ Two services connected by pipes should be able to exchange messages. """
+    #    response = self.beginTestPipeSession(self.reactor).wait(1.0)
+    #    self.assertTrue(isinstance(response, dict))
+    #    self.assertEqual(1, len(response))
+    #    self.assertEqual("bar", response["foo"])
     
     @coroutine
     def beginTestTcpSession(self, rea):
@@ -90,20 +92,33 @@ class BasicIntegrationTest(ReactorTestBase):
         yield clientTransport.disconnect()
         yield response.params
 
-#class ProcessIntegrationTest(unittest.TestCase):
+class ProcessIntegrationTest(unittest.TestCase):
 #    def testLocalSession(self):
 #        process.attach()
 #        clientMessenger = Messenger()
 #        serverMessenger = Messenger()
 #        serverMessenger.listen((BIND_ADDRESS, BIND_PORT))
 #        clientMessenger.connect((BIND_ADDRESS, BIND_PORT))
-#    def testTcpSession(self):
-#        testPid = process.attach("Test")
-#        clientService = TestClient(testPid)
-#        serverService = TestServer()
-#        process.send(serverService.pid, "bind to 127.0.0.1:4550")
-#        process.send(clientService.pid, "connect to 127.0.0.1:4550")
-#        process.send(clientService.pid, "send foo request")
+    @processTimeout(1.0)
+    def testTcpSession(self):
+        serverMessenger = TcpMessenger()
+        def serverLoop():
+            serverMessenger.set_receiver(process.current())
+            while True:
+                m = process.receive()
+                if match(m, ("swap", None, None)):
+                    process.send(serverMessenger.pid, ("swapped", m[1], m[0]))
+                else:
+                    break
+        process.spawn(serverLoop)
+        clientMessenger = TcpMessenger()
+        clientMessenger.set_receiver(process.current())
+        serverMessenger.listen((BIND_ADDRESS, BIND_PORT))
+        clientMessenger.connect((BIND_ADDRESS, BIND_PORT))
+        clientMessenger.send(("swap", "foo", "bar"))
+        self.assertTrue(match(process.receive(), ("connected", None)))
+        self.assertTrue(match(process.receive(), ("protocol-negociated", None)))
+        self.assertEqual(("swapped", "bar", "foo"), process.receive())
 
 if __name__ == '__main__':
-    run_tests()
+    run_tests(level=logging.INFO)
