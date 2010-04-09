@@ -31,13 +31,13 @@ def messageReader(file, protocol=VERSION_1):
     if protocol == VERSION_1:
         return MessageReader(file)
     else:
-        raise ValueError("Protocol not supported")
+        raise ValueError("Protocol '%s' not supported" % protocol)
 
 def messageWriter(file, protocol=VERSION_1):
     if protocol == VERSION_1:
         return MessageWriter(file)
     else:
-        raise ValueError("Protocol not supported")
+        raise ValueError("Protocol '%s' not supported" % protocol)
 
 def negociateProtocol(f, initiating):
     """

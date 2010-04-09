@@ -39,32 +39,32 @@ class ProcessIntegrationTest(unittest.TestCase):
             self.fail("Object doesn't match the pattern: '%s' (pattern: '%s')"
                 % (repr(o), repr(pattern)))
     
-    @processTimeout(3.0)
+    @processTimeout(1.0)
     def testTcpSession(self):
         log = process.logger()
         serverMessenger = TcpMessenger()
         def serverLoop():
             log = process.logger()
-            serverMessenger.set_receiver(process.current())
+            serverMessenger.set_recipient(process.current())
             while True:
                 m = process.receive()
                 if (match(Notification("connected", (str, int)), m) or
                     match(Notification("protocol-negociated", str), m)):
                     pass
                 elif match(Request("swap", (None, None)), m):
-                    resp = Response("swapped", (m.params[1], m.params[0]), m.transID)
+                    resp = Response("swap", (m.params[1], m.params[0]), m.transID)
                     serverMessenger.send(resp)
                 else:
                     break
         process.spawn(serverLoop)
         clientMessenger = TcpMessenger()
-        clientMessenger.set_receiver(process.current())
+        clientMessenger.set_recipient(process.current())
         serverMessenger.listen((BIND_ADDRESS, BIND_PORT))
         clientMessenger.connect((BIND_ADDRESS, BIND_PORT))
         self.assertMatch(Notification("connected", (str, int)), process.receive())
         self.assertMatch(Notification("protocol-negociated", str), process.receive())
         clientMessenger.send(Request("swap", ("foo", "bar"), 1))
-        self.assertMatch(Response("swapped", ("bar", "foo"), 1), process.receive())
+        self.assertMatch(Response("swap", ("bar", "foo"), 1), process.receive())
         clientMessenger.disconnect()
 
 if __name__ == '__main__':

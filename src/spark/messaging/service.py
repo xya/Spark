@@ -434,8 +434,8 @@ class TcpMessenger(object):
     def disconnect(self):
         process.send(self.pid, ("disconnect", ))
 
-    def set_receiver(self, pid):
-        process.send(self.pid, ("set-receiver", pid))
+    def set_recipient(self, pid):
+        process.send(self.pid, ("set-recipient", pid))
     
     def send(self, message):
         process.send(self.pid, ("send", message))
@@ -451,14 +451,12 @@ class TcpMessenger(object):
                     self._listen(m, state)
                 elif match(("disconnect", ), m):
                     self._disconnect(m, state)
-                elif match(("set-receiver", int), m):
-                    state.receiver = m[1]
+                elif match(("set-recipient", int), m):
+                    self._setRecipient(m, state)
                 elif match(("send", None), m):
                     self._send(m[1], state)
                 elif match(("stop", ), m):
                     break
-                else:
-                    self._send(m, state)
         finally:
             self._close(state)
 
@@ -491,18 +489,29 @@ class TcpMessenger(object):
         state.conn = conn
         state.remoteAddr = remoteAddr
         state.logger.info("Connected to %s.", repr(remoteAddr))
-        if state.receiver:
-            process.send(state.receiver, Notification("connected", remoteAddr))
+        if state.recipient:
+            process.send(state.recipient, Notification("connected", remoteAddr))
         stream = SocketWrapper(state.conn)
         name = negociateProtocol(stream, initiating)
         state.logger.info("Negociated protocol '%s'.", name)
-        state.reader = messageReader(stream, name)
+        state.stream = stream
+        state.protocol = name
         state.writer = messageWriter(stream, name)
-        if state.receiver:
-            process.send(state.receiver, Notification("protocol-negociated", name))
-            process.spawn(self._receiveMessages, stream, name, state.receiver)
+        if state.recipient:
+            process.send(state.recipient, Notification("protocol-negociated", name))
+            self._spawnReceiver(state)
     
-    def _receiveMessages(self, f, protocol, receiverPid):
+    def _spawnReceiver(self, state):
+        receiverArgs = (state.stream, state.protocol, state.recipient)
+        state.receiver = process.spawn(self._receiveMessages, *receiverArgs)
+    
+    def _setRecipient(self, m, state):
+        if not state.recipient:
+            state.recipient = m[1]
+            if state.protocol is not None and not state.receiver:
+                self._spawnReceiver(state)
+    
+    def _receiveMessages(self, f, protocol, recipientPid):
         reader = messageReader(f, protocol)
         log = process.logger()
         while True:
@@ -512,7 +521,7 @@ class TcpMessenger(object):
                 break
             else:
                 log.info("Received message: '%s'." % str(m))
-            process.send(receiverPid, m)
+                process.send(recipientPid, m)
     
     def _disconnect(self, m, state):
         self._close(state)
@@ -520,6 +529,10 @@ class TcpMessenger(object):
     def _close(self, state):
         if state.conn:
             state.logger.info("Disconnecting from %s." % repr(state.remoteAddr))
+            state.stream = None
+            state.protocol = None
+            state.writer = None
+            state.receiver = None
             # force threads blocked on recv (and send?) to return
             try:
                 state.conn.shutdown(socket.SHUT_RDWR)
@@ -539,15 +552,16 @@ class TcpMessenger(object):
             state.connState = Transport.DISCONNECTED
         else:
             wasDisconnected = False
-        # notifiy the receiver if the connection was closed
-        if wasDisconnected and state.receiver:
-            process.send(state.receiver, Notification("disconnected"))
+        
+        # notifiy the recipient if the connection was closed
+        if wasDisconnected and state.recipient:
+            process.try_send(state.recipient, Notification("disconnected"))
     
     def _send(self, m, state):
         if state.connState != Transport.CONNECTED:
             state.logger.error("Not connected")
             return
-        elif state.writer is None:
+        elif state.protocol is None:
             state.logger.error("Session not started")
             return
         state.logger.info("Sending message: '%s'." % str(m))
@@ -558,9 +572,11 @@ class TcpProcessState(object):
         self.connState = Transport.DISCONNECTED
         self.conn = None
         self.remoteAddr = None
-        self.receiver = None
-        self.reader = None
+        self.recipient = None
+        self.protocol = None
+        self.stream = None
         self.writer = None
+        self.receiver = None
         self.logger = process.logger()
 
 class SocketWrapper(object):

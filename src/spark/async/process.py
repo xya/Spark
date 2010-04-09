@@ -112,7 +112,7 @@ def send(pid, m):
 def try_send(pid, m):
     """ Send a message to the specified process. If the process exited, return False. """
     try:
-        self.send(pid, m)
+        send(pid, m)
         return True
     except ProcessExited:
         return False
