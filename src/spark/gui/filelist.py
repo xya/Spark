@@ -26,9 +26,9 @@ __all__ = ["FileList", "FileInfoWidget", "iconPath"]
 def iconPath(name, size=None):
     """ Return the path of the specified GNOME icon. """
     if size:
-        return "/usr/share/icons/gnome/%ix%i/%s.png" % (size, size, name)
+        return "/usr/share/icons/Tango/%ix%i/%s.png" % (size, size, name)
     else:
-        return "/usr/share/icons/gnome/scalable/%s.svg" % name
+        return "/usr/share/icons/Tango/scalable/%s.svg" % name
 
 class CustomList(QWidget):
     def __init__(self, parent=None):
