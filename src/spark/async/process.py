@@ -97,7 +97,7 @@ def spawn(fun, args=(), name=None):
         except Exception:
             log.exception("An exception was raised by the process")
         else:
-            log.info("Process stopped gracefully.")
+            log.info("Process stopped.")
         finally:
             with _lock:
                 _remove_current_process(pid)

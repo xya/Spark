@@ -53,6 +53,15 @@ class SparkApplication(object):
         except Exception:
             logging.exception("Error while disposing the session")
     
+    def connect(self, address):
+        process.send(self.session.pid, ("connect", address))
+    
+    def listen(self, address):
+        process.send(self.session.pid, ("listen", address))
+    
+    def disconnect(self):
+        process.send(self.session.pid, ("disconnect", ))
+    
     @property
     def myIPaddress(self):
         """ Return the public IP address of the user, if known. """
@@ -100,23 +109,30 @@ class Session(object):
     one user per session.
     """
     def __init__(self):
-        self.pid = process.spawn(self._entry, name="Session")
         self.connected = NotificationEvent("connected")
+        self.connectionError = NotificationEvent("connection-error")
         self.disconnected = NotificationEvent("disconnected")
         self.stateChanged = NotificationEvent("session-state-changed")
         self.filesUpdated = NotificationEvent("files-updated")
+        self.pid = process.spawn(self._entry, name="Session")
     
     def _entry(self):
-        self.messenger = TcpMessenger(process.current())
-        messages = MessageMatcher()
-        messages.addPattern(Request("update-session-state"), self.update_session_state)
-        messages.addKillCommand()
+        messenger = TcpMessenger(process.current())
+        loop = MessageMatcher()
+        loop.addPattern(Request("update-session-state"), self.update_session_state)
+        loop.addPattern(("connect", None),
+            lambda m: messenger.connect(m[1]))
+        loop.addPattern(("connection-error", None),
+            lambda m: self.connectionError(m[1]))
+        loop.addPattern(("listen", None),
+            lambda m: messenger.listen(m[1]))
+        loop.addPattern(("disconnect", ),
+            lambda m: messenger.disconnect())
+        loop.addPattern("close", result=False)
         try:
-            while True:
-                m = process.receive()
-                messages.match(m)
+            loop.run()
         finally:
-            self.messenger.close()
+            messenger.close()
         #self.share = FileShare()
         #self.share.run()
     
@@ -126,14 +142,5 @@ class Session(object):
     
     def dispose(self):
         if self.pid:
-            process.send(self.pid, "kill")
+            process.try_send(self.pid, "close")
             self.pid = None
-    
-    def connect(self, address):
-        process.send(self.pid, ("connect", address))
-    
-    def listen(self, address):
-        process.send(self.pid, ("listen", address))
-    
-    def disconnect(self):
-        process.send(self.pid, ("disconnect", ))

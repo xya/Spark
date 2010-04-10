@@ -166,25 +166,31 @@ class MessageMatcher(object):
     def __init__(self):
         self.rules = []
     
-    def addPattern(self, pattern, callable):
+    def addPattern(self, pattern, callable=None, result=True):
         """ Add a pattern to match messages. """
-        self.rules.append((pattern, callable))
+        self.rules.append((pattern, callable, result))
     
-    def addNotification(self, tag, callable):
+    def removePattern(self, pattern, callable=None, result=True):
+        """ Remove a pattern from the list. """
+        self.rules.remove((pattern, callable, result))
+    
+    def addNotification(self, tag, callable=None, result=True):
         """ Add a pattern to match notifications that have a certain tag. """
-        self.addPattern(Notification(tag), callable)
-    
-    def addKillCommand(self):
-        self.addPattern("kill", self._killed)
-    
-    def _killed(self, m, *args):
-        raise process.ProcessKilled()
+        self.addPattern(Notification(tag), callable, result)
     
     def match(self, m, *args):
         """ Match the message against the patterns. """
-        for pattern, callable in self.rules:
+        for pattern, callable, result in reversed(self.rules):
             if match(pattern, m):
-                callable(m, *args)
-                return True
-        process.logger().info("No rule matched message '%s'" % str(m))
+                if callable:
+                    callable(m, *args)
+                return result
+        process.logger().info("No rule matched message %s" % str(m))
         return False
+    
+    def run(self, *args):
+        """ Retrieve messages from the current process' queue while they match any pattern. """
+        while True:
+            m = process.receive()
+            if not self.match(m, *args):
+                break

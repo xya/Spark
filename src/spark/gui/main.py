@@ -24,7 +24,7 @@ from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from spark.gui.filelist import FileList, FileInfoWidget, iconPath
 from spark.async import process
-from spark.messaging import MessageMatcher
+from spark.messaging import MessageMatcher, Notification
 from spark.fileshare import SharedFile, TransferInfo, UPLOAD, DOWNLOAD
 
 __all__ = ["MainView"]
@@ -55,8 +55,11 @@ class MainWindow(QMainWindow):
         self.sharedFiles = {}
         self.fileIDs = []
         self.selectedID = None
+        self.app.session.connected.suscribe()
+        self.app.session.connectionError.suscribe()
         self.suscribe(self.app.session.stateChanged, self.sessionStateChanged)
-        self.sharedFilesUpdated()
+        self.updateStatusBar()
+        self.updateToolBar()
     
     def suscribe(self, source, callable):
         source.suscribe(self.pid.messages, callable)
@@ -203,30 +206,30 @@ class MainWindow(QMainWindow):
             return False
     
     def action_connect(self):
-        d = ConnectionDialog(self.app, self)
+        d = ConnectionDialog(self.app, self.pid, self)
         d.exec_()
     
     def action_disconnect(self):
-        self.app.session.disconnect()
+        self.app.disconnect()
     
     def action_add(self):
         dir = os.path.expanduser("~")
         files = QFileDialog.getOpenFileNames(self, "Choose a file to open", dir, "All files (*.*)")
         if files.count() > 0:
             for file in files:
-                self.app.session.addFile(str(file))
+                self.app.addFile(str(file))
     
     def action_remove(self):
         if self.selectedID is not None:
-            self.app.session.removeFile(self.selectedID)
+            self.app.removeFile(self.selectedID)
     
     def action_start(self):
         if self.selectedID is not None:
-            self.app.session.startTransfer(self.selectedID)
+            self.app.startTransfer(self.selectedID)
     
     def sharedFilesUpdated(self):
         pass
-        #self.app.session.files().after(onGuiThread(self.end_listFiles))
+        #self.app.files().after(onGuiThread(self.end_listFiles))
     
     def sessionStateChanged(self, newState):
         self.app.updateState(newState)
@@ -238,10 +241,13 @@ class MainWindow(QMainWindow):
         self.updateTransferList(files)
 
 class ConnectionDialog(QDialog):
-    def __init__(self, app, parent=None):
+    def __init__(self, app, pid, parent=None):
         super(ConnectionDialog, self).__init__(parent)
         self.app = app
+        self.pid = pid
+        self.patterns = []
         self.setWindowTitle("Connect to a peer")
+        QObject.connect(self, SIGNAL('finished(int)'), self.closing)
         self.initWidgets()
         self.initLayout()
     
@@ -273,22 +279,30 @@ class ConnectionDialog(QDialog):
         mainLayout.addWidget(self.progressBar)
         mainLayout.addLayout(buttonLayout)
     
+    def closing(self):
+        for pattern, callable in self.patterns:
+            self.pid.messages.removePattern(pattern, callable)
+    
     def doConnect(self):
         address = (str(self.hostText.text()), int(self.portText.text()))
         self.connectButton.setEnabled(False)
         self.progressBar.setVisible(True)
-        self.app.session.connect(address)
+        self.patterns.append((Notification("connected", None), self.connectOK))
+        self.patterns.append((Notification("connection-error", None), self.connectError))
+        for pattern, callable in self.patterns:
+            self.pid.messages.addPattern(pattern, callable)
+        self.app.connect(address)
     
-    def end_connect(self, prev):
+    def connectError(self, m):
         self.connectButton.setEnabled(True)
         self.progressBar.setVisible(False)
-        try:
-            result = prev.result
-        except Exception as ex:
-            QMessageBox.critical(self, "Connection error",
-                "Error while connecting: %s" % str(ex))
-        else:
-            self.accept()
+        QMessageBox.critical(self, "Connection error",
+            "Error while connecting:\n%s" % str(m.params))
+    
+    def connectOK(self, m):
+        self.connectButton.setEnabled(True)
+        self.progressBar.setVisible(False)
+        self.accept()
 
 class GuiProcess(QObject):
     def __init__(self):
@@ -304,8 +318,8 @@ class GuiProcess(QObject):
     
     def event(self, ev):
         """ Handle events sent to the object. """
-        if ev.type() == MessageReceived.Type:
-            self.messages.match(m)
+        if ev.type() == MessageReceivedEvent.Type:
+            self.messages.match(ev.m)
             return True
         else:
             return False

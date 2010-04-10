@@ -58,7 +58,10 @@ class ProcessIntegrationTest(unittest.TestCase):
         clientMessenger = TcpMessenger(process.current())
         clientMessenger.connect((BIND_ADDRESS, BIND_PORT))
         clientMessenger.send(Request("swap", ("foo", "bar"), 1))
-        self.assertMatch(Response("swap", ("bar", "foo"), 1), process.receive())
+        resp = process.receive()
+        if(match(("connection-error", None), resp)):
+            self.fail(str(resp[1]))
+        self.assertMatch(Response("swap", ("bar", "foo"), 1), resp)
         clientMessenger.disconnect()
 
 if __name__ == '__main__':

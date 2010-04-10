@@ -30,7 +30,7 @@ from functools import wraps
 from spark.async import Future, Delegate, coroutine, TaskFailedError, process
 from spark.messaging.common import AsyncMessenger, MessageDelivery
 from spark.messaging.protocol import negociateProtocol, messageReader, messageWriter
-from spark.messaging.messages import Request, Response, Notification, match, NotificationEvent
+from spark.messaging.messages import Request, Response, Notification, match, MessageMatcher, NotificationEvent
 
 __all__ = ["Service", "Transport", "TcpTransport", "PipeTransport", "MessagingSession", "TcpMessenger"]
 
@@ -427,11 +427,15 @@ class TcpMessenger(object):
         self.connected = NotificationEvent("connected")
         self.protocolNegociated = NotificationEvent("protocol-negociated")
     
-    def connect(self, addr):
-        process.send(self.pid, ("connect", addr))
+    def connect(self, addr, senderPid=None):
+        if not senderPid:
+            senderPid = process.current()
+        process.send(self.pid, ("connect", addr, senderPid))
     
-    def listen(self, addr):
-        process.send(self.pid, ("listen", addr))
+    def listen(self, addr, senderPid=None):
+        if not senderPid:
+            senderPid = process.current()
+        process.send(self.pid, ("listen", addr, senderPid))
     
     def disconnect(self):
         process.send(self.pid, ("disconnect", ))
@@ -439,30 +443,26 @@ class TcpMessenger(object):
     def set_recipient(self, pid):
         process.send(self.pid, ("set-recipient", pid))
     
-    def send(self, message):
-        process.send(self.pid, ("send", message))
+    def send(self, message, senderPid=None):
+        if not senderPid:
+            senderPid = process.current()
+        process.send(self.pid, ("send", message, senderPid))
     
     def close(self):
-        process.send(self.pid, ("close", ))
+        process.try_send(self.pid, ("close", ))
     
     def _entry(self, recipient):
         state = TcpProcessState()
         state.recipient = recipient
+        loop = MessageMatcher()
+        loop.addPattern(("connect", None, int), self._connect)
+        loop.addPattern(("listen", None, int), self._listen)
+        loop.addPattern(("disconnect", int ), self._disconnect)
+        loop.addPattern(("set-recipient", int), self._setRecipient)
+        loop.addPattern(("send", None, int), self._send)
+        loop.addPattern(("close", ), result=False)
         try:
-            while True:
-                m = process.receive()
-                if match(("connect", None), m):
-                    self._connect(m, state)
-                elif match(("listen", None), m):
-                    self._listen(m, state)
-                elif match(("disconnect", ), m):
-                    self._disconnect(m, state)
-                elif match(("set-recipient", int), m):
-                    self._setRecipient(m, state)
-                elif match(("send", None), m):
-                    self._send(m[1], state)
-                elif match(("close", ), m):
-                    break
+            loop.run(state)
         finally:
             self._close(state)
 
@@ -473,8 +473,13 @@ class TcpMessenger(object):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
         sock.bind(("0.0.0.0", 0))
         state.logger.info("Connecting to %s.", repr(m[1]))
-        sock.connect(m[1])
-        self._connected(state, sock, m[1], True)
+        try:
+            sock.connect(m[1])
+        except socket.error as e:
+            state.logger.error(e)
+            process.try_send(m[2], ("connection-error", e))
+        else:
+            self._connected(state, sock, m[1], True)
     
     def _listen(self, m, state):
         if state.connState != Transport.DISCONNECTED:
@@ -569,8 +574,8 @@ class TcpMessenger(object):
         elif state.protocol is None:
             state.logger.error("Session not started")
             return
-        state.logger.info("Sending message: '%s'." % str(m))
-        state.writer.write(m)
+        state.logger.info("Sending message: '%s'." % str(m[1]))
+        state.writer.write(m[1])
 
 class TcpProcessState(object):
     def __init__(self):
