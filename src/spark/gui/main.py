@@ -55,9 +55,7 @@ class MainWindow(QMainWindow):
         self.sharedFiles = {}
         self.fileIDs = []
         self.selectedID = None
-        self.suscribe(self.app.session.connected, self.sessionConnected)
-        self.suscribe(self.app.session.disconnected, self.sessionDisconnected)
-        self.suscribe(self.app.session.filesUpdated, self.sharedFilesUpdated)
+        self.suscribe(self.app.session.stateChanged, self.sessionStateChanged)
         self.sharedFilesUpdated()
     
     def suscribe(self, source, callable):
@@ -98,8 +96,8 @@ class MainWindow(QMainWindow):
     
     def updateToolBar(self):
         # connection-dependent actions
-        self.actions["disconnect"].setVisible(self.app.session.isConnected)
-        self.actions["connect"].setVisible(not self.app.session.isConnected)
+        self.actions["disconnect"].setVisible(self.app.isConnected)
+        self.actions["connect"].setVisible(not self.app.isConnected)
         
         # selection-dependent actions
         if self.selectedID is None:
@@ -128,7 +126,7 @@ class MainWindow(QMainWindow):
         self.statusBar().addWidget(self.downloadSpeedText)
     
     def updateStatusBar(self):
-        if self.app.session.isConnected:
+        if self.app.isConnected:
             self.connStatus.setPixmap(QPixmap(iconPath("status/network-idle", 24)))
             self.connStatus.setToolTip("Connected to a peer")
         else:
@@ -184,7 +182,7 @@ class MainWindow(QMainWindow):
     
     def isActionAvailable(self, name, file=None):
         """ Can the specified action be used now? """
-        connected = self.app.session.isConnected
+        connected = self.app.isConnected
         if isinstance(file, basestring):
             file = self.sharedFiles[file]
         if name == "add":
@@ -209,46 +207,29 @@ class MainWindow(QMainWindow):
         d.exec_()
     
     def action_disconnect(self):
-        self.app.session.disconnect().after(onGuiThread(self.end_disconnect))
-    
-    def end_disconnect(self, prev):
-        result = prev.result
+        self.app.session.disconnect()
     
     def action_add(self):
         dir = os.path.expanduser("~")
         files = QFileDialog.getOpenFileNames(self, "Choose a file to open", dir, "All files (*.*)")
         if files.count() > 0:
             for file in files:
-                self.app.session.addFile(str(file)).after(onGuiThread(self.end_addFile))
-    
-    def end_addFile(self, prev):
-        result = prev.result
+                self.app.session.addFile(str(file))
     
     def action_remove(self):
         if self.selectedID is not None:
-            self.app.session.removeFile(self.selectedID).after(
-                onGuiThread(self.end_removeFile))
-    
-    def end_removeFile(self, prev):
-        result = prev.result
+            self.app.session.removeFile(self.selectedID)
     
     def action_start(self):
         if self.selectedID is not None:
-            self.app.session.startTransfer(self.selectedID).after(
-                onGuiThread(self.end_startTransfer))
-    
-    def end_startTransfer(self, prev):
-        result = prev.result
+            self.app.session.startTransfer(self.selectedID)
     
     def sharedFilesUpdated(self):
-        self.updateStatusBar()
+        pass
         #self.app.session.files().after(onGuiThread(self.end_listFiles))
     
-    def sessionConnected(self, initiating):
-        self.updateStatusBar()
-        self.updateToolBar()
-    
-    def sessionDisconnected(self):
+    def sessionStateChanged(self, newState):
+        self.app.updateState(newState)
         self.updateStatusBar()
         self.updateToolBar()
     
@@ -296,7 +277,7 @@ class ConnectionDialog(QDialog):
         address = (str(self.hostText.text()), int(self.portText.text()))
         self.connectButton.setEnabled(False)
         self.progressBar.setVisible(True)
-        self.app.session.connect(address).after(onGuiThread(self.end_connect))
+        self.app.session.connect(address)
     
     def end_connect(self, prev):
         self.connectButton.setEnabled(True)
@@ -324,8 +305,7 @@ class GuiProcess(QObject):
     def event(self, ev):
         """ Handle events sent to the object. """
         if ev.type() == MessageReceived.Type:
-            if not self.messages.match(m):
-                process.logger().info("No rule matched message '%s'" % str(m))
+            self.messages.match(m)
             return True
         else:
             return False

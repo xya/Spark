@@ -35,7 +35,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     with GuiProcess() as pid:
         with SparkApplication() as appA:
-            appA.session.listen(("127.0.0.1", port))
+            #appA.session.listen(("127.0.0.1", port))
             viewA = MainWindow(appA, pid)
             viewA.setWindowTitle("Spark %i" % port)
             viewA.show()

@@ -92,12 +92,15 @@ def spawn(fun, args=(), name=None):
         log.info("Process started.")
         try:
             fun(*args)
+        except ProcessKilled:
+            log.info("Process killed.")
         except Exception:
             log.exception("An exception was raised by the process")
+        else:
+            log.info("Process stopped gracefully.")
         finally:
             with _lock:
                 _remove_current_process(pid)
-            log.info("Process stopped.")
     p.thread = threading.Thread(target=entry)
     p.thread.daemon = True
     p.thread.start()

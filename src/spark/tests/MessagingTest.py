@@ -107,5 +107,16 @@ class MessageDeliveryTest(unittest.TestCase):
     def responseReceived(self, prev):
         self.responses.append(prev.result)
 
+class MessageMatchingTest(unittest.TestCase):
+    def testString(self):
+        """ match() should properly match string patterns """
+        self.assertTrue(match("foo", "foo"))
+        self.assertFalse(match("foo", "bar"))
+    
+    def testTuples(self):
+        """ match() should properly match tuple patterns """
+        self.assertTrue(match(("foo", ), ("foo", )))
+        self.assertFalse(match(("foo", ), ("bar", )))
+
 if __name__ == '__main__':
     run_tests()

@@ -441,7 +441,10 @@ class TcpMessenger(object):
     
     def send(self, message):
         process.send(self.pid, ("send", message))
-
+    
+    def close(self):
+        process.send(self.pid, ("close", ))
+    
     def _entry(self, recipient):
         state = TcpProcessState()
         state.recipient = recipient
@@ -458,7 +461,7 @@ class TcpMessenger(object):
                     self._setRecipient(m, state)
                 elif match(("send", None), m):
                     self._send(m[1], state)
-                elif match(("stop", ), m):
+                elif match(("close", ), m):
                     break
         finally:
             self._close(state)

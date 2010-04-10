@@ -22,7 +22,7 @@ import logging
 import functools
 import types
 from spark.async import Delegate, process
-from spark.messaging import TcpMessenger, NotificationEvent
+from spark.messaging import *
 from spark.fileshare import FileShare
 
 __all__ = ["SparkApplication", "Session"]
@@ -38,6 +38,11 @@ class SparkApplication(object):
     """ Hold the state of the whole application. """
     def __init__(self):
         self.session = Session()
+        self._myIPaddress = "127.0.0.1"
+        self._isConnected = False
+        self._activeTransfers = 0
+        self._uploadSpeed = 0.0
+        self._downloadSpeed = 0.0
     
     def __enter__(self):
         return self
@@ -51,22 +56,34 @@ class SparkApplication(object):
     @property
     def myIPaddress(self):
         """ Return the public IP address of the user, if known. """
-        return "127.0.0.1"
+        return self._myIPaddress
+    
+    @property
+    def isConnected(self):
+        """ Determine whether the session is active, i.e. we are connected to a remote peer. """
+        return self._isConnected
     
     @property
     def activeTransfers(self):
         """ Return the number of active transfers. """
-        return self.session.activeTransfers
+        return self._activeTransfers
     
     @property
     def uploadSpeed(self):
         """ Return the total upload speed, across all active transfers. """
-        return self.session.uploadSpeed
+        return self._uploadSpeed
     
     @property
     def downloadSpeed(self):
         """ Return the total download speed, across all active transfers. """
-        return self.session.downloadSpeed
+        return self._downloadSpeed
+    
+    def updateState(self, sessionState):
+        """ Update the application state. """
+        self._isConnected = sessionState["isConnected"]
+        self._activeTransfers = sessionState["activeTransfers"]
+        self._uploadSpeed = sessionState["uploadSpeed"]
+        self._downloadSpeed = sessionState["downloadSpeed"]
     
     Units = [("KiB", 1024), ("MiB", 1024 * 1024), ("GiB", 1024 * 1024 * 1024)]
     def formatSize(self, size):
@@ -86,16 +103,30 @@ class Session(object):
         self.pid = process.spawn(self._entry, name="Session")
         self.connected = NotificationEvent("connected")
         self.disconnected = NotificationEvent("disconnected")
+        self.stateChanged = NotificationEvent("session-state-changed")
         self.filesUpdated = NotificationEvent("files-updated")
     
     def _entry(self):
         self.messenger = TcpMessenger(process.current())
+        messages = MessageMatcher()
+        messages.addPattern(Request("update-session-state"), self.update_session_state)
+        messages.addKillCommand()
+        try:
+            while True:
+                m = process.receive()
+                messages.match(m)
+        finally:
+            self.messenger.close()
         #self.share = FileShare()
         #self.share.run()
     
+    def update_session_state(self, m):
+        self.stateChanged({"isConnected" : False, "activeTransfers" : 0,
+                           "uploadSpeed" : 0.0, "downloadSpeed" : 0.0})
+    
     def dispose(self):
         if self.pid:
-            process.send(self.pid, "close")
+            process.send(self.pid, "kill")
             self.pid = None
     
     def connect(self, address):
@@ -106,23 +137,3 @@ class Session(object):
     
     def disconnect(self):
         process.send(self.pid, ("disconnect", ))
-    
-    @property
-    def isConnected(self):
-        """ Determine whether the session is active, i.e. we are connected to a remote peer. """
-        return False
-    
-    @property
-    def activeTransfers(self):
-        """ Return the number of active transfers. """
-        return 0
-    
-    @property
-    def uploadSpeed(self):
-        """ Return the total upload speed, across all active transfers. """
-        return 0.0
-    
-    @property
-    def downloadSpeed(self):
-        """ Return the total download speed, across all active transfers. """
-        return 0.0

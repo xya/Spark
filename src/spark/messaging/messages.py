@@ -34,12 +34,14 @@ def match(pattern, o):
         return type(o) is pattern
     elif all(hasattr(pattern, at) for at in messageAttr):
         # match a message
-        return all(match(getattr(pattern, at), getattr(o, at)) for at in messageAttr)
+        return all(match(getattr(pattern, at), getattr(o, at, None)) for at in messageAttr)
+    elif type(pattern) is str or type(pattern) is unicode:
+        return pattern == o
     elif hasattr(pattern, "__len__") and hasattr(o, "__len__"):
         if len(pattern) != len(o):
             return False
         else:
-            for i in range(0, len(pattern) - 1):
+            for i in range(0, len(pattern)):
                 if not match(pattern[i], o[i]):
                     return False
             return True
@@ -172,10 +174,17 @@ class MessageMatcher(object):
         """ Add a pattern to match notifications that have a certain tag. """
         self.addPattern(Notification(tag), callable)
     
-    def match(self, m):
+    def addKillCommand(self):
+        self.addPattern("kill", self._killed)
+    
+    def _killed(self, m, *args):
+        raise process.ProcessKilled()
+    
+    def match(self, m, *args):
         """ Match the message against the patterns. """
         for pattern, callable in self.rules:
             if match(pattern, m):
-                callable(m)
+                callable(m, *args)
                 return True
+        process.logger().info("No rule matched message '%s'" % str(m))
         return False
