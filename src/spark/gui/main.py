@@ -55,14 +55,14 @@ class MainWindow(QMainWindow):
         self.sharedFiles = {}
         self.fileIDs = []
         self.selectedID = None
-        self.app.session.connected.suscribe()
-        self.app.session.connectionError.suscribe()
+        self.suscribe(self.app.session.connected)
+        self.suscribe(self.app.session.connectionError)
         self.suscribe(self.app.session.stateChanged, self.sessionStateChanged)
         self.updateStatusBar()
         self.updateToolBar()
     
-    def suscribe(self, source, callable):
-        source.suscribe(self.pid.messages, callable)
+    def suscribe(self, source, callable=None, result=True):
+        source.suscribe(matcher=self.pid.messages, callable=callable, result=result)
     
     def createAction(self, icon, size, text, help=None):
         action = QAction(QIcon(iconPath(icon, size)), text, self)
@@ -231,8 +231,8 @@ class MainWindow(QMainWindow):
         pass
         #self.app.files().after(onGuiThread(self.end_listFiles))
     
-    def sessionStateChanged(self, newState):
-        self.app.updateState(newState)
+    def sessionStateChanged(self, m):
+        self.app.updateState(m.params)
         self.updateStatusBar()
         self.updateToolBar()
     

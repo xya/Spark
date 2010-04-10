@@ -429,8 +429,10 @@ class TcpMessenger(object):
     
     def __init__(self):
         self.pid = process.spawn(self._entry, name="TcpMessenger")
+        self.bound = NotificationEvent("bound")
         self.connected = NotificationEvent("connected")
         self.protocolNegociated = NotificationEvent("protocol-negociated")
+        self.disconnected = NotificationEvent("disconnected")
     
     def connect(self, addr, senderPid=None):
         if not senderPid:
@@ -489,16 +491,17 @@ class TcpMessenger(object):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
         try:
             sock.bind(m[1])
-            process.try_send(m[2], ("bound", m[1]))
+            self.bound(m[1])
             sock.listen(1)
             state.logger.info("Waiting for connections on %s.", repr(m[1]))
             conn, remoteAddr = sock.accept()
         except socket.error as e:
             state.logger.error(e)
             process.try_send(m[2], ("accept-error", e))
+        else:
+            self._connected(state, conn, remoteAddr, False, m[2])
         finally:
             sock.close()
-        self._connected(state, conn, remoteAddr, False, m[2])
 
     def _connected(self, state, conn, remoteAddr, initiating, senderPid):
         state.logger.info("Connected to %s.", repr(remoteAddr))
@@ -532,7 +535,7 @@ class TcpMessenger(object):
     
     def _endOfStream(self, m, state):
         self._close(state)
-        process.try_send(m[1], ("disconnected", ))
+        self.disconnected()
     
     def _disconnect(self, m, state):
         self._close(state)

@@ -45,21 +45,21 @@ class ProcessIntegrationTest(unittest.TestCase):
         pid = process.current()
         def serverLoop():
             log = process.logger()
+            loop = MessageMatcher()
             serverMessenger = TcpMessenger()
+            serverMessenger.bound.suscribe(pid)
+            serverMessenger.disconnected.suscribe(matcher=loop, result=False)
             serverMessenger.listen((BIND_ADDRESS, BIND_PORT))
             def handleSwap(m):
                 resp = Response("swap", (m.params[1], m.params[0]), m.transID)
                 serverMessenger.send(resp)
-            loop = MessageMatcher()
             loop.addPattern(Request("swap", (None, None)), handleSwap)
-            loop.addPattern(("bound", None), lambda m: process.send(pid, m))
-            loop.addPattern(("disconnected", ), result=False)
             try:
                 loop.run()
             finally:
                 serverMessenger.close()
         process.spawn(serverLoop, name="ServerLoop")
-        self.assertMatch(("bound", None), process.receive())
+        self.assertMatch(Notification("bound", None), process.receive())
         clientMessenger = TcpMessenger()
         clientMessenger.connect((BIND_ADDRESS, BIND_PORT))
         clientMessenger.send(Request("swap", ("foo", "bar"), 1))

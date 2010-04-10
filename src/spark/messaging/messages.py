@@ -144,10 +144,10 @@ class NotificationEvent(process.ProcessEvent):
         super(NotificationEvent, self).__init__(lock)
         self.name = name
     
-    def suscribe(self, pid=None, matcher=None, callable=None):
+    def suscribe(self, pid=None, matcher=None, callable=None, result=True):
         """ Suscribe a process to start receiving notifications of this event. """
-        if matcher and callable:
-            matcher.addNotification(self.name, callable)
+        if matcher:
+            matcher.addNotification(self.name, callable, result)
         super(NotificationEvent, self).suscribe(pid)
     
     def __call__(self, *args):

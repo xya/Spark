@@ -117,28 +117,50 @@ class Session(object):
         self.pid = process.spawn(self._entry, name="Session")
     
     def _entry(self):
-        messenger = TcpMessenger(process.current())
         loop = MessageMatcher()
-        loop.addPattern(Request("update-session-state"), self.update_session_state)
-        loop.addPattern(("connect", None),
-            lambda m: messenger.connect(m[1]))
-        loop.addPattern(("connection-error", None),
-            lambda m: self.connectionError(m[1]))
-        loop.addPattern(("listen", None),
-            lambda m: messenger.listen(m[1]))
-        loop.addPattern(("disconnect", ),
-            lambda m: messenger.disconnect())
+        state = process.ProcessState
+        state.isConnected = False
+        state.messenger = TcpMessenger()
+        # messages received from TcpMessenger
+        state.messenger.protocolNegociated.suscribe(matcher=loop, callable=self.onProtocolNegociated)
+        state.messenger.disconnected.suscribe(matcher=loop, callable=self.onDisconnected)
+        loop.addPattern(("connection-error", None), self.onConnectionError)
+        # messages received from the caller
+        loop.addPattern(Request("update-session-state"), self.updateSessionState)
+        loop.addPattern(("connect", None), self.connectMessenger)
+        loop.addPattern(("listen", None), self.listenMessenger)
+        loop.addPattern(("disconnect", ), self.disconnectMessenger)
         loop.addPattern("close", result=False)
         try:
-            loop.run()
+            loop.run(state)
         finally:
-            messenger.close()
-        #self.share = FileShare()
-        #self.share.run()
+            state.messenger.close()
     
-    def update_session_state(self, m):
-        self.stateChanged({"isConnected" : False, "activeTransfers" : 0,
-                           "uploadSpeed" : 0.0, "downloadSpeed" : 0.0})
+    def onConnectionError(self, m, state):
+        self.connectionError(m[1])
+    
+    def onProtocolNegociated(self, m, state):
+        state.isConnected = True
+        self.connected()
+        self.updateSessionState(m, state)
+    
+    def onDisconnected(self, m, state):
+        state.isConnected = False
+        self.disconnected()
+        self.updateSessionState(m, state)
+    
+    def updateSessionState(self, m, state):
+        self.stateChanged({"isConnected" : state.isConnected,
+            "activeTransfers" : 0, "uploadSpeed" : 0.0, "downloadSpeed" : 0.0})
+    
+    def connectMessenger(self, m, state):
+        state.messenger.connect(m[1])
+    
+    def listenMessenger(self, m, state):
+        state.messenger.listen(m[1])
+    
+    def disconnectMessenger(self, m, state):
+        state.messenger.disconnect()
     
     def dispose(self):
         if self.pid:

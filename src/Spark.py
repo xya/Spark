@@ -30,13 +30,16 @@ if __name__ == "__main__":
     if (len(sys.argv) > 1) and sys.argv[1].isdigit():
         port = int(sys.argv[1])
     else:
-        port = 4550
+        port = None
     qtapp = QApplication(sys.argv)
     logging.basicConfig(level=logging.DEBUG)
     with GuiProcess() as pid:
         with SparkApplication() as appA:
-            appA.listen(("127.0.0.1", port))
             viewA = MainWindow(appA, pid)
-            viewA.setWindowTitle("Spark %i" % port)
+            if port:
+                appA.listen(("127.0.0.1", port))
+                viewA.setWindowTitle("Spark %i" % port)
+            else:
+                viewA.setWindowTitle("Spark")
             viewA.show()
             qtapp.exec_()
