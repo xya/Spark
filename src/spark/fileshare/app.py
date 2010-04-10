@@ -36,8 +36,8 @@ def sessionMethod(func):
 
 class SparkApplication(object):
     """ Hold the state of the whole application. """
-    def __init__(self, bindAddr=None):
-        self.session = Session(bindAddr)
+    def __init__(self):
+        self.session = Session()
         self._myIPaddress = "127.0.0.1"
         self._isConnected = False
         self._activeTransfers = 0
@@ -56,8 +56,8 @@ class SparkApplication(object):
     def connect(self, address):
         process.send(self.session.pid, ("connect", address))
     
-    def listen(self, address):
-        process.send(self.session.pid, ("listen", address))
+    def bind(self, address):
+        process.send(self.session.pid, ("bind", address))
     
     def disconnect(self):
         process.send(self.session.pid, ("disconnect", ))
@@ -108,19 +108,19 @@ class Session(object):
     Represent one session of file sharing. An user can share files with only
     one user per session.
     """
-    def __init__(self, bindAddr=None):
+    def __init__(self):
         self.connected = NotificationEvent("connected")
         self.connectionError = NotificationEvent("connection-error")
         self.disconnected = NotificationEvent("disconnected")
         self.stateChanged = NotificationEvent("session-state-changed")
         self.filesUpdated = NotificationEvent("files-updated")
-        self.pid = process.spawn(self._entry, args=(bindAddr, ), name="Session")
+        self.pid = process.spawn(self._entry, name="Session")
     
-    def _entry(self, bindAddr):
+    def _entry(self):
         loop = MessageMatcher()
         state = process.ProcessState
         state.isConnected = False
-        state.bindAddr = bindAddr
+        state.bindAddr = None
         state.messenger = TcpMessenger()
         # messages received from TcpMessenger
         state.messenger.protocolNegociated.suscribe(matcher=loop, callable=self.onProtocolNegociated)
@@ -129,13 +129,9 @@ class Session(object):
         # messages received from the caller
         loop.addPattern(Request("update-session-state"), self.updateSessionState)
         loop.addPattern(("connect", None), self.connectMessenger)
-        loop.addPattern(("listen", None), self.listenMessenger)
-        loop.addPattern(("accept", ), self.acceptMessenger)
+        loop.addPattern(("bind", None), self.bindMessenger)
         loop.addPattern(("disconnect", ), self.disconnectMessenger)
         loop.addPattern("close", result=False)
-        if state.bindAddr:
-            state.messenger.listen(state.bindAddr)
-            state.messenger.accept()
         try:
             loop.run(state)
         finally:
@@ -163,11 +159,11 @@ class Session(object):
     def connectMessenger(self, m, state):
         state.messenger.connect(m[1])
     
-    def listenMessenger(self, m, state):
-        state.messenger.listen(m[1])
-    
-    def acceptMessenger(self, m, state):
-        state.messenger.accept()
+    def bindMessenger(self, m, state):
+        if not state.bindAddr:
+            state.bindAddr = m[1]
+            state.messenger.listen(state.bindAddr)
+            state.messenger.accept()
     
     def disconnectMessenger(self, m, state):
         state.messenger.disconnect()

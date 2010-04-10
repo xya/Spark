@@ -27,17 +27,19 @@ if __name__ == "__main__":
     from spark.gui.main import MainWindow, GuiProcess
     from spark.fileshare import SparkApplication
     from spark.async import process
-    if (len(sys.argv) > 1) and sys.argv[1].isdigit():
-        bindAddr = ("127.0.0.1", int(sys.argv[1]))
+    if (len(sys.argv) > 1) and (sys.argv[1].find(":") >= 0):
+        chunks = sys.argv[1].split(":")
+        bindAddr = (chunks[0], int(chunks[1]))
     else:
         bindAddr = None
     qtapp = QApplication(sys.argv)
     logging.basicConfig(level=logging.DEBUG)
     with GuiProcess() as pid:
-        with SparkApplication(bindAddr) as appA:
+        with SparkApplication() as appA:
             viewA = MainWindow(appA, pid)
             if bindAddr:
                 viewA.setWindowTitle("Spark %s:%i" % bindAddr)
+                appA.bind(bindAddr)
             else:
                 viewA.setWindowTitle("Spark")
             viewA.show()
