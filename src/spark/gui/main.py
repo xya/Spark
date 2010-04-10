@@ -312,23 +312,41 @@ class ConnectionDialog(QDialog):
 class GuiProcess(QObject):
     def __init__(self):
         super(GuiProcess, self).__init__()
-        self.pid = process.attach("GUI")
+        self.pid = process.attach("GUI", self)
         self.messages = MessageMatcher()
-        self.timer = QTimer(self)
-        QObject.connect(self.timer, SIGNAL('timeout()'), self._idle)
-        self.timer.start()
-    
-    def _idle(self):
-        while True:
-            success, m = process.try_receive()
-            if not success:
-                break
-            elif not self.messages.match(m):
-                process.logger().info("No rule matched message '%s'" % str(m))
     
     def __enter__(self):
         return self
     
     def __exit__(self, type, e, traceback):
-        self.timer.stop()
         process.detach()
+    
+    def event(self, ev):
+        """ Handle events sent to the object. """
+        if ev.type() == MessageReceived.Type:
+            if not self.messages.match(m):
+                process.logger().info("No rule matched message '%s'" % str(m))
+            return True
+        else:
+            return False
+    
+    def put(self, m):
+        """ Add a process message to the message loop's queue. """
+        QApplication.postEvent(self, MessageReceivedEvent(m))
+    
+    def get(self):
+        raise Exception("Can't receive messages on the GUI thread. " +
+                        "Use the message matching mechanism instead.")
+    
+    def try_get(self):
+        return (False, None)
+    
+    def close(self):
+        pass
+
+class MessageReceivedEvent(QEvent):
+    """ A message was received by a process. """
+    Type = QEvent.registerEventType()
+    def __init__(self, m):
+        super(MessageReceivedEvent, self).__init__(MessageReceivedEvent.Type)
+        self.m = m

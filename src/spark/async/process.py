@@ -54,7 +54,7 @@ def logger():
     else:
         return logging.getLogger()
 
-def attach(name=None):
+def attach(name=None, queue=None):
     """ Associate the current thread with a PID and message queue. Return the PID. """
     current_pid = current()
     if current_pid is not None:
@@ -62,6 +62,8 @@ def attach(name=None):
     with _lock:
         pid = _new_id()
         p = _create_process(pid, name)
+        if queue is not None:
+            p.queue = queue
         _set_current_process(pid)
         p.thread = threading.current_thread()
     log = logger()
