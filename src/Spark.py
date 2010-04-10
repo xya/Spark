@@ -28,17 +28,16 @@ if __name__ == "__main__":
     from spark.fileshare import SparkApplication
     from spark.async import process
     if (len(sys.argv) > 1) and sys.argv[1].isdigit():
-        port = int(sys.argv[1])
+        bindAddr = ("127.0.0.1", int(sys.argv[1]))
     else:
-        port = None
+        bindAddr = None
     qtapp = QApplication(sys.argv)
     logging.basicConfig(level=logging.DEBUG)
     with GuiProcess() as pid:
-        with SparkApplication() as appA:
+        with SparkApplication(bindAddr) as appA:
             viewA = MainWindow(appA, pid)
-            if port:
-                appA.listen(("127.0.0.1", port))
-                viewA.setWindowTitle("Spark %i" % port)
+            if bindAddr:
+                viewA.setWindowTitle("Spark %s:%i" % bindAddr)
             else:
                 viewA.setWindowTitle("Spark")
             viewA.show()
