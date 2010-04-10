@@ -41,28 +41,30 @@ class ProcessIntegrationTest(unittest.TestCase):
     
     @processTimeout(1.0)
     def testTcpSession(self):
-        # TODO: fix connection refused (connect is called before bind/listen/accept)
         log = process.logger()
+        pid = process.current()
         def serverLoop():
             log = process.logger()
-            serverMessenger = TcpMessenger(process.current())
+            serverMessenger = TcpMessenger()
             serverMessenger.listen((BIND_ADDRESS, BIND_PORT))
-            while True:
-                m = process.receive()
-                if match(Request("swap", (None, None)), m):
-                    resp = Response("swap", (m.params[1], m.params[0]), m.transID)
-                    serverMessenger.send(resp)
-                else:
-                    break
+            def handleSwap(m):
+                resp = Response("swap", (m.params[1], m.params[0]), m.transID)
+                serverMessenger.send(resp)
+            loop = MessageMatcher()
+            loop.addPattern(Request("swap", (None, None)), handleSwap)
+            loop.addPattern(("bound", None), lambda m: process.send(pid, m))
+            loop.addPattern(("disconnected", ), result=False)
+            try:
+                loop.run()
+            finally:
+                serverMessenger.close()
         process.spawn(serverLoop, name="ServerLoop")
-        clientMessenger = TcpMessenger(process.current())
+        self.assertMatch(("bound", None), process.receive())
+        clientMessenger = TcpMessenger()
         clientMessenger.connect((BIND_ADDRESS, BIND_PORT))
         clientMessenger.send(Request("swap", ("foo", "bar"), 1))
-        resp = process.receive()
-        if(match(("connection-error", None), resp)):
-            self.fail(str(resp[1]))
-        self.assertMatch(Response("swap", ("bar", "foo"), 1), resp)
-        clientMessenger.disconnect()
+        self.assertMatch(Response("swap", ("bar", "foo"), 1), process.receive())
+        clientMessenger.close()
 
 if __name__ == '__main__':
     import logging
