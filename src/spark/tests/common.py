@@ -76,7 +76,7 @@ def processTimeout(timeout):
     def decorator(fun):
         def wrapper(*args, **kw):
             cont = Future()
-            pid = process.spawn(cont.run, *((fun, ) + args), **kw)
+            pid = process.spawn(cont.run, (fun, ) + args, "TimeoutProcess")
             try:
                 return cont.wait(timeout)
             except WaitTimeoutError:

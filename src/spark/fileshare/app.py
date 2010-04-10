@@ -21,8 +21,8 @@
 import logging
 import functools
 import types
-from spark.async import Reactor, Delegate
-from spark.messaging import TcpTransport, MessagingSession, Service
+from spark.async import Delegate, process
+from spark.messaging import TcpMessenger, NotificationEvent
 from spark.fileshare import FileShare
 
 __all__ = ["SparkApplication", "Session"]
@@ -37,9 +37,7 @@ def sessionMethod(func):
 class SparkApplication(object):
     """ Hold the state of the whole application. """
     def __init__(self):
-        self.reactor = Reactor.create()
-        self.reactor.launch_thread()
-        self.session = Session(self.reactor)
+        self.session = Session()
     
     def __enter__(self):
         return self
@@ -49,10 +47,6 @@ class SparkApplication(object):
             self.session.dispose()
         except Exception:
             logging.exception("Error while disposing the session")
-        try:
-            self.reactor.close()
-        except Exception:
-            logging.exception("Error while shutting down the reactor")
     
     @property
     def myIPaddress(self):
@@ -88,49 +82,35 @@ class Session(object):
     Represent one session of file sharing. An user can share files with only
     one user per session.
     """
-    def __init__(self, reactor):
-        self.reactor = reactor
-        self.connected = Delegate()
-        self.disconnected = Delegate()
-        self.filesUpdated = Delegate()
-        self.transport = TcpTransport(reactor)
-        self.transport.connected += self._transportConnected
-        self.transport.disconnected += self._transportDisconnected
-        self.messaging = MessagingSession(self.transport)
-        self.share = FileShare(self.messaging)
-        self.share.filesUpdated += self._shareFilesUpdated
-        # wrap FileShare's methods so they are invoked on the reactor's thread
-        for methodName in _fileShareMethods:
-            method = sessionMethod(getattr(self.share, methodName))
-            setattr(self, methodName, types.MethodType(method, self))
+    def __init__(self):
+        self.pid = process.spawn(self._entry, name="Session")
+        self.connected = NotificationEvent("connected")
+        self.disconnected = NotificationEvent("disconnected")
+        self.filesUpdated = NotificationEvent("files-updated")
+    
+    def _entry(self):
+        self.messenger = TcpMessenger(process.current())
+        #self.share = FileShare()
+        #self.share.run()
     
     def dispose(self):
-        if self.transport:
-            self.transport.disconnect()
-            self.transport = None
+        if self.pid:
+            process.send(self.pid, "close")
+            self.pid = None
     
     def connect(self, address):
-        return self.transport.connect(address)
+        process.send(self.pid, ("connect", address))
     
     def listen(self, address):
-        return self.transport.listen(address)
+        process.send(self.pid, ("listen", address))
     
     def disconnect(self):
-        return self.transport.disconnect()
-    
-    def _transportConnected(self, *args):
-        self.connected(*args)
-    
-    def _transportDisconnected(self, *args):
-        self.disconnected(*args)
+        process.send(self.pid, ("disconnect", ))
     
     @property
     def isConnected(self):
         """ Determine whether the session is active, i.e. we are connected to a remote peer. """
-        return self.transport.connection is not None
-    
-    def _shareFilesUpdated(self, *args):
-        self.filesUpdated(*args)
+        return False
     
     @property
     def activeTransfers(self):

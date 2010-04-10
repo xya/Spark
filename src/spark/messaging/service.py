@@ -30,9 +30,9 @@ from functools import wraps
 from spark.async import Future, Delegate, coroutine, TaskFailedError, process
 from spark.messaging.common import AsyncMessenger, MessageDelivery
 from spark.messaging.protocol import negociateProtocol, messageReader, messageWriter
-from spark.messaging.messages import Request, Response, Notification, match
+from spark.messaging.messages import Request, Response, Notification, match, NotificationEvent
 
-__all__ = ["Service", "Transport", "TcpTransport", "PipeTransport", "MessagingSession"]
+__all__ = ["Service", "Transport", "TcpTransport", "PipeTransport", "MessagingSession", "TcpMessenger"]
 
 class Transport(object):
     """
@@ -422,8 +422,10 @@ class Service(object):
             method(n)
 
 class TcpMessenger(object):
-    def __init__(self):
-        self.pid = process.spawn(self._entry)
+    def __init__(self, recipient=None):
+        self.pid = process.spawn(self._entry, (recipient, ), "TcpMessenger")
+        self.connected = NotificationEvent("connected")
+        self.protocolNegociated = NotificationEvent("protocol-negociated")
     
     def connect(self, addr):
         process.send(self.pid, ("connect", addr))
@@ -440,8 +442,9 @@ class TcpMessenger(object):
     def send(self, message):
         process.send(self.pid, ("send", message))
 
-    def _entry(self):
+    def _entry(self, recipient):
         state = TcpProcessState()
+        state.recipient = recipient
         try:
             while True:
                 m = process.receive()
@@ -485,25 +488,24 @@ class TcpMessenger(object):
         self._connected(state, conn, remoteAddr, False)
 
     def _connected(self, state, conn, remoteAddr, initiating):
+        state.logger.info("Connected to %s.", repr(remoteAddr))
         state.connState = Transport.CONNECTED
         state.conn = conn
         state.remoteAddr = remoteAddr
-        state.logger.info("Connected to %s.", repr(remoteAddr))
-        if state.recipient:
-            process.send(state.recipient, Notification("connected", remoteAddr))
         stream = SocketWrapper(state.conn)
+        self.connected(remoteAddr)
         name = negociateProtocol(stream, initiating)
         state.logger.info("Negociated protocol '%s'.", name)
         state.stream = stream
         state.protocol = name
         state.writer = messageWriter(stream, name)
+        self.protocolNegociated(name)
         if state.recipient:
-            process.send(state.recipient, Notification("protocol-negociated", name))
             self._spawnReceiver(state)
     
     def _spawnReceiver(self, state):
         receiverArgs = (state.stream, state.protocol, state.recipient)
-        state.receiver = process.spawn(self._receiveMessages, *receiverArgs)
+        state.receiver = process.spawn(self._receiveMessages, receiverArgs, "TcpReceiver")
     
     def _setRecipient(self, m, state):
         if not state.recipient:

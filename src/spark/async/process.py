@@ -25,7 +25,7 @@ import logging
 from spark.async import BlockingQueue, QueueClosedError
 
 __all__ = ["all", "current", "run_main", "spawn", "send", "try_send", "receive", "try_receive",
-           "ProcessExited", "ProcessKilled", "match"]
+           "ProcessExited", "ProcessKilled", "ProcessState", "ProcessEvent", "match"]
 
 _lock = threading.RLock()
 _processes = {}
@@ -40,16 +40,17 @@ def all():
 def current():
     """ Return the ID of the currently executing process. """
     try:
-        return _current.pid
+        return _current.p.pid
     except AttributeError:
         return None
 
 def logger():
     """ Return a logger for the currently executing process. """
-    if hasattr(_current, "pid"):
-        if not hasattr(_current, "logger"):
-            _current.logger = logging.getLogger("process-%i" % _current.pid)
-        return _current.logger
+    if hasattr(_current, "p"):
+        p = _current.p
+        if p.logger is None:
+            p.logger = logging.getLogger(p.displayName())
+        return p.logger
     else:
         return logging.getLogger()
 
@@ -63,6 +64,8 @@ def attach(name=None):
         p = _create_process(pid, name)
         _set_current_process(pid)
         p.thread = threading.current_thread()
+    log = logger()
+    log.info("Process attached.")
     return pid
 
 def detach():
@@ -70,21 +73,23 @@ def detach():
     current_pid = current()
     if current_pid is None:
         raise Exception("The current thread has no PID")
+    log = logger()
+    log.info("Process detached.")
     with _lock:
         _remove_current_process(current_pid)
 
-def spawn(fun, *args, **kargs):
+def spawn(fun, args=(), name=None):
     """ Create a new process and return its PID. """
     with _lock:
         pid = _new_id()
-        p = _create_process(pid, None)
+        p = _create_process(pid, name)
     def entry():
         with _lock:
             _set_current_process(pid)
         log = logger()
         log.info("Process started.")
         try:
-            fun(*args, **kargs)
+            fun(*args)
         except Exception:
             log.exception("An exception was raised by the process")
         finally:
@@ -120,13 +125,13 @@ def try_send(pid, m):
 def receive():
     """ Retrieve a message from the current process' queue. """
     try:
-        queue = _current.queue
+        p = _current.p
     except NameError:
         raise Exception("The current thread has no PID")
     try:
-        return queue.get()
+        return p.queue.get()
     except QueueClosedError:
-        raise ProcessKilled("The process got killed (PID: %i)" % current())
+        raise ProcessKilled("The process got killed (PID: %i)" % p.pid)
 
 def try_receive():
     """
@@ -134,10 +139,10 @@ def try_receive():
     If a message can't be retrieved now, return (False, None).
     """
     try:
-        queue = _current.queue
+        p = _current.p
     except NameError:
         raise Exception("The current thread has no PID")
-    return queue.get_nowait()
+    return p.queue.get_nowait()
 
 def kill(pid, flushQueue=True):
     """ Kill the specified process by closing its message queue. Return False on error. """
@@ -163,15 +168,12 @@ def _create_process(pid, name):
     return p
 
 def _set_current_process(pid):
-    p = _processes[pid]
-    _current.pid = pid
-    _current.queue = p.queue
+    _current.p = _processes[pid]
 
 def _remove_current_process(current_pid):
-    queue = _current.queue
-    queue.close()
-    _current.pid = None
-    _current.queue = None
+    p = _current.p
+    p.queue.close()
+    del _current.p
     #del _processes[current_pid]
 
 class Process(object):
@@ -180,9 +182,55 @@ class Process(object):
         self.name = name
         self.queue = BlockingQueue(64)
         self.thread = None
+        self.logger = None
+    
+    def displayName(self):
+        if self.name:
+            return "%s-%i" % (self.name, self.pid)
+        else:
+            return "process-%i" % self.pid
 
 class ProcessExited(Exception):
     pass
 
 class ProcessKilled(Exception):
     pass
+
+class ProcessState(object):
+    """ Object that can be used to store a process' state (which should not be shared across threads). """
+    pass
+
+class ProcessEvent(object):
+    """ Event which can be suscribed by other processes. """
+    def __init__(self, lock=None):
+        self.__lock = lock or threading.Lock()
+        self.__suscribers = set()
+    
+    def suscribe(self, pid=None):
+        """ Suscribe a process to start receiving notifications of this event. """
+        if not pid:
+            pid = current()
+            if not pid:
+                raise Exception("The current thread has no PID")
+        with self.__lock:
+            self.__suscribers.add(pid)
+    
+    def unsuscribe(self, pid=None):
+        """ Unsuscribe a process to stop receiving notifications of this event. """
+        if not pid:
+            pid = current()
+            if not pid:
+                raise Exception("The current thread has no PID")
+        with self.__lock:
+            self.__suscribers.remove(pid)
+
+    def __call__(self, m):
+        """ Send a message to all suscribed processes. """
+        # don't send messages with the lock held, so need to copy the suscribers
+        with self.__lock:
+            suscribers = self.__suscribers.copy()
+        for pid in suscribers:
+            try:
+                send(pid, m)
+            except Exception:
+                pass

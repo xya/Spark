@@ -23,6 +23,8 @@ import os
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from spark.gui.filelist import FileList, FileInfoWidget, iconPath
+from spark.async import process
+from spark.messaging import MessageMatcher
 from spark.fileshare import SharedFile, TransferInfo, UPLOAD, DOWNLOAD
 
 __all__ = ["MainView"]
@@ -39,12 +41,13 @@ class MainView(object):
         MainView.qtapp.exec_()
 
 class MainWindow(QMainWindow):
-    def __init__(self, app, parent=None):
+    def __init__(self, app, pid, parent=None):
         super(MainWindow, self).__init__(parent)
         self.setWindowIcon(QIcon(iconPath("emblems/emblem-new", 16)))
         self.setWindowTitle("Spark")
         self.setMinimumSize(429, 360)
         self.app = app
+        self.pid = pid
         self.actions = {}
         self.initToolbar()
         self.initTransferList()
@@ -52,10 +55,13 @@ class MainWindow(QMainWindow):
         self.sharedFiles = {}
         self.fileIDs = []
         self.selectedID = None
-        self.app.session.connected += onGuiThread(self.sessionConnected)
-        self.app.session.disconnected += onGuiThread(self.sessionDisconnected)
-        self.app.session.filesUpdated += onGuiThread(self.sharedFilesUpdated)
+        self.suscribe(self.app.session.connected, self.sessionConnected)
+        self.suscribe(self.app.session.disconnected, self.sessionDisconnected)
+        self.suscribe(self.app.session.filesUpdated, self.sharedFilesUpdated)
         self.sharedFilesUpdated()
+    
+    def suscribe(self, source, callable):
+        source.suscribe(self.pid.messages, callable)
     
     def createAction(self, icon, size, text, help=None):
         action = QAction(QIcon(iconPath(icon, size)), text, self)
@@ -236,7 +242,7 @@ class MainWindow(QMainWindow):
     
     def sharedFilesUpdated(self):
         self.updateStatusBar()
-        self.app.session.files().after(onGuiThread(self.end_listFiles))
+        #self.app.session.files().after(onGuiThread(self.end_listFiles))
     
     def sessionConnected(self, initiating):
         self.updateStatusBar()
@@ -303,35 +309,26 @@ class ConnectionDialog(QDialog):
         else:
             self.accept()
 
-class Invoker(QObject):
+class GuiProcess(QObject):
     def __init__(self):
-        super(Invoker, self).__init__()
+        super(GuiProcess, self).__init__()
+        self.pid = process.attach("GUI")
+        self.messages = MessageMatcher()
+        self.timer = QTimer(self)
+        QObject.connect(self.timer, SIGNAL('timeout()'), self._idle)
+        self.timer.start()
     
-    def event(self, ev):
-        """ Handle events sent to the object. """
-        if ev.type() == InvokeEvent.Type:
-            ev()
-            return True
-        else:
-            return False
-
-class InvokeEvent(QEvent):
-    """ Hold information about a function to invoke. """
-    Type = QEvent.registerEventType()
-    def __init__(self, func, *args, **kwargs):
-        super(InvokeEvent, self).__init__(InvokeEvent.Type)
-        self.func = func
-        self.args = args
-        self.kwargs = kwargs
+    def _idle(self):
+        while True:
+            success, m = process.try_receive()
+            if not success:
+                break
+            elif not self.messages.match(m):
+                process.logger().info("No rule matched message '%s'" % str(m))
     
-    def __call__(self):
-        """ Invoke the function. """
-        self.func(*self.args, **self.kwargs)
-
-_invoker = Invoker()
-
-def onGuiThread(func):
-    """  Invoke the function on the application's GUI thread. """
-    def wrapper(*args, **kwargs):
-        QApplication.postEvent(_invoker, InvokeEvent(func, *args, **kwargs))
-    return wrapper
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, type, e, traceback):
+        self.timer.stop()
+        process.detach()

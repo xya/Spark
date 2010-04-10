@@ -20,10 +20,10 @@
 
 import json
 from struct import Struct
-from spark.async import Future
+from spark.async import Future, process
 
 __all__ = ["Message", "TextMessage", "Request", "Response",
-           "Notification", "Blob", "Block", "match"]
+           "Notification", "Blob", "Block", "match", "MessageMatcher", "NotificationEvent"]
 
 def match(pattern, o):
     """ Try to match an object against a pattern. Return True if the pattern is matched. """
@@ -135,3 +135,47 @@ class MessageWriter(object):
     def write(self, m):
         """ Write a message to the file. """
         return self.file.write(self.format(m))
+
+class NotificationEvent(process.ProcessEvent):
+    """ Notification event which can be suscribed by other processes. """
+    def __init__(self, name, lock=None):
+        super(NotificationEvent, self).__init__(lock)
+        self.name = name
+    
+    def suscribe(self, pid=None, matcher=None, callable=None):
+        """ Suscribe a process to start receiving notifications of this event. """
+        if matcher and callable:
+            matcher.addNotification(self.name, callable)
+        super(NotificationEvent, self).suscribe(pid)
+    
+    def __call__(self, *args):
+        """ Send a notification to all suscribed processes. """
+        if len(args) == 0:
+            params = None
+        elif len(args) == 1:
+            params = args[0]
+        else:
+            params = args
+        m = Notification(self.name, params)
+        super(NotificationEvent, self).__call__(m)
+
+class MessageMatcher(object):
+    """ Matches messages against a list of patterns. """
+    def __init__(self):
+        self.rules = []
+    
+    def addPattern(self, pattern, callable):
+        """ Add a pattern to match messages. """
+        self.rules.append((pattern, callable))
+    
+    def addNotification(self, tag, callable):
+        """ Add a pattern to match notifications that have a certain tag. """
+        self.addPattern(Notification(tag), callable)
+    
+    def match(self, m):
+        """ Match the message against the patterns. """
+        for pattern, callable in self.rules:
+            if match(pattern, m):
+                callable(m)
+                return True
+        return False

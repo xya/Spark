@@ -24,17 +24,19 @@ if __name__ == "__main__":
     import os
     import logging
     from PyQt4.QtGui import QApplication
-    from spark.gui.main import MainWindow
+    from spark.gui.main import MainWindow, GuiProcess
     from spark.fileshare import SparkApplication
+    from spark.async import process
+    if (len(sys.argv) > 0) and sys.argv[0].isdigit():
+        port = int(sys.argv[0])
+    else:
+        port = 4550
     qtapp = QApplication(sys.argv)
     logging.basicConfig(level=logging.DEBUG)
-    with SparkApplication() as appA:
-        appA.session.listen(("127.0.0.1", 4550))
-        with SparkApplication() as appB:
-            viewA = MainWindow(appA)
-            viewB = MainWindow(appB)
-            viewA.setWindowTitle("Spark 4550")
+    with GuiProcess() as pid:
+        with SparkApplication() as appA:
+            appA.session.listen(("127.0.0.1", port))
+            viewA = MainWindow(appA, pid)
+            viewA.setWindowTitle("Spark %i" % port)
             viewA.show()
-            viewB.setWindowTitle("Spark 4551")
-            viewB.show()
             qtapp.exec_()

@@ -250,7 +250,7 @@ class ProcessTest(unittest.TestCase):
         def entry():
             pid = process.attach()
             try:
-                process.spawn(process.send, pid, "foo")
+                process.spawn(process.send, (pid, "foo"))
                 cont.completed(process.receive())
             finally:
                 process.detach()
