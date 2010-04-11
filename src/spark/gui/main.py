@@ -24,7 +24,7 @@ from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from spark.gui.filelist import FileList, FileInfoWidget, iconPath
 from spark.async import Process
-from spark.messaging import MessageMatcher, Notification
+from spark.messaging import MessageMatcher, EventData
 from spark.fileshare import SharedFile, TransferInfo, UPLOAD, DOWNLOAD
 
 __all__ = ["MainView"]
@@ -286,8 +286,8 @@ class ConnectionDialog(QDialog):
         address = (str(self.hostText.text()), int(self.portText.text()))
         self.connectButton.setEnabled(False)
         self.progressBar.setVisible(True)
-        self.patterns.append((Notification("connected", None), self.connectOK))
-        self.patterns.append((Notification("connection-error", None), self.connectError))
+        self.patterns.append((EventData("connected"), self.connectOK))
+        self.patterns.append((EventData("connection-error"), self.connectError))
         for pattern, callable in self.patterns:
             self.pid.messages.addPattern(pattern, callable)
         self.app.connect(address)

@@ -18,23 +18,29 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+from collections import Sequence, Mapping
 import json
 from struct import Struct
 from spark.async import Future, Process, ProcessNotifier
 
-__all__ = ["Message", "TextMessage", "Request", "Response",
-           "Notification", "Blob", "Block", "match", "MessageMatcher", "Event"]
+__all__ = ["Message", "TextMessage", "Request", "Response", "Notification",
+           "Blob", "Block", "match", "MessageMatcher", "Event", "EventData"]
 
 def match(pattern, o):
     """ Try to match an object against a pattern. Return True if the pattern is matched. """
     messageAttr = ("type", "tag", "params", "transID")
+    eventAttr = ("name", "params")
     if pattern is None:
         return True
     if type(pattern) is type:
         return type(o) is pattern
+    # following two clauses are temporary
     elif all(hasattr(pattern, at) for at in messageAttr):
         # match a message
         return all(match(getattr(pattern, at), getattr(o, at, None)) for at in messageAttr)
+    elif all(hasattr(pattern, at) for at in eventAttr):
+        # match a event
+        return all(match(getattr(pattern, at), getattr(o, at, None)) for at in eventAttr)
     elif type(pattern) is str or type(pattern) is unicode:
         return pattern == o
     elif hasattr(pattern, "__len__") and hasattr(o, "__len__"):
@@ -138,8 +144,17 @@ class MessageWriter(object):
         """ Write a message to the file. """
         return self.file.write(self.format(m))
 
+class EventData(object):
+    """ Contains information about an internal event. """
+    def __init__(self, name, params=None):
+        self.name = name
+        self.params = params
+    
+    def __str__(self):
+        return "EventData(%s, %s)" % (self.name, str(self.params))
+
 class Event(ProcessNotifier):
-    """ Notification event which can be suscribed by other processes. """
+    """ Event which can be suscribed by other processes. """
     def __init__(self, name, lock=None):
         super(Event, self).__init__(lock)
         self.name = name
@@ -147,7 +162,7 @@ class Event(ProcessNotifier):
     def suscribe(self, pid=None, matcher=None, callable=None, result=True):
         """ Suscribe a process to start receiving notifications of this event. """
         if matcher:
-            matcher.addNotification(self.name, callable, result)
+            matcher.addEvent(self.name, callable, result)
         super(Event, self).suscribe(pid)
     
     def __call__(self, *args):
@@ -158,8 +173,7 @@ class Event(ProcessNotifier):
             params = args[0]
         else:
             params = args
-        m = Notification(self.name, params)
-        super(Event, self).__call__(m)
+        super(Event, self).__call__(EventData(self.name, params))
 
 class MessageMatcher(object):
     """ Matches messages against a list of patterns. """
@@ -174,9 +188,13 @@ class MessageMatcher(object):
         """ Remove a pattern from the list. """
         self.rules.remove((pattern, callable, result))
     
-    def addNotification(self, tag, callable=None, result=True):
-        """ Add a pattern to match notifications that have a certain tag. """
-        self.addPattern(Notification(tag), callable, result)
+    def addEvent(self, name, callable=None, result=True):
+        """ Add a pattern to match events with the specified name. """
+        self.addPattern(EventData(name), callable, result)
+    
+    def removeEvent(self, name, callable=None, result=True):
+        """ Remove a pattern to match events with the specified name. """
+        self.removePattern(EventData(name), callable, result)
     
     def match(self, m, *args):
         """ Match the message against the patterns. """
