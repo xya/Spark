@@ -76,7 +76,7 @@ class TcpMessenger(object):
         process.send(self.pid, ("send", message, senderPid))
     
     def close(self):
-        process.try_send(self.pid, ("close", ))
+        process.try_send(self.pid, "stop")
     
     def _entry(self):
         state = TcpProcessState()
@@ -87,7 +87,7 @@ class TcpMessenger(object):
         loop.addPattern(("accept", int), self._accept)
         loop.addPattern(("disconnect", ), self._disconnect)
         loop.addPattern(("send", None, int), self._send)
-        loop.addPattern(("close", ), result=False)
+        loop.addPattern("stop", result=False)
         # internal messages
         loop.addPattern(("connected", None, None, bool), self._connected)
         loop.addPattern(("end-of-stream", int), self._endOfStream)
@@ -288,24 +288,12 @@ class Service(object):
         self.connected = NotificationEvent("connected")
         self.connectionError = NotificationEvent("connection-error")
         self.disconnected = NotificationEvent("disconnected")
-        self.pid = None
-    
-    def start(self):
-        """ Start a new process for the service. """
-        if not self.pid:
-            self.pid = process.spawn(self._entry, name=self.__class__.__name__)
-        return self.pid
-    
-    def dispose(self):
-        if self.pid:
-            process.try_send(self.pid, "close")
-            self.pid = None
     
     def initState(self, loop, state):
         state.bindAddr = None
         state.messenger = TcpMessenger()
     
-    def initMessagePatterns(self, loop, state):
+    def initPatterns(self, loop, state):
         # messages received from TcpMessenger
         state.messenger.protocolNegociated.suscribe(matcher=loop, callable=self.onProtocolNegociated)
         state.messenger.disconnected.suscribe(matcher=loop, callable=self.onDisconnected)
@@ -314,13 +302,14 @@ class Service(object):
         loop.addPattern(("connect", None), self.connectMessenger)
         loop.addPattern(("bind", None), self.bindMessenger)
         loop.addPattern(("disconnect", ), self.disconnectMessenger)
-        loop.addPattern("close", result=False)
+        loop.addPattern("stop", result=False)
         
-    def _entry(self):
+    def run(self):
+        """ Run the service. This method blocks until the service has finished executing. """
         loop = MessageMatcher()
         state = process.ProcessState()
         self.initState(loop, state)
-        self.initMessagePatterns(loop, state)
+        self.initPatterns(loop, state)
         try:
             loop.run(state)
         finally:

@@ -25,7 +25,7 @@ import logging
 from spark.async.queue import BlockingQueue, QueueClosedError
 
 __all__ = ["all", "current", "run_main", "spawn", "send", "try_send", "receive", "try_receive",
-           "ProcessExited", "ProcessKilled", "ProcessState", "ProcessEvent", "match"]
+           "ProcessExited", "ProcessKilled", "ProcessState", "ProcessEvent", "ProcessRunner"]
 
 _lock = threading.RLock()
 _processes = {}
@@ -250,3 +250,35 @@ class ProcessEvent(object):
                 send(pid, m)
             except Exception:
                 pass
+
+class ProcessRunner(object):
+    """ Run objects that have a run() method in a separate process. """
+    def __init__(self, runnable, name=None):
+        self.pid = None
+        self.runnable = runnable
+        if name:
+            self.name = name
+        else:
+            self.name = runnable.__class__.__name__
+    
+    def __enter__(self):
+        """ Start a new process to run the object. """
+        self.start()
+        return self
+    
+    def __exit__(self, type, val, tb):
+        """ Stop the process if it is running. """
+        self.stop()
+    
+    def start(self):
+        """ Start a new process to run the object. """
+        if not self.pid:
+            p = self.runnable
+            self.pid = spawn(p.run, name=self.name)
+        return self.pid
+    
+    def stop(self):
+        """ Stop the process if it is running. """
+        if self.pid:
+            try_send(self.pid, "stop")
+            self.pid = None

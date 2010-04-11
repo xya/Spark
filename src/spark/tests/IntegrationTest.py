@@ -36,8 +36,8 @@ class TestServer(Service):
         super(TestServer, self).__init__()
         self.listening = NotificationEvent("listening")
     
-    def initMessagePatterns(self, loop, state):
-        super(TestServer, self).initMessagePatterns(loop, state)
+    def initPatterns(self, loop, state):
+        super(TestServer, self).initPatterns(loop, state)
         state.messenger.listening.suscribe(matcher=loop, callable=self.handleListening)
         state.messenger.disconnected.suscribe(matcher=loop, result=False)
         loop.addPattern(Request("swap", (None, None)), self.handleSwap)
@@ -58,9 +58,10 @@ class ProcessIntegrationTest(unittest.TestCase):
     def testTcpSession(self):
         pid = process.current()
         server = TestServer()
-        server.start()
+        runner = process.ProcessRunner(server)
+        runner.start()
         server.listening.suscribe()
-        process.send(server, ("bind", (BIND_ADDRESS, BIND_PORT)))
+        process.send(runner.pid, ("bind", (BIND_ADDRESS, BIND_PORT)))
         self.assertMatch(Notification("listening", None), process.receive())
         clientMessenger = TcpMessenger()
         clientMessenger.protocolNegociated.suscribe()

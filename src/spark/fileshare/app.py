@@ -35,25 +35,26 @@ class SparkApplication(object):
         self._uploadSpeed = 0.0
         self._downloadSpeed = 0.0
         self.session = Session()
-        self.session.start()
+        self.runner = process.ProcessRunner(self.session)
+        self.runner.start()
     
     def __enter__(self):
         return self
     
     def __exit__(self, type, val, tb):
         try:
-            self.session.dispose()
+            self.runner.stop()
         except Exception:
-            logging.exception("Error while disposing the session")
+            logging.exception("Error while stoping the session")
     
     def connect(self, address):
-        process.send(self.session.pid, ("connect", address))
+        process.send(self.runner.pid, ("connect", address))
     
     def bind(self, address):
-        process.send(self.session.pid, ("bind", address))
+        process.send(self.runner.pid, ("bind", address))
     
     def disconnect(self):
-        process.send(self.session.pid, ("disconnect", ))
+        process.send(self.runner.pid, ("disconnect", ))
     
     @property
     def myIPaddress(self):
@@ -110,8 +111,8 @@ class Session(Service):
         super(Session, self).initState(loop, state)
         state.isConnected = False
         
-    def initMessagePatterns(self, loop, state):
-        super(Session, self).initMessagePatterns(loop, state)
+    def initPatterns(self, loop, state):
+        super(Session, self).initPatterns(loop, state)
         loop.addPattern(Request("update-session-state"), self.updateSessionState)
         
     def onProtocolNegociated(self, m, state):
