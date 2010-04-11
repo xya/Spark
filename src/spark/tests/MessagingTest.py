@@ -120,12 +120,15 @@ class MessageMatchingTest(unittest.TestCase):
     
     def testMessages(self):
         """ match() should properly match message patterns """
-        assertMatch(Request("swap"), Request("swap", ("foo", "bar"), 1))
-        assertMatch(Request("swap", (None, None)), Request("swap", ("foo", "bar"), 1))
+        assertMatch(Request("swap", str, str), Request("swap", "foo", "bar").withID(1))
         assertMatch(Event("listening", None), Event('listening', ('127.0.0.1', 4550)))
-        assertNoMatch(Request("paws"), Request("swap", ("foo", "bar"), 1))
-        assertNoMatch(Request("swap", ("foo", "bar"), 1), Request("swap"))
+        assertNoMatch(Request("paws"), Request("swap", "foo", "bar").withID(1))
+        assertNoMatch(Request("swap", "foo", "bar").withID(1), Request("swap"))
         assertNoMatch(('disconnect', ), Event("protocol-negociated", "SPARKv1"))
+    
+    def testMatchSubclass(self):
+        """ match()  should match a type if it is one of its parent types """
+        assertMatch(basestring, u"foo")
 
 if __name__ == '__main__':
     run_tests()

@@ -49,7 +49,7 @@ class TcpMessenger(object):
         self.pid = Process.spawn(self._entry, name="TcpMessenger")
         self.listening = EventSender("listening", None)
         self.connected = EventSender("connected", None)
-        self.protocolNegociated = EventSender("protocol-negociated", str)
+        self.protocolNegociated = EventSender("protocol-negociated", basestring)
         self.disconnected = EventSender("disconnected")
     
     def connect(self, addr, senderPid=None):
@@ -191,7 +191,7 @@ class TcpMessenger(object):
         Process.send(messengerPid, Event("connected", conn, remoteAddr, initiating))
         # the connection might have to be dropped (if we're already connected)
         resp = Process.receive()
-        if not match(Command("receive", None, str), resp):
+        if not match(Command("receive", None, basestring), resp):
             try:
                 conn.close()
             except Exception:
@@ -346,6 +346,6 @@ class Service(object):
     def disconnectMessenger(self, m, state):
         state.messenger.disconnect()
     
-    def sendResponse(self, req, state, params):
+    def sendResponse(self, state, req, *params):
         """ Send a response to a request. """
-        state.messenger.send(Response(req.tag, params, req.transID))
+        state.messenger.send(Response(req.tag, *params).withID(req.transID))

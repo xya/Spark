@@ -40,13 +40,13 @@ class TestServer(Service):
         super(TestServer, self).initPatterns(loop, state)
         loop.suscribeTo(state.messenger.listening, callable=self.handleListening)
         loop.suscribeTo(state.messenger.disconnected, result=False)
-        loop.addPattern(Request("swap", (None, None)), self.handleSwap)
+        loop.addPattern(Request("swap", basestring, basestring), self.handleSwap)
     
     def handleListening(self, m, state):
         self.listening(m)
     
     def handleSwap(self, req, state):
-        self.sendResponse(req, state, (req.params[1], req.params[0]))
+        self.sendResponse(state, req, req[4], req[3])
     
 class ProcessIntegrationTest(unittest.TestCase):
     @processTimeout(1.0)
@@ -61,9 +61,9 @@ class ProcessIntegrationTest(unittest.TestCase):
         clientMessenger = TcpMessenger()
         clientMessenger.protocolNegociated.suscribe()
         clientMessenger.connect((BIND_ADDRESS, BIND_PORT))
-        assertMatch(Event("protocol-negociated", str), Process.receive())
-        clientMessenger.send(Request("swap", ("foo", "bar"), 1))
-        assertMatch(Response("swap", ("bar", "foo"), 1), Process.receive())
+        assertMatch(Event("protocol-negociated", basestring), Process.receive())
+        clientMessenger.send(Request("swap", "foo", "bar").withID(1))
+        assertMatch(Response("swap", "bar", "foo").withID(1), Process.receive())
         clientMessenger.close()
 
 if __name__ == '__main__':

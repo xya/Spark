@@ -67,7 +67,7 @@ class MessageReader(object):
             raise ValueError("Unknown type '%s'" % type)
         jsonParams, endIndex = self.jsonDecoder.raw_decode(params)
         intTransID = int(transID)
-        return self.textTypes[type](tag, jsonParams, intTransID)
+        return self.textTypes[type](tag, *jsonParams).withID(intTransID)
     
     def parseBlob(self, data):
         typeID = ord(data[1])

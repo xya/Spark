@@ -29,34 +29,34 @@ from spark.tests.common import run_tests, processTimeout, assertMatch
 from StringIO import StringIO
 
 TestFile = os.path.join(os.path.dirname(__file__), 'ProtocolTest.log')
-TestText = """0023 > list-files 0 {"register": true}
-007d < list-files 0 {"<guid>": {"id": "<guid>", "last-modified": "20090619T173529.000Z", "name": "Report.pdf", "size": 3145728}}
-007c ! file-added 55 {"id": "<guid>", "last-modified": "20090619T173529.000Z", "name": "SeisRoX-2.0.9660.exe", "size": 3145728}
-0066 > create-transfer 26 {"blocksize": 1024, "file-id": "<guid>", "ranges": [{"end": 3071, "start": 0}]}
-0036 < create-transfer 26 {"id": 2, "state": "inactive"}
-001f > start-transfer 27 {"id": 2}
-0034 < start-transfer 27 {"id": 2, "state": "starting"}
-003a ! transfer-state-changed 56 {"id": 2, "state": "active"}
+TestText = """0025 > list-files 0 [{"register": true}]
+007f < list-files 0 [{"<guid>": {"id": "<guid>", "last-modified": "20090619T173529.000Z", "name": "Report.pdf", "size": 3145728}}]
+007e ! file-added 55 [{"id": "<guid>", "last-modified": "20090619T173529.000Z", "name": "SeisRoX-2.0.9660.exe", "size": 3145728}]
+0068 > create-transfer 26 [{"blocksize": 1024, "file-id": "<guid>", "ranges": [{"end": 3071, "start": 0}]}]
+0038 < create-transfer 26 [{"id": 2, "state": "inactive"}]
+0021 > start-transfer 27 [{"id": 2}]
+0036 < start-transfer 27 [{"id": 2, "state": "starting"}]
+003c ! transfer-state-changed 56 [{"id": 2, "state": "active"}]
 0018 \x00\x01\x00\x02\x00\x00\x00\x00\x00\x0cHello, world
 0018 \x00\x01\x00\x02\x00\x00\x00\x01\x00\x0cSpaces      
 040c \x00\x01\x00\x02\x00\x00\x0b\xff\x04\x00""" + ("!" * 1024) + """
-001f > close-transfer 28 {"id": 2}
-001e < close-transfer 28 {"id": 2}"""
+0021 > close-transfer 28 [{"id": 2}]
+0020 < close-transfer 28 [{"id": 2}]"""
 
 TestItems = [
-    Request("list-files", {"register": True}, 0),
-    Response("list-files", {"<guid>": {"id": "<guid>", "name": "Report.pdf", "size": 3145728, "last-modified": "20090619T173529.000Z"}}, 0),
-    Notification("file-added", {"id": "<guid>", "name": "SeisRoX-2.0.9660.exe", "size": 3145728, "last-modified": "20090619T173529.000Z"}, 55),
-    Request("create-transfer", {"file-id": "<guid>", "blocksize": 1024, "ranges": [{"start": 0, "end": 3071}]}, 26),
-    Response("create-transfer", {"id": 2, "state": "inactive"}, 26),
-    Request("start-transfer", {"id": 2}, 27),
-    Response("start-transfer", {"id": 2, "state": "starting"}, 27),
-    Notification("transfer-state-changed", {"id": 2, "state": "active"}, 56),
+    Request("list-files", {"register": True}).withID(0),
+    Response("list-files", {"<guid>": {"id": "<guid>", "name": "Report.pdf", "size": 3145728, "last-modified": "20090619T173529.000Z"}}).withID(0),
+    Notification("file-added", {"id": "<guid>", "name": "SeisRoX-2.0.9660.exe", "size": 3145728, "last-modified": "20090619T173529.000Z"}).withID(55),
+    Request("create-transfer", {"file-id": "<guid>", "blocksize": 1024, "ranges": [{"start": 0, "end": 3071}]}).withID(26),
+    Response("create-transfer", {"id": 2, "state": "inactive"}).withID(26),
+    Request("start-transfer", {"id": 2}).withID(27),
+    Response("start-transfer", {"id": 2, "state": "starting"}).withID(27),
+    Notification("transfer-state-changed", {"id": 2, "state": "active"}).withID(56),
     Block(2, 0, "Hello, world"),
     Block(2, 1, "Spaces      "),
     Block(2, 3071, "!" * 1024),
-    Request("close-transfer", {"id": 2}, 28),
-    Response("close-transfer", {"id": 2}, 28),
+    Request("close-transfer", {"id": 2}).withID(28),
+    Response("close-transfer", {"id": 2}).withID(28),
 ]
 
 # some tests might change attributes in the messages (e.g. the transaction ID)

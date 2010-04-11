@@ -18,6 +18,7 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+from collections import Sequence
 import json
 from struct import Struct
 
@@ -37,13 +38,12 @@ class Message(object):
         The return value can be a str or unicode object. '''
         raise NotImplementedError()
 
-class TextMessage(Message):
+class TextMessage(Message, Sequence):
     REQUEST = ">"
     RESPONSE = "<"
     NOTIFICATION = "!"
-    Types = [REQUEST, RESPONSE, NOTIFICATION]
     
-    def __init__(self, type, tag, params=None, transID=None):
+    def __init__(self, type, tag, transID, *params):
         self.type = type
         self.tag = tag
         self.transID = transID
@@ -52,18 +52,43 @@ class TextMessage(Message):
     def canonical(self):
         return " ".join([self.type, self.tag, str(self.transID),
             json.dumps(self.params, sort_keys=True, default=_serializable)])
-
+    
+    def withID(self, transID):
+        """ Set the message's transaction ID. """
+        self.transID = transID
+        return self
+    
+    def __len__(self):
+        return 3 + len(self.params)
+    
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return tuple(self)[index]
+        elif index == 0:
+            return self.type
+        elif index == 1:
+            return self.tag
+        elif index == 2:
+            return self.transID
+        elif (index >= 3) and (index < (len(self.params) + 3)):
+            return self.params[index - 3]
+        else:
+            raise IndexError("Index '%i' out of range" % index)
+    
+    def __repr__(self):
+        return repr(self[:])
+    
 class Request(TextMessage):
-    def __init__(self, tag, params=None, transID=None):
-        super(Request, self).__init__(TextMessage.REQUEST, tag, params, transID)
+    def __init__(self, tag, *params):
+        super(Request, self).__init__(TextMessage.REQUEST, tag, None, *params)
 
 class Response(TextMessage):
-    def __init__(self, tag, params=None, transID=None):
-        super(Response, self).__init__(TextMessage.RESPONSE, tag, params, transID)
+    def __init__(self, tag, *params):
+        super(Response, self).__init__(TextMessage.RESPONSE, tag, None, *params)
 
 class Notification(TextMessage):
-    def __init__(self, tag, params=None, transID=None):
-        super(Notification, self).__init__(TextMessage.NOTIFICATION, tag, params, transID)
+    def __init__(self, tag, *params):
+        super(Notification, self).__init__(TextMessage.NOTIFICATION, tag, None, *params)
 
 class Blob(Message):
     Type = Struct("BB")
@@ -98,6 +123,8 @@ class Block(Blob):
 def _serializable(obj):
     if hasattr(obj, "__getstate__"):
         return obj.__getstate__()
+    elif type(obj) is type:
+        return obj.__name__
     else:
         return obj.__dict__
 

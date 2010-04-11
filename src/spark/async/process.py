@@ -341,10 +341,10 @@ def match(pattern, o):
     """ Try to match an object against a pattern. Return True if the pattern is matched or False otherwise. """
     if (pattern is None) or (pattern == o):
         return True
-    if type(pattern) is type:
+    elif type(pattern) is type:
         # match types
-        return type(o) is pattern
-    elif type(pattern) is str or type(pattern) is unicode:
+        return isinstance(o, pattern)
+    elif isinstance(pattern, basestring):
         # match strings
         return pattern == o
     elif isinstance(pattern, Mapping):
@@ -383,7 +383,7 @@ class EventSender(ProcessNotifier):
     """
     Event which can be suscribed by other processes.
     Example:
-        EventSender("protocol-negociated", str) can send events such as
+        EventSender("protocol-negociated", basestring) can send events such as
         Event("protocol-negociated", "SPARKv1") but not
         Event("protocol-negociated") or even
         Event("connected", "127.0.0.1:4550").
@@ -426,7 +426,10 @@ class MessageMatcher(object):
                 if callable:
                     callable(m, *args)
                 return result
-        Process.logger().info("No rule matched message %s" % repr(m))
+        log = Process.logger()
+        log.info("No rule matched message %s" % repr(m))
+        for i, (pattern, callable, result) in enumerate(reversed(self.rules)):
+            log.info("Pattern %i: %s" % (i, repr(pattern)))
         return False
     
     def run(self, *args):
