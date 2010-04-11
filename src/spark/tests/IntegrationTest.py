@@ -28,11 +28,29 @@ from spark.messaging.messages import *
 from spark.messaging import TcpTransport, PipeTransport, MessagingSession, Service
 from spark.fileshare import FileShare
 from spark.messaging.service import TcpMessenger
+from spark.fileshare.app import Session
 from spark.tests.common import ReactorTestBase, run_tests, processTimeout
 
 BIND_ADDRESS = "127.0.0.1"
 BIND_PORT = 4550
 
+class TestServer(Session):
+    def __init__(self):
+        super(TestServer, self).__init__()
+        self.listening = NotificationEvent("listening")
+        
+    def initMessagePatterns(self, loop, state):
+        super(TestServer, self).initMessagePatterns(loop, state)
+        state.messenger.listening.suscribe(matcher=loop, callable=self.handleListening)
+        state.messenger.disconnected.suscribe(matcher=loop, result=False)
+        loop.addPattern(Request("swap", (None, None)), self.handleSwap)
+    
+    def handleListening(self, m, state):
+        self.listening(m)
+    
+    def handleSwap(self, req, state):
+        self.sendResponse(req, state, (req.params[1], req.params[0]))
+    
 class ProcessIntegrationTest(unittest.TestCase):
     def assertMatch(self, pattern, o):
         if not match(pattern, o):
@@ -41,25 +59,11 @@ class ProcessIntegrationTest(unittest.TestCase):
     
     @processTimeout(1.0)
     def testTcpSession(self):
-        log = process.logger()
         pid = process.current()
-        def serverLoop():
-            log = process.logger()
-            loop = MessageMatcher()
-            serverMessenger = TcpMessenger()
-            serverMessenger.listening.suscribe(pid)
-            serverMessenger.disconnected.suscribe(matcher=loop, result=False)
-            serverMessenger.listen((BIND_ADDRESS, BIND_PORT))
-            serverMessenger.accept()
-            def handleSwap(m):
-                resp = Response("swap", (m.params[1], m.params[0]), m.transID)
-                serverMessenger.send(resp)
-            loop.addPattern(Request("swap", (None, None)), handleSwap)
-            try:
-                loop.run()
-            finally:
-                serverMessenger.close()
-        process.spawn(serverLoop, name="ServerLoop")
+        server = TestServer()
+        server.start()
+        server.listening.suscribe()
+        process.send(server, ("bind", (BIND_ADDRESS, BIND_PORT)))
         self.assertMatch(Notification("listening", None), process.receive())
         clientMessenger = TcpMessenger()
         clientMessenger.protocolNegociated.suscribe()

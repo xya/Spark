@@ -108,6 +108,7 @@ def spawn(fun, args=(), name=None):
 
 def send(pid, m):
     """ Send a message to the specified process. """
+    pid = _to_pid(pid)
     with _lock:
         try:
             p = _processes[pid]
@@ -121,6 +122,7 @@ def send(pid, m):
 
 def try_send(pid, m):
     """ Send a message to the specified process. If the process exited, return False. """
+    pid = _to_pid(pid)
     try:
         send(pid, m)
         return True
@@ -151,6 +153,7 @@ def try_receive():
 
 def kill(pid, flushQueue=True):
     """ Kill the specified process by closing its message queue. Return False on error. """
+    pid = _to_pid(pid)
     with _lock:
         try:
             p = _processes[pid]
@@ -160,6 +163,14 @@ def kill(pid, flushQueue=True):
     logger().info("Killing process %i.", pid)
     queue.close(flushQueue)
     return True
+
+def _to_pid(pid):
+    if hasattr(pid, "pid"):
+        return pid.pid
+    elif type(pid) is int:
+        return pid
+    else:
+        raise Exception("Invalid PID '%s'" % repr(pid))
 
 def _new_id():
     global _nextID

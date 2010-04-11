@@ -37,12 +37,13 @@ def sessionMethod(func):
 class SparkApplication(object):
     """ Hold the state of the whole application. """
     def __init__(self):
-        self.session = Session()
         self._myIPaddress = "127.0.0.1"
         self._isConnected = False
         self._activeTransfers = 0
         self._uploadSpeed = 0.0
         self._downloadSpeed = 0.0
+        self.session = Session()
+        self.session.start()
     
     def __enter__(self):
         return self
@@ -114,14 +115,25 @@ class Session(object):
         self.disconnected = NotificationEvent("disconnected")
         self.stateChanged = NotificationEvent("session-state-changed")
         self.filesUpdated = NotificationEvent("files-updated")
-        self.pid = process.spawn(self._entry, name="Session")
+        self.pid = None
     
-    def _entry(self):
-        loop = MessageMatcher()
-        state = process.ProcessState
+    def start(self):
+        """ Start a new session process. """
+        if not self.pid:
+            self.pid = process.spawn(self._entry, name=self.__class__.__name__)
+        return self.pid
+    
+    def dispose(self):
+        if self.pid:
+            process.try_send(self.pid, "close")
+            self.pid = None
+    
+    def initState(self, loop, state):
         state.isConnected = False
         state.bindAddr = None
         state.messenger = TcpMessenger()
+    
+    def initMessagePatterns(self, loop, state):
         # messages received from TcpMessenger
         state.messenger.protocolNegociated.suscribe(matcher=loop, callable=self.onProtocolNegociated)
         state.messenger.disconnected.suscribe(matcher=loop, callable=self.onDisconnected)
@@ -132,6 +144,12 @@ class Session(object):
         loop.addPattern(("bind", None), self.bindMessenger)
         loop.addPattern(("disconnect", ), self.disconnectMessenger)
         loop.addPattern("close", result=False)
+        
+    def _entry(self):
+        loop = MessageMatcher()
+        state = process.ProcessState()
+        self.initState(loop, state)
+        self.initMessagePatterns(loop, state)
         try:
             loop.run(state)
         finally:
@@ -168,7 +186,6 @@ class Session(object):
     def disconnectMessenger(self, m, state):
         state.messenger.disconnect()
     
-    def dispose(self):
-        if self.pid:
-            process.try_send(self.pid, "close")
-            self.pid = None
+    def sendResponse(self, req, state, params):
+        """ Send a response to a request. """
+        state.messenger.send(Response(req.tag, params, req.transID))
