@@ -25,7 +25,7 @@ from spark.async import *
 from spark.messaging.protocol import *
 from spark.messaging.messages import *
 
-__all__ = ["TcpMessenger"]
+__all__ = ["TcpMessenger", "Service"]
 
 def toCamelCase(tag):
     """ Convert the tag to camel case (e.g. "create-transfer" becomes "createTransfer"). """
@@ -281,3 +281,74 @@ class SocketWrapper(object):
         self.sock = sock
         self.read = sock.recv
         self.write = sock.send
+
+class Service(object):
+    """ Base class for services that handle requests using messaging. """
+    def __init__(self):
+        self.connected = NotificationEvent("connected")
+        self.connectionError = NotificationEvent("connection-error")
+        self.disconnected = NotificationEvent("disconnected")
+        self.pid = None
+    
+    def start(self):
+        """ Start a new process for the service. """
+        if not self.pid:
+            self.pid = process.spawn(self._entry, name=self.__class__.__name__)
+        return self.pid
+    
+    def dispose(self):
+        if self.pid:
+            process.try_send(self.pid, "close")
+            self.pid = None
+    
+    def initState(self, loop, state):
+        state.bindAddr = None
+        state.messenger = TcpMessenger()
+    
+    def initMessagePatterns(self, loop, state):
+        # messages received from TcpMessenger
+        state.messenger.protocolNegociated.suscribe(matcher=loop, callable=self.onProtocolNegociated)
+        state.messenger.disconnected.suscribe(matcher=loop, callable=self.onDisconnected)
+        loop.addPattern(("connection-error", None), self.onConnectionError)
+        # messages received from the caller
+        loop.addPattern(("connect", None), self.connectMessenger)
+        loop.addPattern(("bind", None), self.bindMessenger)
+        loop.addPattern(("disconnect", ), self.disconnectMessenger)
+        loop.addPattern("close", result=False)
+        
+    def _entry(self):
+        loop = MessageMatcher()
+        state = process.ProcessState()
+        self.initState(loop, state)
+        self.initMessagePatterns(loop, state)
+        try:
+            loop.run(state)
+        finally:
+            state.messenger.close()
+    
+    def onConnectionError(self, m, state):
+        self.connectionError(m[1])
+    
+    def onProtocolNegociated(self, m, state):
+        self.connected()
+    
+    def onDisconnected(self, m, state):
+        self.disconnected()
+        if state.bindAddr:
+            state.messenger.accept()
+    
+    def connectMessenger(self, m, state):
+        state.messenger.connect(m[1])
+    
+    def bindMessenger(self, m, state):
+        if not state.bindAddr:
+            state.bindAddr = m[1]
+            state.messenger.listen(state.bindAddr)
+            state.messenger.accept()
+    
+    def disconnectMessenger(self, m, state):
+        state.messenger.disconnect()
+    
+    def sendResponse(self, req, state, params):
+        """ Send a response to a request. """
+        state.messenger.send(Response(req.tag, params, req.transID))

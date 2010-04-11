@@ -25,18 +25,17 @@ import functools
 import time
 from spark.async import Future, coroutine, process
 from spark.messaging.messages import *
-from spark.messaging.service import TcpMessenger
-from spark.fileshare.app import Session
+from spark.messaging.service import TcpMessenger, Service
 from spark.tests.common import run_tests, processTimeout
 
 BIND_ADDRESS = "127.0.0.1"
 BIND_PORT = 4550
 
-class TestServer(Session):
+class TestServer(Service):
     def __init__(self):
         super(TestServer, self).__init__()
         self.listening = NotificationEvent("listening")
-        
+    
     def initMessagePatterns(self, loop, state):
         super(TestServer, self).initMessagePatterns(loop, state)
         state.messenger.listening.suscribe(matcher=loop, callable=self.handleListening)

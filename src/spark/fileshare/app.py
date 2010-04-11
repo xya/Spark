@@ -26,13 +26,6 @@ from spark.messaging import *
 
 __all__ = ["SparkApplication", "Session"]
 
-def sessionMethod(func):
-    """ Invoke a callable in the context of the session. """
-    @functools.wraps(func)
-    def wrapper(self, *args, **kwargs):
-        return self.reactor.send(func, *args, **kwargs)
-    return wrapper
-
 class SparkApplication(object):
     """ Hold the state of the whole application. """
     def __init__(self):
@@ -103,88 +96,34 @@ class SparkApplication(object):
 
 _fileShareMethods = ["files", "addFile", "removeFile", "startTransfer", "stopTransfer"]
 
-class Session(object):
+class Session(Service):
     """
     Represent one session of file sharing. An user can share files with only
     one user per session.
     """
     def __init__(self):
-        self.connected = NotificationEvent("connected")
-        self.connectionError = NotificationEvent("connection-error")
-        self.disconnected = NotificationEvent("disconnected")
+        super(Session, self).__init__()
         self.stateChanged = NotificationEvent("session-state-changed")
         self.filesUpdated = NotificationEvent("files-updated")
-        self.pid = None
-    
-    def start(self):
-        """ Start a new session process. """
-        if not self.pid:
-            self.pid = process.spawn(self._entry, name=self.__class__.__name__)
-        return self.pid
-    
-    def dispose(self):
-        if self.pid:
-            process.try_send(self.pid, "close")
-            self.pid = None
-    
-    def initState(self, loop, state):
-        state.isConnected = False
-        state.bindAddr = None
-        state.messenger = TcpMessenger()
-    
-    def initMessagePatterns(self, loop, state):
-        # messages received from TcpMessenger
-        state.messenger.protocolNegociated.suscribe(matcher=loop, callable=self.onProtocolNegociated)
-        state.messenger.disconnected.suscribe(matcher=loop, callable=self.onDisconnected)
-        loop.addPattern(("connection-error", None), self.onConnectionError)
-        # messages received from the caller
-        loop.addPattern(Request("update-session-state"), self.updateSessionState)
-        loop.addPattern(("connect", None), self.connectMessenger)
-        loop.addPattern(("bind", None), self.bindMessenger)
-        loop.addPattern(("disconnect", ), self.disconnectMessenger)
-        loop.addPattern("close", result=False)
         
-    def _entry(self):
-        loop = MessageMatcher()
-        state = process.ProcessState()
-        self.initState(loop, state)
-        self.initMessagePatterns(loop, state)
-        try:
-            loop.run(state)
-        finally:
-            state.messenger.close()
-    
-    def onConnectionError(self, m, state):
-        self.connectionError(m[1])
-    
+    def initState(self, loop, state):
+        super(Session, self).initState(loop, state)
+        state.isConnected = False
+        
+    def initMessagePatterns(self, loop, state):
+        super(Session, self).initMessagePatterns(loop, state)
+        loop.addPattern(Request("update-session-state"), self.updateSessionState)
+        
     def onProtocolNegociated(self, m, state):
+        super(Session, self).onProtocolNegociated(m, state)
         state.isConnected = True
-        self.connected()
         self.updateSessionState(m, state)
     
     def onDisconnected(self, m, state):
+        super(Session, self).onDisconnected(m, state)
         state.isConnected = False
-        self.disconnected()
         self.updateSessionState(m, state)
-        if state.bindAddr:
-            state.messenger.accept()
     
     def updateSessionState(self, m, state):
         self.stateChanged({"isConnected" : state.isConnected,
             "activeTransfers" : 0, "uploadSpeed" : 0.0, "downloadSpeed" : 0.0})
-    
-    def connectMessenger(self, m, state):
-        state.messenger.connect(m[1])
-    
-    def bindMessenger(self, m, state):
-        if not state.bindAddr:
-            state.bindAddr = m[1]
-            state.messenger.listen(state.bindAddr)
-            state.messenger.accept()
-    
-    def disconnectMessenger(self, m, state):
-        state.messenger.disconnect()
-    
-    def sendResponse(self, req, state, params):
-        """ Send a response to a request. """
-        state.messenger.send(Response(req.tag, params, req.transID))
