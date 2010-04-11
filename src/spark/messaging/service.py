@@ -47,50 +47,50 @@ class TcpMessenger(object):
     
     def __init__(self):
         self.pid = Process.spawn(self._entry, name="TcpMessenger")
-        self.listening = EventSender("listening")
-        self.connected = EventSender("connected")
-        self.protocolNegociated = EventSender("protocol-negociated")
+        self.listening = EventSender("listening", None)
+        self.connected = EventSender("connected", None)
+        self.protocolNegociated = EventSender("protocol-negociated", str)
         self.disconnected = EventSender("disconnected")
     
     def connect(self, addr, senderPid=None):
         if not senderPid:
             senderPid = Process.current()
-        Process.send(self.pid, ("connect", addr, senderPid))
+        Process.send(self.pid, Command("connect", addr, senderPid))
     
     def listen(self, addr, senderPid=None):
         if not senderPid:
             senderPid = Process.current()
-        Process.send(self.pid, ("listen", addr, senderPid))
+        Process.send(self.pid, Command("listen", addr, senderPid))
     
     def accept(self, senderPid=None):
         if not senderPid:
             senderPid = Process.current()
-        Process.send(self.pid, ("accept", senderPid))
+        Process.send(self.pid, Command("accept", senderPid))
     
     def disconnect(self):
-        Process.send(self.pid, ("disconnect", ))
+        Process.send(self.pid, Command("disconnect"))
 
     def send(self, message, senderPid=None):
         if not senderPid:
             senderPid = Process.current()
-        Process.send(self.pid, ("send", message, senderPid))
+        Process.send(self.pid, Command("send", message, senderPid))
     
     def close(self):
-        Process.try_send(self.pid, "stop")
+        Process.try_send(self.pid, Command("stop"))
     
     def _entry(self):
         state = TcpProcessState()
         loop = MessageMatcher()
         # public messages
-        loop.addPattern(("connect", None, int), self._connect)
-        loop.addPattern(("listen", None, int), self._listen)
-        loop.addPattern(("accept", int), self._accept)
-        loop.addPattern(("disconnect", ), self._disconnect)
-        loop.addPattern(("send", None, int), self._send)
-        loop.addPattern("stop", result=False)
+        loop.addPattern(Command("connect", None, int), self._connect)
+        loop.addPattern(Command("listen", None, int), self._listen)
+        loop.addPattern(Command("accept", int), self._accept)
+        loop.addPattern(Command("disconnect"), self._disconnect)
+        loop.addPattern(Command("send", None, int), self._send)
+        loop.addPattern(Command("stop"), result=False)
         # internal messages
-        loop.addPattern(("connected", None, None, bool), self._connected)
-        loop.addPattern(("end-of-stream", int), self._endOfStream)
+        loop.addPattern(Event("connected", None, None, bool), self._connected)
+        loop.addPattern(Event("end-of-stream", int), self._endOfStream)
         try:
             loop.run(state)
         finally:
@@ -99,7 +99,7 @@ class TcpMessenger(object):
 
     def _listen(self, m, state):
         if state.server:
-            Process.send(m[2], ("listen-error", "invalid-state"))
+            Process.send(m[2], Event("listen-error", "invalid-state"))
             return
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
         try:
@@ -108,7 +108,7 @@ class TcpMessenger(object):
             server.listen(1)
             self.listening(m[1])
         except socket.error as e:
-            Process.send(m[2], ("listen-error", e))
+            Process.send(m[2], Event("listen-error", e))
         else:
             state.server = server
     
@@ -117,7 +117,7 @@ class TcpMessenger(object):
             # we are already waiting for an incoming connection
             return
         elif (state.connState != TcpMessenger.DISCONNECTED) or not state.server:
-            Process.send(m[1], ("accept-error", "invalid-state"))
+            Process.send(m[1], Event("accept-error", "invalid-state"))
             return
         args = (state.server, m[1], Process.current())
         state.acceptReceiver = Process.spawn(self._waitForAccept, args, "TcpServer")
@@ -132,13 +132,13 @@ class TcpMessenger(object):
                 # shutdown
                 return
             else:
-                Process.send(senderPid, ("accept-error", e))
+                Process.send(senderPid, Event("accept-error", e))
         else:
             self._startSession(conn, remoteAddr, False, senderPid, messengerPid)
 
     def _connect(self, m, state):
         if (state.connState != TcpMessenger.DISCONNECTED) or state.connectReceiver:
-            Process.send(m[2], ("connection-error", "invalid-state"))
+            Process.send(m[2], Event("connection-error", "invalid-state"))
             return
         args = (m[1], m[2], Process.current())
         state.connectReceiver = Process.spawn(self._waitForConnect, args, "TcpClient")
@@ -151,7 +151,7 @@ class TcpMessenger(object):
         try:
             conn.connect(remoteAddr)
         except socket.error as e:
-            Process.send(senderPid, ("connection-error", e))
+            Process.send(senderPid, Event("connection-error", e))
         else:
             self._startSession(conn, remoteAddr, True, senderPid, messengerPid)
 
@@ -165,7 +165,7 @@ class TcpMessenger(object):
             state.acceptReceiver = None
         if state.receiver:
             state.logger.info("Dropping redundant connection to %s.", repr(remoteAddr))
-            Process.send(receiver, ("close", ))
+            Process.send(receiver, Command("close"))
         else:
             # we're connected, update the process' state
             state.logger.info("Connected to %s.", repr(remoteAddr))
@@ -183,15 +183,15 @@ class TcpMessenger(object):
             state.writer = messageWriter(stream, name)
             self.protocolNegociated(name)
             # start receiving messages
-            Process.send(receiver, ("receive", stream, name))
+            Process.send(receiver, Command("receive", stream, name))
     
     def _startSession(self, conn, remoteAddr, initiating, senderPid, messengerPid):
         log = Process.logger()
         # notify the messenger process that we have established a connection
-        Process.send(messengerPid, ("connected", conn, remoteAddr, initiating))
+        Process.send(messengerPid, Event("connected", conn, remoteAddr, initiating))
         # the connection might have to be dropped (if we're already connected)
         resp = Process.receive()
-        if not match(("receive", None, str), resp):
+        if not match(Command("receive", None, str), resp):
             try:
                 conn.close()
             except Exception:
@@ -208,7 +208,7 @@ class TcpMessenger(object):
                     log.info("Received message: '%s'." % str(m))
                     Process.send(senderPid, m)
         finally:
-            Process.try_send(messengerPid, ("end-of-stream", senderPid))
+            Process.try_send(messengerPid, Event("end-of-stream", senderPid))
     
     def _endOfStream(self, m, state):
         self._closeConnection(state)
@@ -216,7 +216,7 @@ class TcpMessenger(object):
     
     def _send(self, m, state):
         if (state.connState != TcpMessenger.CONNECTED) or state.protocol is None:
-            Process.send(m[2], ("send-error", "invalid-state"))
+            Process.send(m[2], Event("send-error", "invalid-state"))
             return
         state.logger.info("Sending message: '%s'." % str(m[1]))
         state.writer.write(m[1])
@@ -293,8 +293,8 @@ class SocketWrapper(object):
 class Service(object):
     """ Base class for services that handle requests using messaging. """
     def __init__(self):
-        self.connected = EventSender("connected")
-        self.connectionError = EventSender("connection-error")
+        self.connected = EventSender("connected", None)
+        self.connectionError = EventSender("connection-error", None)
         self.disconnected = EventSender("disconnected")
     
     def initState(self, loop, state):
@@ -305,12 +305,12 @@ class Service(object):
         # messages received from TcpMessenger
         state.messenger.protocolNegociated.suscribe(matcher=loop, callable=self.onProtocolNegociated)
         state.messenger.disconnected.suscribe(matcher=loop, callable=self.onDisconnected)
-        loop.addPattern(("connection-error", None), self.onConnectionError)
+        loop.addPattern(Event("connection-error", None), self.onConnectionError)
         # messages received from the caller
-        loop.addPattern(("connect", None), self.connectMessenger)
-        loop.addPattern(("bind", None), self.bindMessenger)
-        loop.addPattern(("disconnect", ), self.disconnectMessenger)
-        loop.addPattern("stop", result=False)
+        loop.addPattern(Command("connect", None), self.connectMessenger)
+        loop.addPattern(Command("bind", None), self.bindMessenger)
+        loop.addPattern(Command("disconnect"), self.disconnectMessenger)
+        loop.addPattern(Command("stop"), result=False)
         
     def run(self):
         """ Run the service. This method blocks until the service has finished executing. """

@@ -21,10 +21,10 @@
 from collections import Sequence, Mapping
 import json
 from struct import Struct
-from spark.async import Future, Process, ProcessNotifier
+from spark.async import Future, Process, ProcessNotifier, Event
 
 __all__ = ["Message", "TextMessage", "Request", "Response", "Notification",
-           "Blob", "Block", "match", "MessageMatcher", "EventSender", "Event"]
+           "Blob", "Block", "match", "MessageMatcher"]
 
 def match(pattern, o):
     """ Try to match an object against a pattern. Return True if the pattern is matched. """
@@ -157,37 +157,6 @@ class MessageWriter(object):
     def write(self, m):
         """ Write a message to the file. """
         return self.file.write(self.format(m))
-
-class Event(object):
-    """ Contains information about an internal event. """
-    def __init__(self, name, params=None):
-        self.name = name
-        self.params = params
-    
-    def __str__(self):
-        return "Event(%s, %s)" % (self.name, str(self.params))
-        
-class EventSender(ProcessNotifier):
-    """ Event which can be suscribed by other processes. """
-    def __init__(self, name, lock=None):
-        super(EventSender, self).__init__(lock)
-        self.name = name
-    
-    def suscribe(self, pid=None, matcher=None, callable=None, result=True):
-        """ Suscribe a process to start receiving notifications of this event. """
-        if matcher:
-            matcher.addEvent(self.name, callable, result)
-        super(EventSender, self).suscribe(pid)
-    
-    def __call__(self, *args):
-        """ Send a notification to all suscribed processes. """
-        if len(args) == 0:
-            params = None
-        elif len(args) == 1:
-            params = args[0]
-        else:
-            params = args
-        super(EventSender, self).__call__(Event(self.name, params))
 
 class MessageMatcher(object):
     """ Matches messages against a list of patterns. """

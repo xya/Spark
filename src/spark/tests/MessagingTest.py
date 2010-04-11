@@ -20,8 +20,8 @@
 
 import unittest
 from spark.messaging import *
-from spark.async import Future
-from spark.tests.common import run_tests
+from spark.async import Future, Event
+from spark.tests.common import run_tests, assertMatch, assertNoMatch
 from spark.tests.ProtocolTest import testRequest, testResponse, testNotification, testBlock
 
 class MockSender(Messenger, MessageDelivery):
@@ -110,21 +110,22 @@ class MessageDeliveryTest(unittest.TestCase):
 class MessageMatchingTest(unittest.TestCase):
     def testString(self):
         """ match() should properly match string patterns """
-        self.assertTrue(match("foo", "foo"))
-        self.assertFalse(match("foo", "bar"))
+        assertMatch("foo", "foo")
+        assertNoMatch("foo", "bar")
     
     def testTuples(self):
         """ match() should properly match tuple patterns """
-        self.assertTrue(match(("foo", int), ("foo", 1)))
-        self.assertFalse(match(("foo", int), ("bar", 1)))
+        assertMatch(("foo", int), ("foo", 1))
+        assertNoMatch(("foo", int), ("bar", 1))
     
     def testMessages(self):
         """ match() should properly match message patterns """
-        self.assertTrue(match(Request("swap"), Request("swap", ("foo", "bar"), 1)))
-        self.assertTrue(match(Request("swap", (None, None)), Request("swap", ("foo", "bar"), 1)))
-        self.assertFalse(match(Request("paws"), Request("swap", ("foo", "bar"), 1)))
-        self.assertFalse(match(Request("swap", ("foo", "bar"), 1), Request("swap")))
-        self.assertFalse(match(('disconnect', ), Event("protocol-negociated", "SPARKv1")))
+        assertMatch(Request("swap"), Request("swap", ("foo", "bar"), 1))
+        assertMatch(Request("swap", (None, None)), Request("swap", ("foo", "bar"), 1))
+        assertMatch(Event("listening", None), Event('listening', ('127.0.0.1', 4550)))
+        assertNoMatch(Request("paws"), Request("swap", ("foo", "bar"), 1))
+        assertNoMatch(Request("swap", ("foo", "bar"), 1), Request("swap"))
+        assertNoMatch(('disconnect', ), Event("protocol-negociated", "SPARKv1"))
 
 if __name__ == '__main__':
     run_tests()

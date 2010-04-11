@@ -20,11 +20,14 @@
 
 """ Interface that allows the use of Erlang-like processes that can send messages to each other. """
 
+from collections import Sequence
 import threading
 import logging
 from spark.async.queue import BlockingQueue, QueueClosedError
 
-__all__ = ["Process", "ProcessExited", "ProcessKilled", "ProcessState", "ProcessNotifier", "ProcessRunner"]
+__all__ = ["Process", "ProcessState", "ProcessRunner",
+           "ProcessNotifier", "Command", "Event", "EventSender",
+           "ProcessExited", "ProcessKilled"]
 
 class Process(object):
     """ A process can execute callables and communicate using messages. """
@@ -266,6 +269,66 @@ class ProcessNotifier(object):
             except Exception:
                 pass
 
+class ProcessMessage(Sequence):
+    """ Base class for messages that can be sent to a process."""
+    def __init__(self, name, *params):
+        self.name = name
+        self.params = params
+    
+    def __len__(self):
+        return 1 + len(self.params)
+    
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return tuple(self)[index]
+        if index == 0:
+            return self.name
+        elif (index > 0) and (index <= len(self.params)):
+            return self.params[index - 1]
+        else:
+            raise IndexError("Index '%i' out of range" % index)
+    
+    def __str__(self):
+        args = (self.name, ) + self.params
+        return "%s(%s)" % (self.__class__.__name__, ", ".join(repr(a) for a in args))
+    
+    def __repr__(self):
+        return self.__str__()
+
+class Command(ProcessMessage):
+    """ Contains information about a command sent to a process."""
+    pass
+
+class Event(ProcessMessage):
+    """ Contains information about an event sent by a process. """
+    pass
+        
+class EventSender(ProcessNotifier):
+    """
+    Event which can be suscribed by other processes.
+    Example: EventSender("protocol-negociated", str) can send events such as
+        Event("protocol-negociated", "SPARKv1").
+    """
+    def __init__(self, name, *args):
+        super(EventSender, self).__init__()
+        self.name = name
+        self.args = args
+    
+    @property
+    def pattern(self):
+        """ Return a pattern that matches events sent by this object """
+        return Event(self.name, *self.args)
+    
+    def suscribe(self, pid=None, matcher=None, callable=None, result=True):
+        """ Suscribe a process to start receiving notifications of this event. """
+        if matcher:
+            matcher.addPattern(Event(self.name, *self.args), callable, result)
+        super(EventSender, self).suscribe(pid)
+    
+    def __call__(self, *args):
+        """ Send a notification to all suscribed processes. """
+        super(EventSender, self).__call__(Event(self.name, *args))
+
 class ProcessRunner(object):
     """ Run objects that have a run() method in a separate process. """
     def __init__(self, runnable, name=None):
@@ -295,5 +358,5 @@ class ProcessRunner(object):
     def stop(self):
         """ Stop the process if it is running. """
         if self.pid:
-            Process.try_send(self.pid, "stop")
+            Process.try_send(self.pid, Command("stop"))
             self.pid = None

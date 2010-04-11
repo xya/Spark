@@ -23,10 +23,10 @@ import unittest
 import threading
 import functools
 import time
-from spark.async import Future, coroutine, Process, ProcessRunner
+from spark.async import *
 from spark.messaging.messages import *
 from spark.messaging.service import TcpMessenger, Service
-from spark.tests.common import run_tests, processTimeout
+from spark.tests.common import run_tests, processTimeout, assertMatch
 
 BIND_ADDRESS = "127.0.0.1"
 BIND_PORT = 4550
@@ -34,7 +34,7 @@ BIND_PORT = 4550
 class TestServer(Service):
     def __init__(self):
         super(TestServer, self).__init__()
-        self.listening = EventSender("listening")
+        self.listening = EventSender("listening", None)
     
     def initPatterns(self, loop, state):
         super(TestServer, self).initPatterns(loop, state)
@@ -49,11 +49,6 @@ class TestServer(Service):
         self.sendResponse(req, state, (req.params[1], req.params[0]))
     
 class ProcessIntegrationTest(unittest.TestCase):
-    def assertMatch(self, pattern, o):
-        if not match(pattern, o):
-            self.fail("Object doesn't match the pattern: '%s' (pattern: '%s')"
-                % (repr(o), repr(pattern)))
-    
     @processTimeout(1.0)
     def testTcpSession(self):
         pid = Process.current()
@@ -61,14 +56,14 @@ class ProcessIntegrationTest(unittest.TestCase):
         runner = ProcessRunner(server)
         runner.start()
         server.listening.suscribe()
-        Process.send(runner.pid, ("bind", (BIND_ADDRESS, BIND_PORT)))
-        self.assertMatch(Event("listening"), Process.receive())
+        Process.send(runner.pid, Command("bind", (BIND_ADDRESS, BIND_PORT)))
+        assertMatch(Event("listening", None), Process.receive())
         clientMessenger = TcpMessenger()
         clientMessenger.protocolNegociated.suscribe()
         clientMessenger.connect((BIND_ADDRESS, BIND_PORT))
-        self.assertMatch(Event("protocol-negociated"), Process.receive())
+        assertMatch(Event("protocol-negociated", str), Process.receive())
         clientMessenger.send(Request("swap", ("foo", "bar"), 1))
-        self.assertMatch(Response("swap", ("bar", "foo"), 1), Process.receive())
+        assertMatch(Response("swap", ("bar", "foo"), 1), Process.receive())
         clientMessenger.close()
 
 if __name__ == '__main__':

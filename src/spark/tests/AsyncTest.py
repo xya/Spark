@@ -21,8 +21,9 @@
 
 import unittest
 import threading
-from spark.async import Future, TaskError, Process
-from spark.tests.common import run_tests, processTimeout
+from spark.async import *
+from spark.messaging import *
+from spark.tests.common import run_tests, processTimeout, assertMatch, assertNoMatch
 
 class FutureTest(unittest.TestCase):
     def testCompleted(self):
@@ -258,6 +259,32 @@ class ProcessTest(unittest.TestCase):
         t.daemon = True
         t.start()
         self.assertEqual("foo", cont.wait(1.0))
+
+class EventSenderTest(unittest.TestCase):
+    @processTimeout(1.0)
+    def testSendEvent(self):
+        """ EventSender should send messages that match its pattern"""
+        ev = EventSender("foo")
+        ev2 = EventSender("bar", int)
+        ev.suscribe()
+        ev2.suscribe()
+        ev()
+        ev2(1)
+        ev2()
+        assertMatch(Event("foo"), ev.pattern)
+        assertMatch(Event("bar", int), ev2.pattern)
+        assertMatch(Event("foo"), Process.receive())
+        assertMatch(Event("bar", int), Process.receive())
+        assertNoMatch(Event("bar", int), Process.receive())
+
+class ProcessMessageTest(unittest.TestCase):
+    def testMessageAsSequence(self):
+        c = Command('bind', '127.0.0.1:4550')
+        self.assertEqual(2, len(c))
+        self.assertEqual('bind', c[0])
+        self.assertEqual('127.0.0.1:4550', c[1])
+        self.assertEqual(['bind', '127.0.0.1:4550'], list(c))
+        self.assertEqual(('127.0.0.1:4550', ), c[1:])
 
 if __name__ == '__main__':
     run_tests()

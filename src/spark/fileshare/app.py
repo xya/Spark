@@ -21,7 +21,7 @@
 import logging
 import functools
 import types
-from spark.async import Delegate, Process, ProcessRunner
+from spark.async import *
 from spark.messaging import *
 
 __all__ = ["SparkApplication", "Session"]
@@ -104,8 +104,8 @@ class Session(Service):
     """
     def __init__(self):
         super(Session, self).__init__()
-        self.stateChanged = EventSender("session-state-changed")
-        self.filesUpdated = EventSender("files-updated")
+        self.stateChanged = EventSender("session-state-changed", dict)
+        self.filesUpdated = EventSender("files-updated", None)
         
     def initState(self, loop, state):
         super(Session, self).initState(loop, state)
@@ -113,7 +113,7 @@ class Session(Service):
         
     def initPatterns(self, loop, state):
         super(Session, self).initPatterns(loop, state)
-        loop.addPattern(Request("update-session-state"), self.updateSessionState)
+        loop.addPattern(Command("update-session-state"), self.updateSessionState)
         
     def onProtocolNegociated(self, m, state):
         super(Session, self).onProtocolNegociated(m, state)

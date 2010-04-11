@@ -25,7 +25,7 @@ import sys
 import os
 from spark.async import Future, TaskFailedError, Process
 from spark.messaging import *
-from spark.tests.common import run_tests, processTimeout
+from spark.tests.common import run_tests, processTimeout, assertMatch
 from StringIO import StringIO
 
 TestFile = os.path.join(os.path.dirname(__file__), 'ProtocolTest.log')
@@ -71,9 +71,7 @@ testBlock = TestItemProperty(8)
 
 class ProtocolTest(unittest.TestCase):
     def assertMessagesEqual(self, expected, actual):
-        if not match(expected, actual):
-            self.fail("Object doesn't match the pattern: '%s' (pattern: '%s')"
-                % (repr(actual), repr(pattern)))
+        assertMatch(expected, actual)
     
     def assertSeqsEqual(self, expectedSeq, actualSeq):
         self.assertEqual(len(expectedSeq), len(actualSeq))

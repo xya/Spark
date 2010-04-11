@@ -23,8 +23,8 @@ import os
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from spark.gui.filelist import FileList, FileInfoWidget, iconPath
-from spark.async import Process
-from spark.messaging import MessageMatcher, Event
+from spark.async import Process, Event
+from spark.messaging import MessageMatcher
 from spark.fileshare import SharedFile, TransferInfo, UPLOAD, DOWNLOAD
 
 __all__ = ["MainView"]
@@ -231,7 +231,7 @@ class MainWindow(QMainWindow):
         #self.app.files().after(onGuiThread(self.end_listFiles))
     
     def sessionStateChanged(self, m):
-        self.app.updateState(m.params)
+        self.app.updateState(m[1])
         self.updateStatusBar()
         self.updateToolBar()
     
@@ -286,8 +286,8 @@ class ConnectionDialog(QDialog):
         address = (str(self.hostText.text()), int(self.portText.text()))
         self.connectButton.setEnabled(False)
         self.progressBar.setVisible(True)
-        self.patterns.append((Event("connected"), self.connectOK))
-        self.patterns.append((Event("connection-error"), self.connectError))
+        self.patterns.append((self.app.session.connected.pattern, self.connectOK))
+        self.patterns.append((self.app.session.connectionError.pattern, self.connectError))
         for pattern, callable in self.patterns:
             self.pid.messages.addPattern(pattern, callable)
         self.app.connect(address)

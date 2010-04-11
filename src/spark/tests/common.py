@@ -23,7 +23,8 @@ import sys
 import unittest
 from unittest import TestCase, TestLoader, TestSuite
 import logging
-from spark.async import Future, Process, WaitTimeoutError
+from spark.async import *
+from spark.messaging import *
 
 class CustomLoader(TestLoader):
     def loadTestsFromTestCase(self, testCaseClass):
@@ -59,3 +60,13 @@ def processTimeout(timeout):
                 raise
         return wrapper
     return decorator
+
+def assertMatch(pattern, o):
+    if not match(pattern, o):
+        raise AssertionError("Object %s should match the pattern %s, but doesn't"
+            % (repr(o), repr(pattern)))
+
+def assertNoMatch(pattern, o):
+    if match(pattern, o):
+        raise AssertionError("Object %s should not match the pattern %s, but does"
+            % (repr(o), repr(pattern)))
