@@ -70,17 +70,10 @@ testNotification = TestItemProperty(2)
 testBlock = TestItemProperty(8)
 
 class ProtocolTest(unittest.TestCase):
-    def assertMatch(self, pattern, o):
-        if not match(pattern, o):
-            self.fail("Object doesn't match the pattern: '%s' (pattern: '%s')"
-                % (str(o), str(pattern)))
-    
     def assertMessagesEqual(self, expected, actual):
-        if expected is None:
-            self.assertEqual(expected, actual)
-        else:
-            self.assertEqual(str(expected), str(actual))
-        #self.assertMatch(expected, actual)
+        if not match(expected, actual):
+            self.fail("Object doesn't match the pattern: '%s' (pattern: '%s')"
+                % (repr(actual), repr(pattern)))
     
     def assertSeqsEqual(self, expectedSeq, actualSeq):
         self.assertEqual(len(expectedSeq), len(actualSeq))

@@ -28,31 +28,45 @@ __all__ = ["Message", "TextMessage", "Request", "Response", "Notification",
 
 def match(pattern, o):
     """ Try to match an object against a pattern. Return True if the pattern is matched. """
-    messageAttr = ("type", "tag", "params", "transID")
-    eventAttr = ("name", "params")
-    if pattern is None:
+    if (pattern is None) or (pattern == o):
         return True
     if type(pattern) is type:
+        # match types
         return type(o) is pattern
-    # following two clauses are temporary
-    elif all(hasattr(pattern, at) for at in messageAttr):
-        # match a message
-        return all(match(getattr(pattern, at), getattr(o, at, None)) for at in messageAttr)
-    elif all(hasattr(pattern, at) for at in eventAttr):
-        # match a event
-        return all(match(getattr(pattern, at), getattr(o, at, None)) for at in eventAttr)
     elif type(pattern) is str or type(pattern) is unicode:
+        # match strings
         return pattern == o
-    elif hasattr(pattern, "__len__") and hasattr(o, "__len__"):
-        if len(pattern) != len(o):
-            return False
-        else:
-            for i in range(0, len(pattern)):
-                if not match(pattern[i], o[i]):
+    elif isinstance(pattern, Mapping):
+        # match dicts
+        if isinstance(o, Mapping):
+            for key in pattern:
+                if (not key in o) or (not match(pattern[key], o[key])):
                     return False
             return True
+        else:
+            return False
+    elif isinstance(pattern, Sequence):
+        # match lists
+        if isinstance(o, Sequence):
+            n = len(pattern)
+            if n != len(o):
+                return False
+            else:
+                for i in range(0, n):
+                    if not match(pattern[i], o[i]):
+                        return False
+                return True
+        else:
+            return False
     else:
-        return pattern == o
+        # match attributes
+        for name in dir(pattern):
+            value = getattr(pattern, name)
+            # ignore private and special attributes and functions
+            if not name.startswith("_") and not hasattr(value, "__call__"):
+                if not hasattr(o, name) or not match(value, getattr(o, name)):
+                    return False
+        return True
 
 class Message(object):
     def __str__(self):
@@ -152,7 +166,7 @@ class EventData(object):
     
     def __str__(self):
         return "EventData(%s, %s)" % (self.name, str(self.params))
-
+        
 class Event(ProcessNotifier):
     """ Event which can be suscribed by other processes. """
     def __init__(self, name, lock=None):
@@ -203,7 +217,7 @@ class MessageMatcher(object):
                 if callable:
                     callable(m, *args)
                 return result
-        Process.logger().info("No rule matched message %s" % str(m))
+        Process.logger().info("No rule matched message %s" % repr(m))
         return False
     
     def run(self, *args):

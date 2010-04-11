@@ -115,8 +115,8 @@ class MessageMatchingTest(unittest.TestCase):
     
     def testTuples(self):
         """ match() should properly match tuple patterns """
-        self.assertTrue(match(("foo", ), ("foo", )))
-        self.assertFalse(match(("foo", ), ("bar", )))
+        self.assertTrue(match(("foo", int), ("foo", 1)))
+        self.assertFalse(match(("foo", int), ("bar", 1)))
     
     def testMessages(self):
         """ match() should properly match message patterns """
@@ -124,6 +124,7 @@ class MessageMatchingTest(unittest.TestCase):
         self.assertTrue(match(Request("swap", (None, None)), Request("swap", ("foo", "bar"), 1)))
         self.assertFalse(match(Request("paws"), Request("swap", ("foo", "bar"), 1)))
         self.assertFalse(match(Request("swap", ("foo", "bar"), 1), Request("swap")))
+        self.assertFalse(match(('disconnect', ), EventData("protocol-negociated", "SPARKv1")))
 
 if __name__ == '__main__':
     run_tests()
