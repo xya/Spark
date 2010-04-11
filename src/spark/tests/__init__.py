@@ -3,6 +3,5 @@ __all__ = [
     "ProtocolTest",
     "MessagingTest",
     "IntegrationTest",
-    "AioTest",
     #"FileShareTest"
 ]

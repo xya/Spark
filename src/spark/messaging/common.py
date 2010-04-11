@@ -18,7 +18,6 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-from __future__ import print_function
 import traceback
 import sys
 import threading
@@ -115,23 +114,3 @@ class MessageDelivery(object):
                 recipient.onNotificationReceived(m)
         else:
             recipient.onMessageReceived(m)
-
-class AsyncMessenger(Messenger):
-    def __init__(self, file):
-        super(AsyncMessenger, self).__init__()
-        self.file = file
-        self.reader = messageReader(file)
-        self.readLock = threading.Lock()
-        self.writer = messageWriter(file)
-        self.writeLock = threading.Lock()
-    
-    def close(self):
-        pass
-    
-    def sendMessage(self, message):
-        with self.writeLock:
-            return self.writer.write(message)
-    
-    def receiveMessage(self):
-        with self.readLock:
-            return self.reader.read()

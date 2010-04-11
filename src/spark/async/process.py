@@ -22,7 +22,7 @@
 
 import threading
 import logging
-from spark.async import BlockingQueue, QueueClosedError
+from spark.async.queue import BlockingQueue, QueueClosedError
 
 __all__ = ["all", "current", "run_main", "spawn", "send", "try_send", "receive", "try_receive",
            "ProcessExited", "ProcessKilled", "ProcessState", "ProcessEvent", "match"]

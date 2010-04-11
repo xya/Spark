@@ -18,19 +18,12 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-import sys
 import os
-import traceback
-import types
-import threading
 import socket
 import logging
-from collections import Mapping
-from functools import wraps
-from spark.async import Future, Delegate, coroutine, TaskFailedError, process
-from spark.messaging.common import AsyncMessenger, MessageDelivery
-from spark.messaging.protocol import negociateProtocol, messageReader, messageWriter
-from spark.messaging.messages import Request, Response, Notification, match, MessageMatcher, NotificationEvent
+from spark.async import *
+from spark.messaging.protocol import *
+from spark.messaging.messages import *
 
 __all__ = ["TcpMessenger"]
 

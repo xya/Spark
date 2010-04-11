@@ -23,36 +23,11 @@ import sys
 import unittest
 from unittest import TestCase, TestLoader, TestSuite
 import logging
-from spark.async import Reactor, Future, process, WaitTimeoutError
-
-class ReactorTestBase(TestCase):
-    def __init__(self, reactorType, methodName):
-        super(ReactorTestBase, self).__init__(methodName)
-        self.reactorType = reactorType
-    
-    def setUp(self):
-        self.reactor = self.reactorType()
-        self.reactor.launch_thread()
-    
-    def tearDown(self):
-        self.reactor.close()
-    
-    def shortDescription(self):
-        return "[%s] %s" % (self.reactorType.__name__,
-            super(ReactorTestBase, self).shortDescription())
+from spark.async import Future, process, WaitTimeoutError
 
 class CustomLoader(TestLoader):
     def loadTestsFromTestCase(self, testCaseClass):
-        if issubclass(testCaseClass, ReactorTestBase):
-            return TestSuite(loadReactorTests(reactorType, testCaseClass)
-                            for reactorType in Reactor.available())
-        else:
-            return super(CustomLoader, self).loadTestsFromTestCase(testCaseClass)
-
-def loadReactorTests(reactorType, testClass):
-    return TestSuite(testClass(reactorType, testName)
-                    for testName in dir(testClass)
-                    if testName.startswith("test"))
+        return super(CustomLoader, self).loadTestsFromTestCase(testCaseClass)
 
 def run_tests(modules=None, level=logging.ERROR):
     import locale

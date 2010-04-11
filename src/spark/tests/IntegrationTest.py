@@ -27,7 +27,7 @@ from spark.async import Future, coroutine, process
 from spark.messaging.messages import *
 from spark.messaging.service import TcpMessenger
 from spark.fileshare.app import Session
-from spark.tests.common import ReactorTestBase, run_tests, processTimeout
+from spark.tests.common import run_tests, processTimeout
 
 BIND_ADDRESS = "127.0.0.1"
 BIND_PORT = 4550
