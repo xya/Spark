@@ -20,10 +20,8 @@
 
 import json
 from struct import Struct
-from spark.async import Future, Process, ProcessNotifier, Event, match
 
-__all__ = ["Message", "TextMessage", "Request", "Response", "Notification",
-           "Blob", "Block", "MessageMatcher"]
+__all__ = ["Message", "TextMessage", "Request", "Response", "Notification", "Blob", "Block"]
 
 class Message(object):
     def __str__(self):
@@ -114,41 +112,3 @@ class MessageWriter(object):
     def write(self, m):
         """ Write a message to the file. """
         return self.file.write(self.format(m))
-
-class MessageMatcher(object):
-    """ Matches messages against a list of patterns. """
-    def __init__(self):
-        self.rules = []
-    
-    def addPattern(self, pattern, callable=None, result=True):
-        """ Add a pattern to match messages. """
-        self.rules.append((pattern, callable, result))
-    
-    def removePattern(self, pattern, callable=None, result=True):
-        """ Remove a pattern from the list. """
-        self.rules.remove((pattern, callable, result))
-    
-    def addEvent(self, name, callable=None, result=True):
-        """ Add a pattern to match events with the specified name. """
-        self.addPattern(Event(name), callable, result)
-    
-    def removeEvent(self, name, callable=None, result=True):
-        """ Remove a pattern to match events with the specified name. """
-        self.removePattern(Event(name), callable, result)
-    
-    def match(self, m, *args):
-        """ Match the message against the patterns. """
-        for pattern, callable, result in reversed(self.rules):
-            if match(pattern, m):
-                if callable:
-                    callable(m, *args)
-                return result
-        Process.logger().info("No rule matched message %s" % repr(m))
-        return False
-    
-    def run(self, *args):
-        """ Retrieve messages from the current process' queue while they match any pattern. """
-        while True:
-            m = Process.receive()
-            if not self.match(m, *args):
-                break

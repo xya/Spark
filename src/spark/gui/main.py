@@ -23,8 +23,7 @@ import os
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from spark.gui.filelist import FileList, FileInfoWidget, iconPath
-from spark.async import Process, Event
-from spark.messaging import MessageMatcher
+from spark.async import Process, Event, MessageMatcher
 from spark.fileshare import SharedFile, TransferInfo, UPLOAD, DOWNLOAD
 
 __all__ = ["MainView"]
@@ -54,14 +53,11 @@ class MainWindow(QMainWindow):
         self.sharedFiles = {}
         self.fileIDs = []
         self.selectedID = None
-        self.suscribe(self.app.session.connected)
-        self.suscribe(self.app.session.connectionError)
-        self.suscribe(self.app.session.stateChanged, self.sessionStateChanged)
+        self.pid.messages.suscribeTo(self.app.session.connected)
+        self.pid.messages.suscribeTo(self.app.session.connectionError)
+        self.pid.messages.suscribeTo(self.app.session.stateChanged, self.sessionStateChanged)
         self.updateStatusBar()
         self.updateToolBar()
-    
-    def suscribe(self, source, callable=None, result=True):
-        source.suscribe(matcher=self.pid.messages, callable=callable, result=result)
     
     def createAction(self, icon, size, text, help=None):
         action = QAction(QIcon(iconPath(icon, size)), text, self)

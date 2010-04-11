@@ -26,7 +26,7 @@ import logging
 from spark.async.queue import BlockingQueue, QueueClosedError
 
 __all__ = ["Process", "ProcessState", "ProcessRunner",
-           "ProcessNotifier", "Command", "Event", "EventSender", "match",
+           "ProcessNotifier", "Command", "Event", "EventSender", "match", "MessageMatcher",
            "ProcessExited", "ProcessKilled"]
 
 class Process(object):
@@ -224,6 +224,38 @@ class Process(object):
         del cls._current.p
         #del cls._processes[current_pid]
 
+class ProcessRunner(object):
+    """ Run objects that have a run() method in a separate process. """
+    def __init__(self, runnable, name=None):
+        self.pid = None
+        self.runnable = runnable
+        if name:
+            self.name = name
+        else:
+            self.name = runnable.__class__.__name__
+    
+    def __enter__(self):
+        """ Start a new process to run the object. """
+        self.start()
+        return self
+    
+    def __exit__(self, type, val, tb):
+        """ Stop the process if it is running. """
+        self.stop()
+    
+    def start(self):
+        """ Start a new process to run the object. """
+        if not self.pid:
+            p = self.runnable
+            self.pid = Process.spawn(p.run, name=self.name)
+        return self.pid
+    
+    def stop(self):
+        """ Stop the process if it is running. """
+        if self.pid:
+            Process.try_send(self.pid, Command("stop"))
+            self.pid = None
+
 class ProcessExited(Exception):
     pass
 
@@ -344,22 +376,19 @@ def match(pattern, o):
                 if not hasattr(o, name) or not match(value, getattr(o, name)):
                     return False
         return True
-        
+
 class EventSender(ProcessNotifier):
     """
     Event which can be suscribed by other processes.
-    Example: EventSender("protocol-negociated", str) can send events such as
-        Event("protocol-negociated", "SPARKv1").
+    Example:
+        EventSender("protocol-negociated", str) can send events such as
+        Event("protocol-negociated", "SPARKv1") but not
+        Event("protocol-negociated") or even
+        Event("connected", "127.0.0.1:4550").
     """
     def __init__(self, name, *args):
         super(EventSender, self).__init__()
         self.pattern = Event(name, *args)
-    
-    def suscribe(self, pid=None, matcher=None, callable=None, result=True):
-        """ Suscribe a process to start receiving notifications of this event. """
-        if matcher:
-            matcher.addPattern(self.pattern, callable, result)
-        super(EventSender, self).suscribe(pid)
     
     def __call__(self, *args):
         """ Send a notification to all suscribed processes. """
@@ -370,34 +399,37 @@ class EventSender(ProcessNotifier):
             raise TypeError("%s doesn't match the pattern %s" %
                             (repr(event), repr(self.pattern)))
 
-class ProcessRunner(object):
-    """ Run objects that have a run() method in a separate process. """
-    def __init__(self, runnable, name=None):
-        self.pid = None
-        self.runnable = runnable
-        if name:
-            self.name = name
-        else:
-            self.name = runnable.__class__.__name__
+class MessageMatcher(object):
+    """ Matches messages against a list of patterns. """
+    def __init__(self):
+        self.rules = []
     
-    def __enter__(self):
-        """ Start a new process to run the object. """
-        self.start()
-        return self
+    def addPattern(self, pattern, callable=None, result=True):
+        """ Add a pattern to match messages. """
+        self.rules.append((pattern, callable, result))
     
-    def __exit__(self, type, val, tb):
-        """ Stop the process if it is running. """
-        self.stop()
+    def removePattern(self, pattern, callable=None, result=True):
+        """ Remove a pattern from the list. """
+        self.rules.remove((pattern, callable, result))
     
-    def start(self):
-        """ Start a new process to run the object. """
-        if not self.pid:
-            p = self.runnable
-            self.pid = Process.spawn(p.run, name=self.name)
-        return self.pid
+    def suscribeTo(self, sender, callable=None, result=True):
+        """ Suscribe to an event after adding its pattern to the list. """
+        self.addPattern(sender.pattern, callable, result)
+        sender.suscribe()
     
-    def stop(self):
-        """ Stop the process if it is running. """
-        if self.pid:
-            Process.try_send(self.pid, Command("stop"))
-            self.pid = None
+    def match(self, m, *args):
+        """ Match the message against the patterns. """
+        for pattern, callable, result in reversed(self.rules):
+            if match(pattern, m):
+                if callable:
+                    callable(m, *args)
+                return result
+        Process.logger().info("No rule matched message %s" % repr(m))
+        return False
+    
+    def run(self, *args):
+        """ Retrieve messages from the current process' queue while they match any pattern. """
+        while True:
+            m = Process.receive()
+            if not self.match(m, *args):
+                break

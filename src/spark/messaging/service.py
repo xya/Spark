@@ -303,8 +303,8 @@ class Service(object):
     
     def initPatterns(self, loop, state):
         # messages received from TcpMessenger
-        state.messenger.protocolNegociated.suscribe(matcher=loop, callable=self.onProtocolNegociated)
-        state.messenger.disconnected.suscribe(matcher=loop, callable=self.onDisconnected)
+        loop.suscribeTo(state.messenger.protocolNegociated, self.onProtocolNegociated)
+        loop.suscribeTo(state.messenger.disconnected, self.onDisconnected)
         loop.addPattern(Event("connection-error", None), self.onConnectionError)
         # messages received from the caller
         loop.addPattern(Command("connect", None), self.connectMessenger)
