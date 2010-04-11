@@ -34,7 +34,7 @@ BIND_PORT = 4550
 class TestServer(Service):
     def __init__(self):
         super(TestServer, self).__init__()
-        self.listening = Event("listening")
+        self.listening = EventSender("listening")
     
     def initPatterns(self, loop, state):
         super(TestServer, self).initPatterns(loop, state)
@@ -62,11 +62,11 @@ class ProcessIntegrationTest(unittest.TestCase):
         runner.start()
         server.listening.suscribe()
         Process.send(runner.pid, ("bind", (BIND_ADDRESS, BIND_PORT)))
-        self.assertMatch(EventData("listening"), Process.receive())
+        self.assertMatch(Event("listening"), Process.receive())
         clientMessenger = TcpMessenger()
         clientMessenger.protocolNegociated.suscribe()
         clientMessenger.connect((BIND_ADDRESS, BIND_PORT))
-        self.assertMatch(EventData("protocol-negociated"), Process.receive())
+        self.assertMatch(Event("protocol-negociated"), Process.receive())
         clientMessenger.send(Request("swap", ("foo", "bar"), 1))
         self.assertMatch(Response("swap", ("bar", "foo"), 1), Process.receive())
         clientMessenger.close()

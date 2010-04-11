@@ -124,7 +124,7 @@ class MessageMatchingTest(unittest.TestCase):
         self.assertTrue(match(Request("swap", (None, None)), Request("swap", ("foo", "bar"), 1)))
         self.assertFalse(match(Request("paws"), Request("swap", ("foo", "bar"), 1)))
         self.assertFalse(match(Request("swap", ("foo", "bar"), 1), Request("swap")))
-        self.assertFalse(match(('disconnect', ), EventData("protocol-negociated", "SPARKv1")))
+        self.assertFalse(match(('disconnect', ), Event("protocol-negociated", "SPARKv1")))
 
 if __name__ == '__main__':
     run_tests()

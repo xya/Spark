@@ -104,8 +104,8 @@ class Session(Service):
     """
     def __init__(self):
         super(Session, self).__init__()
-        self.stateChanged = Event("session-state-changed")
-        self.filesUpdated = Event("files-updated")
+        self.stateChanged = EventSender("session-state-changed")
+        self.filesUpdated = EventSender("files-updated")
         
     def initState(self, loop, state):
         super(Session, self).initState(loop, state)

@@ -24,7 +24,7 @@ from struct import Struct
 from spark.async import Future, Process, ProcessNotifier
 
 __all__ = ["Message", "TextMessage", "Request", "Response", "Notification",
-           "Blob", "Block", "match", "MessageMatcher", "Event", "EventData"]
+           "Blob", "Block", "match", "MessageMatcher", "EventSender", "Event"]
 
 def match(pattern, o):
     """ Try to match an object against a pattern. Return True if the pattern is matched. """
@@ -158,26 +158,26 @@ class MessageWriter(object):
         """ Write a message to the file. """
         return self.file.write(self.format(m))
 
-class EventData(object):
+class Event(object):
     """ Contains information about an internal event. """
     def __init__(self, name, params=None):
         self.name = name
         self.params = params
     
     def __str__(self):
-        return "EventData(%s, %s)" % (self.name, str(self.params))
+        return "Event(%s, %s)" % (self.name, str(self.params))
         
-class Event(ProcessNotifier):
+class EventSender(ProcessNotifier):
     """ Event which can be suscribed by other processes. """
     def __init__(self, name, lock=None):
-        super(Event, self).__init__(lock)
+        super(EventSender, self).__init__(lock)
         self.name = name
     
     def suscribe(self, pid=None, matcher=None, callable=None, result=True):
         """ Suscribe a process to start receiving notifications of this event. """
         if matcher:
             matcher.addEvent(self.name, callable, result)
-        super(Event, self).suscribe(pid)
+        super(EventSender, self).suscribe(pid)
     
     def __call__(self, *args):
         """ Send a notification to all suscribed processes. """
@@ -187,7 +187,7 @@ class Event(ProcessNotifier):
             params = args[0]
         else:
             params = args
-        super(Event, self).__call__(EventData(self.name, params))
+        super(EventSender, self).__call__(Event(self.name, params))
 
 class MessageMatcher(object):
     """ Matches messages against a list of patterns. """
@@ -204,11 +204,11 @@ class MessageMatcher(object):
     
     def addEvent(self, name, callable=None, result=True):
         """ Add a pattern to match events with the specified name. """
-        self.addPattern(EventData(name), callable, result)
+        self.addPattern(Event(name), callable, result)
     
     def removeEvent(self, name, callable=None, result=True):
         """ Remove a pattern to match events with the specified name. """
-        self.removePattern(EventData(name), callable, result)
+        self.removePattern(Event(name), callable, result)
     
     def match(self, m, *args):
         """ Match the message against the patterns. """
