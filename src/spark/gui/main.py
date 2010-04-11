@@ -38,14 +38,13 @@ class MainView(object):
     
     def show(self):
         self.window.show()
-        MainView.qtapp.exec_()
 
 class MainWindow(QMainWindow):
     def __init__(self, app, pid, parent=None):
         super(MainWindow, self).__init__(parent)
         self.setWindowIcon(QIcon(iconPath("emblems/emblem-new", 16)))
         self.setWindowTitle("Spark")
-        self.setMinimumSize(429, 360)
+        self.setMinimumSize(530, 360)
         self.app = app
         self.pid = pid
         self.actions = {}

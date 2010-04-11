@@ -34,7 +34,7 @@ BIND_PORT = 4550
 class TestServer(Service):
     def __init__(self):
         super(TestServer, self).__init__()
-        self.listening = NotificationEvent("listening")
+        self.listening = Event("listening")
     
     def initPatterns(self, loop, state):
         super(TestServer, self).initPatterns(loop, state)

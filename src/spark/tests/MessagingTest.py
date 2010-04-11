@@ -117,6 +117,13 @@ class MessageMatchingTest(unittest.TestCase):
         """ match() should properly match tuple patterns """
         self.assertTrue(match(("foo", ), ("foo", )))
         self.assertFalse(match(("foo", ), ("bar", )))
+    
+    def testMessages(self):
+        """ match() should properly match message patterns """
+        self.assertTrue(match(Request("swap"), Request("swap", ("foo", "bar"), 1)))
+        self.assertTrue(match(Request("swap", (None, None)), Request("swap", ("foo", "bar"), 1)))
+        self.assertFalse(match(Request("paws"), Request("swap", ("foo", "bar"), 1)))
+        self.assertFalse(match(Request("swap", ("foo", "bar"), 1), Request("swap")))
 
 if __name__ == '__main__':
     run_tests()

@@ -24,7 +24,7 @@ import threading
 import logging
 from spark.async.queue import BlockingQueue, QueueClosedError
 
-__all__ = ["Process", "ProcessExited", "ProcessKilled", "ProcessState", "ProcessEvent", "ProcessRunner"]
+__all__ = ["Process", "ProcessExited", "ProcessKilled", "ProcessState", "ProcessNotifier", "ProcessRunner"]
 
 class Process(object):
     """ A process can execute callables and communicate using messages. """
@@ -231,14 +231,14 @@ class ProcessState(object):
     """ Object that can be used to store a process' state (which should not be shared across threads). """
     pass
 
-class ProcessEvent(object):
-    """ Event which can be suscribed by other processes. """
+class ProcessNotifier(object):
+    """ Notifies other processes by sending messages. """
     def __init__(self, lock=None):
         self.__lock = lock or threading.Lock()
         self.__suscribers = set()
     
     def suscribe(self, pid=None):
-        """ Suscribe a process to start receiving notifications of this event. """
+        """ Suscribe a process to start receiving notifications. """
         if not pid:
             pid = Process.current()
             if not pid:
@@ -247,7 +247,7 @@ class ProcessEvent(object):
             self.__suscribers.add(pid)
     
     def unsuscribe(self, pid=None):
-        """ Unsuscribe a process to stop receiving notifications of this event. """
+        """ Unsuscribe a process to stop receiving notifications. """
         if not pid:
             pid = Process.current()
             if not pid:

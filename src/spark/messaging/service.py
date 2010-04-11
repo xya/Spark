@@ -47,10 +47,10 @@ class TcpMessenger(object):
     
     def __init__(self):
         self.pid = Process.spawn(self._entry, name="TcpMessenger")
-        self.listening = NotificationEvent("listening")
-        self.connected = NotificationEvent("connected")
-        self.protocolNegociated = NotificationEvent("protocol-negociated")
-        self.disconnected = NotificationEvent("disconnected")
+        self.listening = Event("listening")
+        self.connected = Event("connected")
+        self.protocolNegociated = Event("protocol-negociated")
+        self.disconnected = Event("disconnected")
     
     def connect(self, addr, senderPid=None):
         if not senderPid:
@@ -279,15 +279,23 @@ class TcpProcessState(object):
 class SocketWrapper(object):
     def __init__(self, sock):
         self.sock = sock
-        self.read = sock.recv
         self.write = sock.send
+    
+    def read(self, size):
+        try:
+            return self.sock.recv(size)
+        except socket.error as e:
+            if e.errno == os.errno.ECONNRESET:
+                return ""
+            else:
+                raise
 
 class Service(object):
     """ Base class for services that handle requests using messaging. """
     def __init__(self):
-        self.connected = NotificationEvent("connected")
-        self.connectionError = NotificationEvent("connection-error")
-        self.disconnected = NotificationEvent("disconnected")
+        self.connected = Event("connected")
+        self.connectionError = Event("connection-error")
+        self.disconnected = Event("disconnected")
     
     def initState(self, loop, state):
         state.bindAddr = None

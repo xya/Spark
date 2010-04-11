@@ -20,10 +20,10 @@
 
 import json
 from struct import Struct
-from spark.async import Future, Process, ProcessEvent
+from spark.async import Future, Process, ProcessNotifier
 
 __all__ = ["Message", "TextMessage", "Request", "Response",
-           "Notification", "Blob", "Block", "match", "MessageMatcher", "NotificationEvent"]
+           "Notification", "Blob", "Block", "match", "MessageMatcher", "Event"]
 
 def match(pattern, o):
     """ Try to match an object against a pattern. Return True if the pattern is matched. """
@@ -138,17 +138,17 @@ class MessageWriter(object):
         """ Write a message to the file. """
         return self.file.write(self.format(m))
 
-class NotificationEvent(ProcessEvent):
+class Event(ProcessNotifier):
     """ Notification event which can be suscribed by other processes. """
     def __init__(self, name, lock=None):
-        super(NotificationEvent, self).__init__(lock)
+        super(Event, self).__init__(lock)
         self.name = name
     
     def suscribe(self, pid=None, matcher=None, callable=None, result=True):
         """ Suscribe a process to start receiving notifications of this event. """
         if matcher:
             matcher.addNotification(self.name, callable, result)
-        super(NotificationEvent, self).suscribe(pid)
+        super(Event, self).suscribe(pid)
     
     def __call__(self, *args):
         """ Send a notification to all suscribed processes. """
@@ -159,7 +159,7 @@ class NotificationEvent(ProcessEvent):
         else:
             params = args
         m = Notification(self.name, params)
-        super(NotificationEvent, self).__call__(m)
+        super(Event, self).__call__(m)
 
 class MessageMatcher(object):
     """ Matches messages against a list of patterns. """
