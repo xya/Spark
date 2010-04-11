@@ -304,28 +304,30 @@ class ProcessNotifier(object):
 class ProcessMessage(Sequence):
     """ Base class for messages that can be sent to a process."""
     def __init__(self, name, *params):
+        self.type = self.__class__.__name__
         self.name = name
         self.params = params
     
     def __len__(self):
-        return 1 + len(self.params)
+        return 2 + len(self.params)
     
     def __getitem__(self, index):
         if isinstance(index, slice):
             return tuple(self)[index]
-        if index == 0:
+        elif index == 0:
+            return self.type
+        elif index == 1:
             return self.name
-        elif (index > 0) and (index <= len(self.params)):
-            return self.params[index - 1]
+        elif (index > 1) and (index < (len(self.params) + 2)):
+            return self.params[index - 2]
         else:
             raise IndexError("Index '%i' out of range" % index)
     
     def __str__(self):
-        args = (self.name, ) + self.params
-        return "%s(%s)" % (self.__class__.__name__, ", ".join(repr(a) for a in args))
+        return str(self[:])
     
     def __repr__(self):
-        return self.__str__()
+        return repr(self[:])
 
 class Command(ProcessMessage):
     """ Contains information about a command sent to a process."""

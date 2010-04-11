@@ -99,16 +99,16 @@ class TcpMessenger(object):
 
     def _listen(self, m, state):
         if state.server:
-            Process.send(m[2], Event("listen-error", "invalid-state"))
+            Process.send(m[3], Event("listen-error", "invalid-state"))
             return
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
         try:
-            state.logger.info("Listening to incoming connections on %s.", repr(m[1]))
-            server.bind(m[1])
+            state.logger.info("Listening to incoming connections on %s.", repr(m[2]))
+            server.bind(m[2])
             server.listen(1)
-            self.listening(m[1])
+            self.listening(m[2])
         except socket.error as e:
-            Process.send(m[2], Event("listen-error", e))
+            Process.send(m[3], Event("listen-error", e))
         else:
             state.server = server
     
@@ -117,9 +117,9 @@ class TcpMessenger(object):
             # we are already waiting for an incoming connection
             return
         elif (state.connState != TcpMessenger.DISCONNECTED) or not state.server:
-            Process.send(m[1], Event("accept-error", "invalid-state"))
+            Process.send(m[2], Event("accept-error", "invalid-state"))
             return
-        args = (state.server, m[1], Process.current())
+        args = (state.server, m[2], Process.current())
         state.acceptReceiver = Process.spawn(self._waitForAccept, args, "TcpServer")
 
     def _waitForAccept(self, server, senderPid, messengerPid):
@@ -138,9 +138,9 @@ class TcpMessenger(object):
 
     def _connect(self, m, state):
         if (state.connState != TcpMessenger.DISCONNECTED) or state.connectReceiver:
-            Process.send(m[2], Event("connection-error", "invalid-state"))
+            Process.send(m[3], Event("connection-error", "invalid-state"))
             return
-        args = (m[1], m[2], Process.current())
+        args = (m[2], m[3], Process.current())
         state.connectReceiver = Process.spawn(self._waitForConnect, args, "TcpClient")
     
     def _waitForConnect(self, remoteAddr, senderPid, messengerPid):
@@ -156,7 +156,7 @@ class TcpMessenger(object):
             self._startSession(conn, remoteAddr, True, senderPid, messengerPid)
 
     def _connected(self, m, state):
-        conn, remoteAddr, initiating = m[1:4]
+        conn, remoteAddr, initiating = m[2:5]
         if initiating:
             receiver = state.connectReceiver
             state.connectReceiver = None
@@ -198,7 +198,7 @@ class TcpMessenger(object):
                 log.exception("socket.close() failed")
             return
         # we can use this connection. start receiving messages
-        reader = messageReader(resp[1], resp[2])
+        reader = messageReader(resp[2], resp[3])
         try:
             while True:
                 m = reader.read()
@@ -216,10 +216,10 @@ class TcpMessenger(object):
     
     def _send(self, m, state):
         if (state.connState != TcpMessenger.CONNECTED) or state.protocol is None:
-            Process.send(m[2], Event("send-error", "invalid-state"))
+            Process.send(m[3], Event("send-error", "invalid-state"))
             return
-        state.logger.info("Sending message: '%s'." % str(m[1]))
-        state.writer.write(m[1])
+        state.logger.info("Sending message: '%s'." % str(m[2]))
+        state.writer.write(m[2])
     
     def _disconnect(self, m, state):
         self._closeConnection(state)
@@ -324,7 +324,7 @@ class Service(object):
             state.messenger.close()
     
     def onConnectionError(self, m, state):
-        self.connectionError(m[1])
+        self.connectionError(m[2])
     
     def onProtocolNegociated(self, m, state):
         self.connected()
@@ -335,11 +335,11 @@ class Service(object):
             state.messenger.accept()
     
     def connectMessenger(self, m, state):
-        state.messenger.connect(m[1])
+        state.messenger.connect(m[2])
     
     def bindMessenger(self, m, state):
         if not state.bindAddr:
-            state.bindAddr = m[1]
+            state.bindAddr = m[2]
             state.messenger.listen(state.bindAddr)
             state.messenger.accept()
     

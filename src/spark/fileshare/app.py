@@ -48,13 +48,13 @@ class SparkApplication(object):
             logging.exception("Error while stoping the session")
     
     def connect(self, address):
-        Process.send(self.runner.pid, ("connect", address))
+        Process.send(self.runner.pid, Command("connect", address))
     
     def bind(self, address):
-        Process.send(self.runner.pid, ("bind", address))
+        Process.send(self.runner.pid, Command("bind", address))
     
     def disconnect(self):
-        Process.send(self.runner.pid, ("disconnect", ))
+        Process.send(self.runner.pid, Command("disconnect"))
     
     @property
     def myIPaddress(self):

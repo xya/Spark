@@ -296,11 +296,16 @@ class EventSenderTest(unittest.TestCase):
 class ProcessMessageTest(unittest.TestCase):
     def testMessageAsSequence(self):
         c = Command('bind', '127.0.0.1:4550')
-        self.assertEqual(2, len(c))
-        self.assertEqual('bind', c[0])
-        self.assertEqual('127.0.0.1:4550', c[1])
-        self.assertEqual(['bind', '127.0.0.1:4550'], list(c))
-        self.assertEqual(('127.0.0.1:4550', ), c[1:])
+        self.assertEqual(3, len(c))
+        self.assertEqual(c.type, c[0])
+        self.assertEqual('bind', c[1])
+        self.assertEqual('127.0.0.1:4550', c[2])
+        self.assertEqual([c.type, 'bind', '127.0.0.1:4550'], list(c))
+        self.assertEqual(('127.0.0.1:4550', ), c[2:])
+    
+    def testComparingMessages(self):
+        assertMatch(Command('foo'), Command('foo'))
+        assertNoMatch(Command('foo'), Event('foo'))
 
 if __name__ == '__main__':
     run_tests()

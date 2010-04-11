@@ -227,7 +227,7 @@ class MainWindow(QMainWindow):
         #self.app.files().after(onGuiThread(self.end_listFiles))
     
     def sessionStateChanged(self, m):
-        self.app.updateState(m[1])
+        self.app.updateState(m[2])
         self.updateStatusBar()
         self.updateToolBar()
     
