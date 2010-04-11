@@ -23,7 +23,7 @@ import os
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from spark.gui.filelist import FileList, FileInfoWidget, iconPath
-from spark.async import process
+from spark.async import Process
 from spark.messaging import MessageMatcher, Notification
 from spark.fileshare import SharedFile, TransferInfo, UPLOAD, DOWNLOAD
 
@@ -307,14 +307,14 @@ class ConnectionDialog(QDialog):
 class GuiProcess(QObject):
     def __init__(self):
         super(GuiProcess, self).__init__()
-        self.pid = process.attach("GUI", self)
+        self.pid = Process.attach("GUI", self)
         self.messages = MessageMatcher()
     
     def __enter__(self):
         return self
     
     def __exit__(self, type, e, traceback):
-        process.detach()
+        Process.detach()
     
     def event(self, ev):
         """ Handle events sent to the object. """

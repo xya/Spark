@@ -21,7 +21,8 @@
 # TODO: refactor this
 from spark.async.tasks import *
 from spark.async.queue import *
+from spark.async.process import *
 
-__all__ = ["process"]
-for module in (tasks, queue):
+__all__ = []
+for module in (tasks, queue, process):
     __all__.extend(module.__all__)

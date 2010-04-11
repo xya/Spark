@@ -23,7 +23,7 @@ import sys
 import unittest
 from unittest import TestCase, TestLoader, TestSuite
 import logging
-from spark.async import Future, process, WaitTimeoutError
+from spark.async import Future, Process, WaitTimeoutError
 
 class CustomLoader(TestLoader):
     def loadTestsFromTestCase(self, testCaseClass):
@@ -51,11 +51,11 @@ def processTimeout(timeout):
     def decorator(fun):
         def wrapper(*args, **kw):
             cont = Future()
-            pid = process.spawn(cont.run, (fun, ) + args, "TimeoutProcess")
+            pid = Process.spawn(cont.run, (fun, ) + args, "TimeoutProcess")
             try:
                 return cont.wait(timeout)
             except WaitTimeoutError:
-                process.kill(pid)
+                Process.kill(pid)
                 raise
         return wrapper
     return decorator

@@ -23,7 +23,7 @@ import unittest
 import threading
 import functools
 import time
-from spark.async import Future, coroutine, process
+from spark.async import Future, coroutine, Process, ProcessRunner
 from spark.messaging.messages import *
 from spark.messaging.service import TcpMessenger, Service
 from spark.tests.common import run_tests, processTimeout
@@ -56,19 +56,19 @@ class ProcessIntegrationTest(unittest.TestCase):
     
     @processTimeout(1.0)
     def testTcpSession(self):
-        pid = process.current()
+        pid = Process.current()
         server = TestServer()
-        runner = process.ProcessRunner(server)
+        runner = ProcessRunner(server)
         runner.start()
         server.listening.suscribe()
-        process.send(runner.pid, ("bind", (BIND_ADDRESS, BIND_PORT)))
-        self.assertMatch(Notification("listening", None), process.receive())
+        Process.send(runner.pid, ("bind", (BIND_ADDRESS, BIND_PORT)))
+        self.assertMatch(Notification("listening", None), Process.receive())
         clientMessenger = TcpMessenger()
         clientMessenger.protocolNegociated.suscribe()
         clientMessenger.connect((BIND_ADDRESS, BIND_PORT))
-        self.assertMatch(Notification("protocol-negociated", None), process.receive())
+        self.assertMatch(Notification("protocol-negociated", None), Process.receive())
         clientMessenger.send(Request("swap", ("foo", "bar"), 1))
-        self.assertMatch(Response("swap", ("bar", "foo"), 1), process.receive())
+        self.assertMatch(Response("swap", ("bar", "foo"), 1), Process.receive())
         clientMessenger.close()
 
 if __name__ == '__main__':

@@ -20,7 +20,7 @@
 
 import json
 from struct import Struct
-from spark.async import Future, process
+from spark.async import Future, Process, ProcessEvent
 
 __all__ = ["Message", "TextMessage", "Request", "Response",
            "Notification", "Blob", "Block", "match", "MessageMatcher", "NotificationEvent"]
@@ -138,7 +138,7 @@ class MessageWriter(object):
         """ Write a message to the file. """
         return self.file.write(self.format(m))
 
-class NotificationEvent(process.ProcessEvent):
+class NotificationEvent(ProcessEvent):
     """ Notification event which can be suscribed by other processes. """
     def __init__(self, name, lock=None):
         super(NotificationEvent, self).__init__(lock)
@@ -185,12 +185,12 @@ class MessageMatcher(object):
                 if callable:
                     callable(m, *args)
                 return result
-        process.logger().info("No rule matched message %s" % str(m))
+        Process.logger().info("No rule matched message %s" % str(m))
         return False
     
     def run(self, *args):
         """ Retrieve messages from the current process' queue while they match any pattern. """
         while True:
-            m = process.receive()
+            m = Process.receive()
             if not self.match(m, *args):
                 break

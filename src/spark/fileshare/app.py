@@ -21,7 +21,7 @@
 import logging
 import functools
 import types
-from spark.async import Delegate, process
+from spark.async import Delegate, Process, ProcessRunner
 from spark.messaging import *
 
 __all__ = ["SparkApplication", "Session"]
@@ -35,7 +35,7 @@ class SparkApplication(object):
         self._uploadSpeed = 0.0
         self._downloadSpeed = 0.0
         self.session = Session()
-        self.runner = process.ProcessRunner(self.session)
+        self.runner = ProcessRunner(self.session)
         self.runner.start()
     
     def __enter__(self):
@@ -48,13 +48,13 @@ class SparkApplication(object):
             logging.exception("Error while stoping the session")
     
     def connect(self, address):
-        process.send(self.runner.pid, ("connect", address))
+        Process.send(self.runner.pid, ("connect", address))
     
     def bind(self, address):
-        process.send(self.runner.pid, ("bind", address))
+        Process.send(self.runner.pid, ("bind", address))
     
     def disconnect(self):
-        process.send(self.runner.pid, ("disconnect", ))
+        Process.send(self.runner.pid, ("disconnect", ))
     
     @property
     def myIPaddress(self):

@@ -24,175 +24,15 @@ import threading
 import logging
 from spark.async.queue import BlockingQueue, QueueClosedError
 
-__all__ = ["all", "current", "run_main", "spawn", "send", "try_send", "receive", "try_receive",
-           "ProcessExited", "ProcessKilled", "ProcessState", "ProcessEvent", "ProcessRunner"]
-
-_lock = threading.RLock()
-_processes = {}
-_nextID = 1
-_current = threading.local()
-
-def all():
-    """ Enumerates the IDs of all processes. """
-    with _lock:
-        return _processes.iter_keys()
-
-def current():
-    """ Return the ID of the currently executing process. """
-    try:
-        return _current.p.pid
-    except AttributeError:
-        return None
-
-def logger():
-    """ Return a logger for the currently executing process. """
-    if hasattr(_current, "p"):
-        p = _current.p
-        if p.logger is None:
-            p.logger = logging.getLogger(p.displayName())
-        return p.logger
-    else:
-        return logging.getLogger()
-
-def attach(name=None, queue=None):
-    """ Associate the current thread with a PID and message queue. Return the PID. """
-    current_pid = current()
-    if current_pid is not None:
-        raise Exception("This thread already has a PID")
-    with _lock:
-        pid = _new_id()
-        p = _create_process(pid, name)
-        if queue is not None:
-            p.queue = queue
-        _set_current_process(pid)
-        p.thread = threading.current_thread()
-    log = logger()
-    log.info("Process attached.")
-    return pid
-
-def detach():
-    """ Disassociate the current thread from its PID and message queue. """
-    current_pid = current()
-    if current_pid is None:
-        raise Exception("The current thread has no PID")
-    log = logger()
-    log.info("Process detached.")
-    with _lock:
-        _remove_current_process(current_pid)
-
-def spawn(fun, args=(), name=None):
-    """ Create a new process and return its PID. """
-    with _lock:
-        pid = _new_id()
-        p = _create_process(pid, name)
-    def entry():
-        with _lock:
-            _set_current_process(pid)
-        log = logger()
-        log.info("Process started.")
-        try:
-            fun(*args)
-        except ProcessKilled:
-            log.info("Process killed.")
-        except Exception:
-            log.exception("An exception was raised by the process")
-        else:
-            log.info("Process stopped.")
-        finally:
-            with _lock:
-                _remove_current_process(pid)
-    p.thread = threading.Thread(target=entry)
-    p.thread.daemon = True
-    p.thread.start()
-    return pid
-
-def send(pid, m):
-    """ Send a message to the specified process. """
-    pid = _to_pid(pid)
-    with _lock:
-        try:
-            p = _processes[pid]
-            queue = p.queue
-        except KeyError:
-            raise Exception("Invalid PID")
-    try:
-        queue.put(m)
-    except QueueClosedError:
-        raise ProcessExited("Can't send a message to a stopped process (PID: %i)" % pid)
-
-def try_send(pid, m):
-    """ Send a message to the specified process. If the process exited, return False. """
-    pid = _to_pid(pid)
-    try:
-        send(pid, m)
-        return True
-    except ProcessExited:
-        return False
-
-def receive():
-    """ Retrieve a message from the current process' queue. """
-    try:
-        p = _current.p
-    except NameError:
-        raise Exception("The current thread has no PID")
-    try:
-        return p.queue.get()
-    except QueueClosedError:
-        raise ProcessKilled("The process got killed (PID: %i)" % p.pid)
-
-def try_receive():
-    """
-    Retrieve a message from the current process' queue and return (True, message).
-    If a message can't be retrieved now, return (False, None).
-    """
-    try:
-        p = _current.p
-    except NameError:
-        raise Exception("The current thread has no PID")
-    return p.queue.get_nowait()
-
-def kill(pid, flushQueue=True):
-    """ Kill the specified process by closing its message queue. Return False on error. """
-    pid = _to_pid(pid)
-    with _lock:
-        try:
-            p = _processes[pid]
-            queue = p.queue
-        except KeyError:
-            return False
-    logger().info("Killing process %i.", pid)
-    queue.close(flushQueue)
-    return True
-
-def _to_pid(pid):
-    if hasattr(pid, "pid"):
-        return pid.pid
-    elif type(pid) is int:
-        return pid
-    else:
-        raise Exception("Invalid PID '%s'" % repr(pid))
-
-def _new_id():
-    global _nextID
-    id = _nextID
-    _nextID += 1
-    return id
-
-def _create_process(pid, name):
-    p = Process(pid, name)
-    _processes[pid] = p
-    return p
-
-def _set_current_process(pid):
-    _current.p = _processes[pid]
-
-def _remove_current_process(current_pid):
-    p = _current.p
-    p.queue.close()
-    del _current.p
-    #del _processes[current_pid]
+__all__ = ["Process", "ProcessExited", "ProcessKilled", "ProcessState", "ProcessEvent", "ProcessRunner"]
 
 class Process(object):
+    """ A process can execute callables and communicate using messages. """
+    _lock = threading.RLock()
+    _processes = {}
+    _nextID = 1
+    _current = threading.local()
+    
     def __init__(self, pid, name):
         self.pid = pid
         self.name = name
@@ -205,6 +45,181 @@ class Process(object):
             return "%s-%i" % (self.name, self.pid)
         else:
             return "process-%i" % self.pid
+
+    @classmethod
+    def all(cls):
+        """ Enumerates the IDs of all processes. """
+        with cls._lock:
+            return cls._processes.iter_keys()
+    
+    @classmethod
+    def current(cls):
+        """ Return the ID of the currently executing process. """
+        try:
+            return cls._current.p.pid
+        except AttributeError:
+            return None
+    
+    @classmethod
+    def logger(cls):
+        """ Return a logger for the currently executing process. """
+        if hasattr(cls._current, "p"):
+            p = cls._current.p
+            if p.logger is None:
+                p.logger = logging.getLogger(p.displayName())
+            return p.logger
+        else:
+            return logging.getLogger()
+    
+    @classmethod
+    def attach(cls, name=None, queue=None):
+        """ Associate the current thread with a PID and message queue. Return the PID. """
+        current_pid = cls.current()
+        if current_pid is not None:
+            raise Exception("This thread already has a PID")
+        with cls._lock:
+            pid = cls._new_id()
+            p = cls._create_process(pid, name)
+            if queue is not None:
+                p.queue = queue
+            cls._set_current_process(pid)
+            p.thread = threading.current_thread()
+        log = cls.logger()
+        log.info("Process attached.")
+        return pid
+    
+    @classmethod
+    def detach(cls):
+        """ Disassociate the current thread from its PID and message queue. """
+        current_pid = cls.current()
+        if current_pid is None:
+            raise Exception("The current thread has no PID")
+        log = cls.logger()
+        log.info("Process detached.")
+        with cls._lock:
+            cls._remove_current_process(current_pid)
+    
+    @classmethod
+    def spawn(cls, fun, args=(), name=None):
+        """ Create a new process and return its PID. """
+        with cls._lock:
+            pid = cls._new_id()
+            p = cls._create_process(pid, name)
+        def entry():
+            with cls._lock:
+                cls._set_current_process(pid)
+            log = cls.logger()
+            log.info("Process started.")
+            try:
+                fun(*args)
+            except ProcessKilled:
+                log.info("Process killed.")
+            except Exception:
+                log.exception("An exception was raised by the process")
+            else:
+                log.info("Process stopped.")
+            finally:
+                with cls._lock:
+                    cls._remove_current_process(pid)
+        p.thread = threading.Thread(target=entry)
+        p.thread.daemon = True
+        p.thread.start()
+        return pid
+    
+    @classmethod
+    def send(cls, pid, m):
+        """ Send a message to the specified process. """
+        pid = cls._to_pid(pid)
+        with cls._lock:
+            try:
+                p = cls._processes[pid]
+                queue = p.queue
+            except KeyError:
+                raise Exception("Invalid PID")
+        try:
+            queue.put(m)
+        except QueueClosedError:
+            raise ProcessExited("Can't send a message to a stopped process (PID: %i)" % pid)
+    
+    @classmethod
+    def try_send(cls, pid, m):
+        """ Send a message to the specified process. If the process exited, return False. """
+        pid = cls._to_pid(pid)
+        try:
+            cls.send(pid, m)
+            return True
+        except ProcessExited:
+            return False
+    
+    @classmethod
+    def receive(cls):
+        """ Retrieve a message from the current process' queue. """
+        try:
+            p = cls._current.p
+        except NameError:
+            raise Exception("The current thread has no PID")
+        try:
+            return p.queue.get()
+        except QueueClosedError:
+            raise ProcessKilled("The process got killed (PID: %i)" % p.pid)
+    
+    @classmethod
+    def try_receive(cls):
+        """
+        Retrieve a message from the current process' queue and return (True, message).
+        If a message can't be retrieved now, return (False, None).
+        """
+        try:
+            p = cls._current.p
+        except NameError:
+            raise Exception("The current thread has no PID")
+        return p.queue.get_nowait()
+    
+    @classmethod
+    def kill(cls, pid, flushQueue=True):
+        """ Kill the specified process by closing its message queue. Return False on error. """
+        pid = cls._to_pid(pid)
+        with cls._lock:
+            try:
+                p = cls._processes[pid]
+                queue = p.queue
+            except KeyError:
+                return False
+        cls.logger().info("Killing process %i.", pid)
+        queue.close(flushQueue)
+        return True
+    
+    @classmethod
+    def _to_pid(cls, pid):
+        if hasattr(pid, "pid"):
+            return pid.pid
+        elif type(pid) is int:
+            return pid
+        else:
+            raise Exception("Invalid PID '%s'" % repr(pid))
+    
+    @classmethod
+    def _new_id(cls):
+        id = cls._nextID
+        cls._nextID += 1
+        return id
+    
+    @classmethod
+    def _create_process(cls, pid, name):
+        p = cls(pid, name)
+        cls._processes[pid] = p
+        return p
+    
+    @classmethod
+    def _set_current_process(cls, pid):
+        cls._current.p = cls._processes[pid]
+    
+    @classmethod
+    def _remove_current_process(cls, current_pid):
+        p = cls._current.p
+        p.queue.close()
+        del cls._current.p
+        #del cls._processes[current_pid]
 
 class ProcessExited(Exception):
     pass
@@ -225,7 +240,7 @@ class ProcessEvent(object):
     def suscribe(self, pid=None):
         """ Suscribe a process to start receiving notifications of this event. """
         if not pid:
-            pid = current()
+            pid = Process.current()
             if not pid:
                 raise Exception("The current thread has no PID")
         with self.__lock:
@@ -234,7 +249,7 @@ class ProcessEvent(object):
     def unsuscribe(self, pid=None):
         """ Unsuscribe a process to stop receiving notifications of this event. """
         if not pid:
-            pid = current()
+            pid = Process.current()
             if not pid:
                 raise Exception("The current thread has no PID")
         with self.__lock:
@@ -247,7 +262,7 @@ class ProcessEvent(object):
             suscribers = self.__suscribers.copy()
         for pid in suscribers:
             try:
-                send(pid, m)
+                Process.send(pid, m)
             except Exception:
                 pass
 
@@ -274,11 +289,11 @@ class ProcessRunner(object):
         """ Start a new process to run the object. """
         if not self.pid:
             p = self.runnable
-            self.pid = spawn(p.run, name=self.name)
+            self.pid = Process.spawn(p.run, name=self.name)
         return self.pid
     
     def stop(self):
         """ Stop the process if it is running. """
         if self.pid:
-            try_send(self.pid, "stop")
+            Process.try_send(self.pid, "stop")
             self.pid = None
