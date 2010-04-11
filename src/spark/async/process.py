@@ -20,13 +20,13 @@
 
 """ Interface that allows the use of Erlang-like processes that can send messages to each other. """
 
-from collections import Sequence
+from collections import Sequence, Mapping
 import threading
 import logging
 from spark.async.queue import BlockingQueue, QueueClosedError
 
 __all__ = ["Process", "ProcessState", "ProcessRunner",
-           "ProcessNotifier", "Command", "Event", "EventSender",
+           "ProcessNotifier", "Command", "Event", "EventSender", "match",
            "ProcessExited", "ProcessKilled"]
 
 class Process(object):
@@ -302,6 +302,48 @@ class Command(ProcessMessage):
 class Event(ProcessMessage):
     """ Contains information about an event sent by a process. """
     pass
+
+def match(pattern, o):
+    """ Try to match an object against a pattern. Return True if the pattern is matched or False otherwise. """
+    if (pattern is None) or (pattern == o):
+        return True
+    if type(pattern) is type:
+        # match types
+        return type(o) is pattern
+    elif type(pattern) is str or type(pattern) is unicode:
+        # match strings
+        return pattern == o
+    elif isinstance(pattern, Mapping):
+        # match dicts
+        if isinstance(o, Mapping):
+            for key in pattern:
+                if (not key in o) or (not match(pattern[key], o[key])):
+                    return False
+            return True
+        else:
+            return False
+    elif isinstance(pattern, Sequence):
+        # match lists
+        if isinstance(o, Sequence):
+            n = len(pattern)
+            if n != len(o):
+                return False
+            else:
+                for i in range(0, n):
+                    if not match(pattern[i], o[i]):
+                        return False
+                return True
+        else:
+            return False
+    else:
+        # match attributes
+        for name in dir(pattern):
+            value = getattr(pattern, name)
+            # ignore private and special attributes and functions
+            if not name.startswith("_") and not hasattr(value, "__call__"):
+                if not hasattr(o, name) or not match(value, getattr(o, name)):
+                    return False
+        return True
         
 class EventSender(ProcessNotifier):
     """
@@ -311,23 +353,22 @@ class EventSender(ProcessNotifier):
     """
     def __init__(self, name, *args):
         super(EventSender, self).__init__()
-        self.name = name
-        self.args = args
-    
-    @property
-    def pattern(self):
-        """ Return a pattern that matches events sent by this object """
-        return Event(self.name, *self.args)
+        self.pattern = Event(name, *args)
     
     def suscribe(self, pid=None, matcher=None, callable=None, result=True):
         """ Suscribe a process to start receiving notifications of this event. """
         if matcher:
-            matcher.addPattern(Event(self.name, *self.args), callable, result)
+            matcher.addPattern(self.pattern, callable, result)
         super(EventSender, self).suscribe(pid)
     
     def __call__(self, *args):
         """ Send a notification to all suscribed processes. """
-        super(EventSender, self).__call__(Event(self.name, *args))
+        event = Event(self.pattern.name, *args)
+        if match(self.pattern, event):
+            super(EventSender, self).__call__(event)
+        else:
+            raise TypeError("%s doesn't match the pattern %s" %
+                            (repr(event), repr(self.pattern)))
 
 class ProcessRunner(object):
     """ Run objects that have a run() method in a separate process. """

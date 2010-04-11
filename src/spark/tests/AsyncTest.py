@@ -270,12 +270,28 @@ class EventSenderTest(unittest.TestCase):
         ev2.suscribe()
         ev()
         ev2(1)
-        ev2()
         assertMatch(Event("foo"), ev.pattern)
         assertMatch(Event("bar", int), ev2.pattern)
         assertMatch(Event("foo"), Process.receive())
         assertMatch(Event("bar", int), Process.receive())
-        assertNoMatch(Event("bar", int), Process.receive())
+    
+    @processTimeout(1.0)
+    def testPatternMismatch(self):
+        """ EventSender should not send messages that don't match its pattern"""
+        ev = EventSender("foo")
+        ev2 = EventSender("bar", int)
+        ev.suscribe()
+        ev2.suscribe()
+        events = [(ev, ["bar"]), (ev2, ["baz"])]
+        for sender, args in events:
+            try:
+                sender(*args)
+            except Exception:
+                pass
+            else:
+                event = Event(sender.name, *args)
+                self.fail("Sent %s which doesn't match the pattern %s"
+                    % (repr(event), repr(sender.pattern)))
 
 class ProcessMessageTest(unittest.TestCase):
     def testMessageAsSequence(self):

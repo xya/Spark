@@ -293,7 +293,7 @@ class SocketWrapper(object):
 class Service(object):
     """ Base class for services that handle requests using messaging. """
     def __init__(self):
-        self.connected = EventSender("connected", None)
+        self.connected = EventSender("connected")
         self.connectionError = EventSender("connection-error", None)
         self.disconnected = EventSender("disconnected")
     

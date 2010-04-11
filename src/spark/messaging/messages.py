@@ -18,55 +18,12 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
-from collections import Sequence, Mapping
 import json
 from struct import Struct
-from spark.async import Future, Process, ProcessNotifier, Event
+from spark.async import Future, Process, ProcessNotifier, Event, match
 
 __all__ = ["Message", "TextMessage", "Request", "Response", "Notification",
-           "Blob", "Block", "match", "MessageMatcher"]
-
-def match(pattern, o):
-    """ Try to match an object against a pattern. Return True if the pattern is matched. """
-    if (pattern is None) or (pattern == o):
-        return True
-    if type(pattern) is type:
-        # match types
-        return type(o) is pattern
-    elif type(pattern) is str or type(pattern) is unicode:
-        # match strings
-        return pattern == o
-    elif isinstance(pattern, Mapping):
-        # match dicts
-        if isinstance(o, Mapping):
-            for key in pattern:
-                if (not key in o) or (not match(pattern[key], o[key])):
-                    return False
-            return True
-        else:
-            return False
-    elif isinstance(pattern, Sequence):
-        # match lists
-        if isinstance(o, Sequence):
-            n = len(pattern)
-            if n != len(o):
-                return False
-            else:
-                for i in range(0, n):
-                    if not match(pattern[i], o[i]):
-                        return False
-                return True
-        else:
-            return False
-    else:
-        # match attributes
-        for name in dir(pattern):
-            value = getattr(pattern, name)
-            # ignore private and special attributes and functions
-            if not name.startswith("_") and not hasattr(value, "__call__"):
-                if not hasattr(o, name) or not match(value, getattr(o, name)):
-                    return False
-        return True
+           "Blob", "Block", "MessageMatcher"]
 
 class Message(object):
     def __str__(self):
