@@ -25,8 +25,6 @@ import functools
 import time
 from spark.async import Future, coroutine, process
 from spark.messaging.messages import *
-from spark.messaging import TcpTransport, PipeTransport, MessagingSession, Service
-from spark.fileshare import FileShare
 from spark.messaging.service import TcpMessenger
 from spark.fileshare.app import Session
 from spark.tests.common import ReactorTestBase, run_tests, processTimeout

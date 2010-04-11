@@ -25,7 +25,6 @@ import functools
 import os
 import logging
 from spark.async import Future, Reactor
-from spark.messaging import Transport
 from spark.tests.common import ReactorTestBase, run_tests
 
 TestFile = os.path.join(os.path.dirname(__file__), 'ProtocolTest.log')

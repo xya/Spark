@@ -19,11 +19,13 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 # TODO: refactor this
-from spark.fileshare.files import *
+from spark.fileshare import transfers
+from spark.fileshare import files
+from spark.fileshare import app
 from spark.fileshare.transfers import *
-from spark.fileshare.service import *
+from spark.fileshare.files import *
 from spark.fileshare.app import *
 
 __all__ = []
-for module in (files, transfers, service, app):
+for module in (transfers, files, app):
     __all__.extend(module.__all__)

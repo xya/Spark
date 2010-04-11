@@ -23,7 +23,6 @@ import functools
 import types
 from spark.async import Delegate, process
 from spark.messaging import *
-from spark.fileshare import FileShare
 
 __all__ = ["SparkApplication", "Session"]
 
