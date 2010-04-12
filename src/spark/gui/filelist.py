@@ -34,12 +34,9 @@ class CustomList(QWidget):
     def __init__(self, parent=None):
         super(CustomList, self).__init__(parent)
         self.setFocusPolicy(Qt.StrongFocus)
-        pal = self.palette()
-        self.oddColor = pal.color(QPalette.Base)
-        self.evenColor = pal.color(QPalette.AlternateBase)
-        #self.oddColor = QColor(255, 255, 255)
-        #self.evenColor = QColor(239, 239, 239)
-        pal.setColor(QPalette.Window, self.oddColor)
+        self.oddColor = QPalette.Base
+        self.evenColor = QPalette.AlternateBase
+        self.setBackgroundRole(self.oddColor)
         self.setAutoFillBackground(True)
         self.items = []
         self.selectedIndex = -1
@@ -47,7 +44,7 @@ class CustomList(QWidget):
         layout.setMargin(0)
         layout.setSpacing(0)
         self.setLayout(layout)
-    
+
     def addItem(self, widget):
         self.layout().addWidget(widget)
         self.items.append(widget)
@@ -74,18 +71,15 @@ class CustomList(QWidget):
             self.updateItemPalette(i)
     
     def updateItemPalette(self, index):
-        appPal = QApplication.palette()
         if index == self.selectedIndex:
-            bgColor = appPal.color(QPalette.Highlight)
-            fgColor = appPal.color(QPalette.HighlightedText)
+            bgColor = QPalette.Highlight
+            fgColor = QPalette.HighlightedText
         else:
             bgColor = (index % 2) and self.evenColor or self.oddColor
-            fgColor = appPal.color(QPalette.WindowText)
+            fgColor = QPalette.WindowText
         item = self.items[index]
-        pal = item.palette()
-        pal.setColor(QPalette.Window, bgColor)
-        pal.setColor(QPalette.WindowText, fgColor)
-        item.updatePalette(pal)
+        item.setForegroundRole(fgColor)
+        item.setBackgroundRole(bgColor)
     
     def mousePressEvent(self, e):
         # the user might have clicked on a child's child widget
