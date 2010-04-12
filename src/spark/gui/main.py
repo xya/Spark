@@ -56,6 +56,8 @@ class MainWindow(QMainWindow):
         self.pid.messages.suscribeTo(self.app.session.connected)
         self.pid.messages.suscribeTo(self.app.session.connectionError)
         self.pid.messages.suscribeTo(self.app.session.stateChanged, self.sessionStateChanged)
+        self.pid.messages.suscribeTo(self.app.session.filesUpdated, self.onFilesUpdated)
+        self.pid.messages.addPattern(Event("list-files", None), self.onListFiles)
         self.updateStatusBar()
         self.updateToolBar()
     
@@ -222,17 +224,16 @@ class MainWindow(QMainWindow):
         if self.selectedID is not None:
             self.app.startTransfer(self.selectedID)
     
-    def sharedFilesUpdated(self):
-        pass
-        #self.app.files().after(onGuiThread(self.end_listFiles))
+    def onFilesUpdated(self, m):
+        self.app.listFiles()
     
     def sessionStateChanged(self, m):
         self.app.updateState(m[2])
         self.updateStatusBar()
         self.updateToolBar()
     
-    def end_listFiles(self, prev):
-        files = prev.result
+    def onListFiles(self, m):
+        files = m[2]
         self.updateTransferList(files)
 
 class ConnectionDialog(QDialog):

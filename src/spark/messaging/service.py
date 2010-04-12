@@ -286,7 +286,7 @@ class SocketWrapper(object):
         try:
             return self.sock.recv(size)
         except socket.error as e:
-            if e.errno == os.errno.ECONNRESET:
+            if (e.errno == os.errno.ECONNRESET) or (e.errno == os.errno.EBADF):
                 return ""
             else:
                 raise
@@ -301,6 +301,7 @@ class Service(object):
     def initState(self, loop, state):
         state.bindAddr = None
         state.messenger = TcpMessenger()
+        state.nextTransID = 1
     
     def initPatterns(self, loop, state):
         # messages received from TcpMessenger
@@ -349,15 +350,30 @@ class Service(object):
     def disconnectMessenger(self, m, state):
         state.messenger.disconnect()
     
+    def _newTransID(self, state):
+        transID = state.nextTransID
+        state.nextTransID += 1
+        return transID
+    
+    def sendRequest(self, state, tag, *params):
+        """ Send a request. """
+        transID = self._newTransID(state)
+        state.messenger.send(Request(tag, *params).withID(transID))
+    
     def sendResponse(self, state, req, *params):
         """ Send a response to a request. """
         state.messenger.send(Response(req.tag, *params).withID(req.transID))
+    
+    def sendNotification(self, state, tag, *params):
+        """ Send a notification. """
+        transID = self._newTransID(state)
+        state.messenger.send(Notification(tag, *params).withID(transID))
 
 class RequestMatcher(MessageMatcher):
     def addRequestHandler(self, handler):
         """
         Add a predicate matching requests and invoking the relevant handler methods.
-        For example a 'start-transfer' request would invoke the 'handleStartTransfer' method.
+        For example a 'start-transfer' request would invoke the 'requestSartTransfer' method.
         """
         def matchRequestHandler(m, *args):
             if isinstance(m, Sequence) and len(m) >= 2 and match(('>', basestring), m[0:2]):
@@ -369,7 +385,7 @@ class RequestMatcher(MessageMatcher):
         self.addPredicate(matchRequestHandler)
     
     def _findHandlerMethod(self, handler, tag):
-        attrName = "handle" + toPascalCase(tag)
+        attrName = "request" + toPascalCase(tag)
         attr = getattr(handler, attrName, None)
         if hasattr(attr, "__call__"):
             return attr

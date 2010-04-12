@@ -23,8 +23,9 @@ import functools
 import types
 from spark.async import *
 from spark.messaging import *
+from spark.fileshare.service import FileShare
 
-__all__ = ["SparkApplication", "Session"]
+__all__ = ["SparkApplication"]
 
 class SparkApplication(object):
     """ Hold the state of the whole application. """
@@ -34,7 +35,7 @@ class SparkApplication(object):
         self._activeTransfers = 0
         self._uploadSpeed = 0.0
         self._downloadSpeed = 0.0
-        self.session = Session()
+        self.session = FileShare()
         self.runner = ProcessRunner(self.session)
         self.runner.start()
     
@@ -55,6 +56,36 @@ class SparkApplication(object):
     
     def disconnect(self):
         Process.send(self.runner.pid, Command("disconnect"))
+    
+    def listFiles(self, excludeRemoved=True, senderPid=None):
+        """ Return a copy of the current file table, which maps file IDs to files. """
+        if not senderPid:
+            senderPid = Process.current()
+        Process.send(self.runner.pid, Command("list-files", excludeRemoved, senderPid))
+    
+    def addFile(self, path, senderPid=None):
+        """ Add the local file with the given path to the list. """
+        if not senderPid:
+            senderPid = Process.current()
+        Process.send(self.runner.pid, Command("add-file", path, senderPid))
+    
+    def removeFile(self, fileID, senderPid=None):
+        """ Remove the file (local or remote) with the given ID from the list. """
+        if not senderPid:
+            senderPid = Process.current()
+        Process.send(self.runner.pid, Command("remove-file", fileID, senderPid))
+    
+    def startTransfer(self, fileID, senderPid=None):
+        """ Start receiving the remote file with the given ID. """
+        if not senderPid:
+            senderPid = Process.current()
+        Process.send(self.runner.pid, Command("start-transfer", fileID, senderPid))
+    
+    def stopTransfer(self, fileID, senderPid=None):
+        """ Stop receiving the remote file with the given ID. """
+        if not senderPid:
+            senderPid = Process.current()
+        Process.send(self.runner.pid, Command("stop-transfer", fileID, senderPid))
     
     @property
     def myIPaddress(self):
@@ -94,37 +125,3 @@ class SparkApplication(object):
             if size >= count:
                 return "%0.2f %s" % (size / float(count), unit)
         return "%d byte" % size
-
-_fileShareMethods = ["files", "addFile", "removeFile", "startTransfer", "stopTransfer"]
-
-class Session(Service):
-    """
-    Represent one session of file sharing. An user can share files with only
-    one user per session.
-    """
-    def __init__(self):
-        super(Session, self).__init__()
-        self.stateChanged = EventSender("session-state-changed", dict)
-        self.filesUpdated = EventSender("files-updated", None)
-        
-    def initState(self, loop, state):
-        super(Session, self).initState(loop, state)
-        state.isConnected = False
-        
-    def initPatterns(self, loop, state):
-        super(Session, self).initPatterns(loop, state)
-        loop.addPattern(Command("update-session-state"), self.updateSessionState)
-        
-    def onProtocolNegociated(self, m, state):
-        super(Session, self).onProtocolNegociated(m, state)
-        state.isConnected = True
-        self.updateSessionState(m, state)
-    
-    def onDisconnected(self, m, state):
-        super(Session, self).onDisconnected(m, state)
-        state.isConnected = False
-        self.updateSessionState(m, state)
-    
-    def updateSessionState(self, m, state):
-        self.stateChanged({"isConnected" : state.isConnected,
-            "activeTransfers" : 0, "uploadSpeed" : 0.0, "downloadSpeed" : 0.0})

@@ -26,9 +26,9 @@ __all__ = ["FileList", "FileInfoWidget", "iconPath"]
 def iconPath(name, size=None):
     """ Return the path of the specified GNOME icon. """
     if size:
-        return "/usr/share/icons/Tango/%ix%i/%s.png" % (size, size, name)
+        return "icons/gnome/%ix%i/%s.png" % (size, size, name)
     else:
-        return "/usr/share/icons/Tango/scalable/%s.svg" % name
+        return "icons/gnome/scalable/%s.svg" % name
 
 class CustomList(QWidget):
     def __init__(self, parent=None):
@@ -37,6 +37,8 @@ class CustomList(QWidget):
         pal = self.palette()
         self.oddColor = pal.color(QPalette.Base)
         self.evenColor = pal.color(QPalette.AlternateBase)
+        #self.oddColor = QColor(255, 255, 255)
+        #self.evenColor = QColor(239, 239, 239)
         pal.setColor(QPalette.Window, self.oddColor)
         self.setAutoFillBackground(True)
         self.items = []

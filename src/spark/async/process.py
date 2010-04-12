@@ -406,7 +406,14 @@ class MessageMatcher(object):
     
     def removePattern(self, pattern, callable=None, result=True):
         """ Remove a pattern from the list. """
-        self.rules.remove((pattern, callable, result))
+        self.patterns.remove((pattern, callable, result))
+    
+    def addForwarding(self, pattern, pid, result=True):
+        """ Add a pattern to match messages. When a message matches the pattern,
+        it is forwarded to the specified process. """
+        def forward(m, args):
+            Process.send(pid, m)
+        self.addPattern(pattern, forward, result)
     
     def addPredicate(self, pred, result=True):
         """ Add a predicate to match messages. """
