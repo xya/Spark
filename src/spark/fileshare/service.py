@@ -48,38 +48,45 @@ class FileShare(Service):
     
     def initPatterns(self, loop, state):
         super(FileShare, self).initPatterns(loop, state)
-        # internal commands
-        loop.addPattern(Command("update-session-state"), self.updateSessionState)
-        loop.addPattern(Command("list-files", bool, int), self.commandListFiles)
-        loop.addPattern(Command("add-file", basestring, int), self.commandAddFile)
-        loop.addPattern(Command("remove-file", int, int), self.commandRemoveFile)
-        loop.addPattern(Command("start-transfer", int, int), self.commandStartTransfer)
-        loop.addPattern(Command("stop-transfer", int, int), self.commandStopTransfer)
-        # messages from the remote peer
-        loop.addPattern(Response("list-files", None), self.responseListFiles)
-        loop.addPattern(Response("create-transfer", int, basestring), self.responseCreateTransfer)
-        loop.addPattern(Notification("file-added", None), self.notificationFileAdded)
-        loop.addPattern(Notification("file-removed", basestring), self.notificationFileRemoved)
-        loop.addPattern(Notification("transfer-state-changed", int, basestring), self.notificationTransferStateChanged)
+        loop.addHandlers(self,
+            # internal commands
+            Command("update-session-state"),
+            Command("list-files", bool, int),
+            Command("add-file", basestring, int),
+            Command("remove-file", int, int),
+            Command("start-transfer", int, int),
+            Command("stop-transfer", int, int),
+            # messages from the remote peer
+            Request("list-files", bool),
+            Response("list-files", None),
+            Request("create-transfer", basestring),
+            Response("create-transfer", int, basestring),
+            Request("start-transfer", int),
+            Response("start-transfer"),
+            Request("close-transfer", int),
+            Response("close-transfer"),
+            Notification("file-added", None),
+            Notification("file-removed", basestring),
+            Notification("transfer-state-changed", int, basestring)
+        )
     
     def onProtocolNegociated(self, m, state):
         super(FileShare, self).onProtocolNegociated(m, state)
         state.isConnected = True
-        self.updateSessionState(m, state)
+        self.commandUpdateSessionState(m, state)
         self.sendRequest(state, "list-files", True)
     
     def onDisconnected(self, m, state):
         super(FileShare, self).onDisconnected(m, state)
         state.isConnected = False
-        self.updateSessionState(m, state)
+        self.commandUpdateSessionState(m, state)
     
-    def updateSessionState(self, m, state):
+    def commandUpdateSessionState(self, m, state):
         self.stateChanged({"isConnected" : state.isConnected,
             "activeTransfers" : 0, "uploadSpeed" : 0.0, "downloadSpeed" : 0.0})
 
-    def commandListFiles(self, m, state):
+    def commandListFiles(self, m, excludeRemoved, senderPid, state):
         """ Return a copy of the current file table, which maps file IDs to files. """
-        excludeRemoved, senderPid = m[2:4]
         cache = state.fileTable.listFiles()
         if excludeRemoved:
             files = {}
@@ -90,29 +97,24 @@ class FileShare(Service):
             files = cache.copy()
         Process.send(senderPid, Event("list-files", files))
     
-    def responseListFiles(self, m, state):
-        files = m[3]
+    def responseListFiles(self, m, transID, files, state):
         state.fileTable.updateTable(files, False)
         
-    def commandAddFile(self, m, state):
+    def commandAddFile(self, m, path, senderPid, state):
         """ Add the local file with the given path to the list. """
-        path, senderPid = m[2:4]
         state.fileTable.addFile(path)
     
-    def commandRemoveFile(self, m, state):
+    def commandRemoveFile(self, m, fileID, senderPid, state):
         """ Remove the file (local or remote) with the given ID from the list. """
-        fileID, senderPid = m[2:4]
         state.fileTable.removeFile(fileID, True)
     
-    def commandStartTransfer(self, m, state):
+    def commandStartTransfer(self, m, fileID, senderPid, state):
         """ Start receiving the remote file with the given ID. """
-        fileID, senderPid = m[2:4]
         file = state.fileTable[fileID]
         if file.transfer is None:
             self.sendRequest(state, "create-transfer", fileID)
     
-    def responseCreateTransfer(self, m, state):
-        transferID, fileID = m[2:4]
+    def responseCreateTransfer(self, m, transID, transferID, fileID, state):
         file = state.fileTable[fileID]
         transfer = state.transferTable.createTransfer(transferID, DOWNLOAD)
         transfer.fileID = file.ID
@@ -120,7 +122,7 @@ class FileShare(Service):
         self.filesUpdated()
         self.sendRequest(state, "start-transfer", transferID)
     
-    def commandStopTransfer(self, fileID):
+    def commandStopTransfer(self, m, fileID, state):
         """ Stop receiving the remote file with the given ID. """
         raise NotImplementedError()
     
@@ -138,14 +140,14 @@ class FileShare(Service):
         if local and state.remoteNotifications and state.isConnected:
             self.sendNotification(state, "file-removed", fileID)
     
-    def requestListFiles(self, m, register, state):
+    def requestListFiles(self, m, transID, register, state):
         """ The remote peer sent a 'list-files' request. """
         if register is True:
             state.remoteNotifications = True
         files = state.fileTable.listFiles() #TODO: only local
         self.sendResponse(state, m, files)
     
-    def requestCreateTransfer(self, m, fileID, state):
+    def requestCreateTransfer(self, m, transID, fileID, state):
         """ The remote peer sent a 'create-transfer' request. """
         file = self.fileTable[fileID]
         transferID = self.transferTable.newTransferID()
@@ -157,7 +159,7 @@ class FileShare(Service):
         self.sendResponse(state, m, transferID)
         self.sendNotification("transfer-state-changed", transferID, transfer.state)
     
-    def requestStartTransfer(self, m, transferID, state):
+    def requestStartTransfer(self, m, transID, transferID, state):
         """ The remote peer sent a 'start-transfer' request. """
         transfer = state.transferTable.find(transferID, UPLOAD)
         transfer.state = "starting"
@@ -165,7 +167,7 @@ class FileShare(Service):
         self.sendResponse(state, m)
         self.sendNotification("transfer-state-changed", transferID, transfer.state)
     
-    def requestCloseTransfer(self, m, transferID, state):
+    def requestCloseTransfer(self, m, transID, transferID, state):
         """ The remote peer sent a 'close-transfer' request. """
         transfer = state.transferTable.find(transferID, UPLOAD)
         transfer.state = "closed"
@@ -173,19 +175,16 @@ class FileShare(Service):
         self.sendResponse(state, m)
         self.sendNotification("transfer-state-changed", transferID, transfer.state)
     
-    def notificationFileAdded(self, m, state):
+    def notificationFileAdded(self, m, transID, fileInfo, state):
         """ The remote peer sent a 'file-added' notification. """
-        fileInfo = m[3]
         state.fileTable.updateFile(fileInfo, False)
     
-    def notificationFileRemoved(self, m, state):
+    def notificationFileRemoved(self, m, transID, fileID, state):
         """ The remote peer sent a 'file-removed' notification. """
-        fileID = m[3]
         state.fileTable.removeFile(fileID, False)
     
-    def notificationTransferStateChanged(self, m, state):
+    def notificationTransferStateChanged(self, m, transID, transferID, transferState, state):
         """ The remote peer sent a 'transfer-state-changed' notification. """
-        transferID, transferState = m[3:5]
         transfer = state.transferTable.find(transferID, DOWNLOAD)
         transfer.state = transferState
         self.filesUpdated()

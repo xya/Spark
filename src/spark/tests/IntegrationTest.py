@@ -39,6 +39,7 @@ class TestServer(Service):
         super(TestServer, self).initPatterns(loop, state)
         loop.suscribeTo(state.messenger.listening, callable=self.handleListening)
         loop.suscribeTo(state.messenger.disconnected, result=False)
+        loop.addHandler(Request("swap", basestring, basestring), self)
     
     def handleListening(self, m, state):
         self.listening(m)

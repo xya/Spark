@@ -313,8 +313,6 @@ class Service(object):
         loop.addPattern(Command("bind", None), self.bindMessenger)
         loop.addPattern(Command("disconnect"), self.disconnectMessenger)
         loop.addPattern(Command("stop"), result=False)
-        # messages received from the remote peer
-        loop.addRequestHandler(self)
         
     def run(self):
         """ Run the service. This method blocks until the service has finished executing. """
@@ -379,7 +377,7 @@ class RequestMatcher(MessageMatcher):
             if isinstance(m, Sequence) and len(m) >= 2 and match(('>', basestring), m[0:2]):
                 method = self._findHandlerMethod(handler, m[1])
                 if method:
-                    method(m, *(m[3:] + args))
+                    method(m, *(m[2:] + args))
                     return True
             return False
         self.addPredicate(matchRequestHandler)
@@ -390,3 +388,29 @@ class RequestMatcher(MessageMatcher):
         if hasattr(attr, "__call__"):
             return attr
         return None
+    
+    def addHandlers(self, handler, *patterns):
+        """ Calls addHandler() for every pattern in the list. """
+        for pattern in patterns:
+            self.addHandler(pattern, handler)
+    
+    def addHandler(self, pattern, handler, result=True):
+        """
+        Add a rule that invokes the relevant handler methods when a message is matched.
+        For example a 'start-transfer' request would invoke the 'requestSartTransfer' method.
+        """
+        if match((basestring, basestring), pattern[0:2]):
+            prefix = pattern.__class__.__name__.lower()
+            if prefix == "event":
+                prefix = "on"
+            attrName = prefix + toPascalCase(pattern[1])
+            def invokeHandler(m, *args):
+                attr = getattr(handler, attrName, None)
+                if hasattr(attr, "__call__"):
+                    attr(m, *(m[2:] + args))
+                else:
+                    Process.logger().error("Could not find handler method '%s' for message %s"
+                        % (attrName, repr(m)))
+            self.addPattern(pattern, invokeHandler, result)
+        else:
+            raise TypeError("pattern should be a message (sequence starting with two strings)")
