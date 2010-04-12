@@ -35,6 +35,11 @@ class SparkApplication(object):
         self._activeTransfers = 0
         self._uploadSpeed = 0.0
         self._downloadSpeed = 0.0
+        self._files = {}
+        self.connected = Delegate()
+        self.connectionError = Delegate()
+        self.stateChanged = Delegate()
+        self.filesUpdated = Delegate()
         self.session = FileShare()
         self.runner = ProcessRunner(self.session)
         self.runner.start()
@@ -88,6 +93,11 @@ class SparkApplication(object):
         Process.send(self.runner.pid, Command("stop-transfer", fileID, senderPid))
     
     @property
+    def files(self):
+        """ Return the current file list. """
+        return self._files
+    
+    @property
     def myIPaddress(self):
         """ Return the public IP address of the user, if known. """
         return self._myIPaddress
@@ -112,12 +122,40 @@ class SparkApplication(object):
         """ Return the total download speed, across all active transfers. """
         return self._downloadSpeed
     
-    def updateState(self, sessionState):
-        """ Update the application state. """
+    def installHandlers(self, matcher, pid=None):
+        """ Suscribe to Spark's internal processes events so the state is kept up to date. """
+        if pid == None:
+            pid = Process.current()
+        self.session.connected.suscribe(pid)
+        self.session.connectionError.suscribe(pid)
+        self.session.stateChanged.suscribe(pid)
+        self.session.filesUpdated.suscribe(pid)
+        matcher.addHandlers(self,
+            self.session.connected.pattern,
+            self.session.connectionError.pattern,
+            self.session.stateChanged.pattern,
+            self.session.filesUpdated.pattern,
+            Event("list-files", None))
+    
+    def onConnected(self, m, *args):
+        self.connected()
+    
+    def onConnectionError(self, m, error, *args):
+        self.connectionError(error)
+    
+    def onSessionStateChanged(self, m, sessionState, *args):
         self._isConnected = sessionState["isConnected"]
         self._activeTransfers = sessionState["activeTransfers"]
         self._uploadSpeed = sessionState["uploadSpeed"]
         self._downloadSpeed = sessionState["downloadSpeed"]
+        self.stateChanged()
+    
+    def onFilesUpdated(self, m, *args):
+        self.listFiles()
+    
+    def onListFiles(self, m, files, *args):
+        self._files = files
+        self.filesUpdated()
     
     Units = [("KiB", 1024), ("MiB", 1024 * 1024), ("GiB", 1024 * 1024 * 1024)]
     def formatSize(self, size):

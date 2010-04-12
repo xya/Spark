@@ -65,7 +65,7 @@ class TextMessage(Message, Sequence):
         if isinstance(index, slice):
             return tuple(self)[index]
         elif index == 0:
-            return self.type
+            return self.__class__.__name__
         elif index == 1:
             return self.tag
         elif index == 2:

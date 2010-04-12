@@ -44,7 +44,7 @@ class TestServer(Service):
     def handleListening(self, m, state):
         self.listening(m)
     
-    def requestSwap(self, req, a, b, state):
+    def requestSwap(self, req, transID, a, b, state):
         self.sendResponse(state, req, b, a)
     
 class ProcessIntegrationTest(unittest.TestCase):

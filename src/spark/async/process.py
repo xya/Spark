@@ -441,9 +441,9 @@ class MessageMatcher(object):
         log = Process.logger()
         log.info("No rule matched message %s" % repr(m))
         for i, (pattern, callable, result) in enumerate(reversed(self.patterns)):
-            log.info("Pattern %i: %s -> %s" % (i, repr(pattern), result))
+            log.info("Pattern %2d: %s" % (i, repr(pattern)))
         for i, (pred, result) in enumerate(reversed(self.predicates)):
-            log.info("Predicate %i: %s -> %s" % (i, repr(pred), result))
+            log.info("Predicate %2d: %s" % (i, repr(pred)))
         return False
     
     def run(self, *args):

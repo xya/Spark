@@ -206,7 +206,7 @@ class TcpMessenger(object):
                 if m is None:
                     break
                 else:
-                    log.info("Received message: '%s'." % str(m))
+                    log.info("Received message %s." % repr(m))
                     Process.send(senderPid, m)
         finally:
             Process.try_send(messengerPid, Event("end-of-stream", senderPid))
@@ -219,7 +219,7 @@ class TcpMessenger(object):
         if (state.connState != TcpMessenger.CONNECTED) or state.protocol is None:
             Process.send(m[3], Event("send-error", "invalid-state"))
             return
-        state.logger.info("Sending message: '%s'." % str(m[2]))
+        state.logger.info("Sending message %s." % repr(m[2]))
         state.writer.write(m[2])
     
     def _disconnect(self, m, state):

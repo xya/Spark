@@ -23,7 +23,6 @@ import os
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from spark.gui.filelist import FileList, FileInfoWidget, iconPath
-from spark.async import Process, Event, MessageMatcher
 from spark.fileshare import SharedFile, TransferInfo, UPLOAD, DOWNLOAD
 
 __all__ = ["MainView"]
@@ -39,13 +38,12 @@ class MainView(object):
         self.window.show()
 
 class MainWindow(QMainWindow):
-    def __init__(self, app, pid, parent=None):
+    def __init__(self, app, parent=None):
         super(MainWindow, self).__init__(parent)
         self.setWindowIcon(QIcon(iconPath("emblems/emblem-new", 16)))
         self.setWindowTitle("Spark")
         self.setMinimumSize(530, 360)
         self.app = app
-        self.pid = pid
         self.actions = {}
         self.initToolbar()
         self.initTransferList()
@@ -53,11 +51,8 @@ class MainWindow(QMainWindow):
         self.sharedFiles = {}
         self.fileIDs = []
         self.selectedID = None
-        self.pid.messages.suscribeTo(self.app.session.connected)
-        self.pid.messages.suscribeTo(self.app.session.connectionError)
-        self.pid.messages.suscribeTo(self.app.session.stateChanged, self.sessionStateChanged)
-        self.pid.messages.suscribeTo(self.app.session.filesUpdated, self.onFilesUpdated)
-        self.pid.messages.addPattern(Event("list-files", None), self.onListFiles)
+        self.app.stateChanged += self.onStateChanged
+        self.app.filesUpdated += self.onFilesUpdated
         self.updateStatusBar()
         self.updateToolBar()
     
@@ -203,7 +198,7 @@ class MainWindow(QMainWindow):
             return False
     
     def action_connect(self):
-        d = ConnectionDialog(self.app, self.pid, self)
+        d = ConnectionDialog(self.app, self)
         d.exec_()
     
     def action_disconnect(self):
@@ -224,24 +219,21 @@ class MainWindow(QMainWindow):
         if self.selectedID is not None:
             self.app.startTransfer(self.selectedID)
     
-    def onFilesUpdated(self, m):
-        self.app.listFiles()
+    def onFilesUpdated(self):
+        self.updateTransferList(self.app.files)
     
-    def sessionStateChanged(self, m):
-        self.app.updateState(m[2])
+    def onStateChanged(self):
         self.updateStatusBar()
         self.updateToolBar()
-    
-    def onListFiles(self, m):
-        files = m[2]
-        self.updateTransferList(files)
 
 class ConnectionDialog(QDialog):
-    def __init__(self, app, pid, parent=None):
+    def __init__(self, app, parent=None):
         super(ConnectionDialog, self).__init__(parent)
         self.app = app
-        self.pid = pid
-        self.patterns = []
+        self.patterns = [
+            (self.app.connected, self.connectOK),
+            (self.app.connectionError, self.connectError)
+        ]
         self.setWindowTitle("Connect to a peer")
         QObject.connect(self, SIGNAL('finished(int)'), self.closing)
         self.initWidgets()
@@ -276,67 +268,24 @@ class ConnectionDialog(QDialog):
         mainLayout.addLayout(buttonLayout)
     
     def closing(self):
-        for pattern, callable in self.patterns:
-            self.pid.messages.removePattern(pattern, callable)
+        for delegate, callable in self.patterns:
+            delegate -= callable
     
     def doConnect(self):
         address = (str(self.hostText.text()), int(self.portText.text()))
         self.connectButton.setEnabled(False)
         self.progressBar.setVisible(True)
-        self.patterns.append((self.app.session.connected.pattern, self.connectOK))
-        self.patterns.append((self.app.session.connectionError.pattern, self.connectError))
-        for pattern, callable in self.patterns:
-            self.pid.messages.addPattern(pattern, callable)
+        for delegate, callable in self.patterns:
+            delegate += callable
         self.app.connect(address)
     
-    def connectError(self, m):
+    def connectError(self, error):
         self.connectButton.setEnabled(True)
         self.progressBar.setVisible(False)
         QMessageBox.critical(self, "Connection error",
-            "Error while connecting:\n%s" % str(m.params))
+            "Error while connecting:\n%s" % str(error))
     
-    def connectOK(self, m):
+    def connectOK(self):
         self.connectButton.setEnabled(True)
         self.progressBar.setVisible(False)
         self.accept()
-
-class GuiProcess(QObject):
-    def __init__(self):
-        super(GuiProcess, self).__init__()
-        self.pid = Process.attach("GUI", self)
-        self.messages = MessageMatcher()
-    
-    def __enter__(self):
-        return self
-    
-    def __exit__(self, type, e, traceback):
-        Process.detach()
-    
-    def event(self, ev):
-        """ Handle events sent to the object. """
-        if ev.type() == MessageReceivedEvent.Type:
-            self.messages.match(ev.m)
-            return True
-        else:
-            return False
-    
-    def put(self, m):
-        """ Add a process message to the message loop's queue. """
-        QApplication.postEvent(self, MessageReceivedEvent(m))
-    
-    def get(self):
-        raise Exception("Can't receive messages on the GUI thread. " +
-                        "Use the message matching mechanism instead.")
-    
-    def try_get(self):
-        return (False, None)
-    
-    def close(self):
-        pass
-
-class MessageReceivedEvent(QEvent):
-    """ A message was received by a process. """
-    Type = QEvent.registerEventType()
-    def __init__(self, m):
-        super(MessageReceivedEvent, self).__init__(MessageReceivedEvent.Type)
-        self.m = m

@@ -21,10 +21,9 @@
 # TODO: refactor this
 from spark.messaging.messages import *
 from spark.messaging.parser import *
-from spark.messaging.common import *
 from spark.messaging.protocol import *
 from spark.messaging.service import *
 
 __all__ = []
-for module in (messages, parser, common, protocol, service):
+for module in (messages, parser, protocol, service):
     __all__.extend(module.__all__)

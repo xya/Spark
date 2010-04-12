@@ -19,14 +19,58 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+import sys
+import os
+import logging
+from PyQt4.QtCore import QObject, QEvent
+from PyQt4.QtGui import QApplication
+from spark.gui.main import MainWindow
+from spark.fileshare import SparkApplication
+from spark.async import Process
+from spark.messaging import RequestMatcher
+
+class GuiProcess(QObject):
+    def __init__(self):
+        super(GuiProcess, self).__init__()
+        self.pid = Process.attach("GUI", self)
+        self.messages = RequestMatcher()
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, type, e, traceback):
+        Process.detach()
+    
+    def event(self, ev):
+        """ Handle events sent to the object. """
+        if ev.type() == MessageReceivedEvent.Type:
+            self.messages.match(ev.m)
+            return True
+        else:
+            return False
+    
+    def put(self, m):
+        """ Add a process message to the message loop's queue. """
+        QApplication.postEvent(self, MessageReceivedEvent(m))
+    
+    def get(self):
+        raise Exception("Can't receive messages on the GUI thread. " +
+                        "Use the message matching mechanism instead.")
+    
+    def try_get(self):
+        return (False, None)
+    
+    def close(self):
+        pass
+
+class MessageReceivedEvent(QEvent):
+    """ A message was received by a process. """
+    Type = QEvent.registerEventType()
+    def __init__(self, m):
+        super(MessageReceivedEvent, self).__init__(MessageReceivedEvent.Type)
+        self.m = m
+
 if __name__ == "__main__":
-    import sys
-    import os
-    import logging
-    from PyQt4.QtGui import QApplication
-    from spark.gui.main import MainWindow, GuiProcess
-    from spark.fileshare import SparkApplication
-    from spark.async import process
     if (len(sys.argv) > 1) and (sys.argv[1].find(":") >= 0):
         chunks = sys.argv[1].split(":")
         bindAddr = (chunks[0], int(chunks[1]))
@@ -35,12 +79,13 @@ if __name__ == "__main__":
     qtapp = QApplication(sys.argv)
     logging.basicConfig(level=logging.DEBUG)
     with GuiProcess() as pid:
-        with SparkApplication() as appA:
-            viewA = MainWindow(appA, pid)
+        with SparkApplication() as app:
+            app.installHandlers(pid.messages)
+            view = MainWindow(app)
             if bindAddr:
-                viewA.setWindowTitle("Spark %s:%i" % bindAddr)
-                appA.bind(bindAddr)
+                view.setWindowTitle("Spark %s:%i" % bindAddr)
+                app.bind(bindAddr)
             else:
-                viewA.setWindowTitle("Spark")
-            viewA.show()
+                view.setWindowTitle("Spark")
+            view.show()
             qtapp.exec_()
