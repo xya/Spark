@@ -21,11 +21,12 @@
 import os
 import socket
 import logging
+from collections import Sequence
 from spark.async import *
 from spark.messaging.protocol import *
 from spark.messaging.messages import *
 
-__all__ = ["TcpMessenger", "Service"]
+__all__ = ["TcpMessenger", "Service", "RequestMatcher"]
 
 def toCamelCase(tag):
     """ Convert the tag to camel case (e.g. "create-transfer" becomes "createTransfer"). """
@@ -311,10 +312,12 @@ class Service(object):
         loop.addPattern(Command("bind", None), self.bindMessenger)
         loop.addPattern(Command("disconnect"), self.disconnectMessenger)
         loop.addPattern(Command("stop"), result=False)
+        # messages received from the remote peer
+        loop.addRequestHandler(self)
         
     def run(self):
         """ Run the service. This method blocks until the service has finished executing. """
-        loop = MessageMatcher()
+        loop = RequestMatcher()
         state = ProcessState()
         self.initState(loop, state)
         self.initPatterns(loop, state)
@@ -349,3 +352,25 @@ class Service(object):
     def sendResponse(self, state, req, *params):
         """ Send a response to a request. """
         state.messenger.send(Response(req.tag, *params).withID(req.transID))
+
+class RequestMatcher(MessageMatcher):
+    def addRequestHandler(self, handler):
+        """
+        Add a predicate matching requests and invoking the relevant handler methods.
+        For example a 'start-transfer' request would invoke the 'handleStartTransfer' method.
+        """
+        def matchRequestHandler(m, *args):
+            if isinstance(m, Sequence) and len(m) >= 2 and match(('>', basestring), m[0:2]):
+                method = self._findHandlerMethod(handler, m[1])
+                if method:
+                    method(m, *(m[3:] + args))
+                    return True
+            return False
+        self.addPredicate(matchRequestHandler)
+    
+    def _findHandlerMethod(self, handler, tag):
+        attrName = "handle" + toPascalCase(tag)
+        attr = getattr(handler, attrName, None)
+        if hasattr(attr, "__call__"):
+            return attr
+        return None

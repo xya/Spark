@@ -370,14 +370,7 @@ def match(pattern, o):
         else:
             return False
     else:
-        # match attributes
-        for name in dir(pattern):
-            value = getattr(pattern, name)
-            # ignore private and special attributes and functions
-            if not name.startswith("_") and not hasattr(value, "__call__"):
-                if not hasattr(o, name) or not match(value, getattr(o, name)):
-                    return False
-        return True
+        return False
 
 class EventSender(ProcessNotifier):
     """
@@ -404,15 +397,24 @@ class EventSender(ProcessNotifier):
 class MessageMatcher(object):
     """ Matches messages against a list of patterns. """
     def __init__(self):
-        self.rules = []
+        self.patterns = []
+        self.predicates = []
     
     def addPattern(self, pattern, callable=None, result=True):
         """ Add a pattern to match messages. """
-        self.rules.append((pattern, callable, result))
+        self.patterns.append((pattern, callable, result))
     
     def removePattern(self, pattern, callable=None, result=True):
         """ Remove a pattern from the list. """
         self.rules.remove((pattern, callable, result))
+    
+    def addPredicate(self, pred, result=True):
+        """ Add a predicate to match messages. """
+        self.predicates.append((pred, result))
+    
+    def removePredicate(self, pred, result=True):
+        """ Remove a predicate from the list. """
+        self.predicates.remove((pred, result))
     
     def suscribeTo(self, sender, callable=None, result=True):
         """ Suscribe to an event after adding its pattern to the list. """
@@ -421,15 +423,20 @@ class MessageMatcher(object):
     
     def match(self, m, *args):
         """ Match the message against the patterns. """
-        for pattern, callable, result in reversed(self.rules):
+        for pattern, callable, result in reversed(self.patterns):
             if match(pattern, m):
                 if callable:
                     callable(m, *args)
                 return result
+        for pred, result in reversed(self.predicates):
+            if pred(m, *args):
+                return result
         log = Process.logger()
         log.info("No rule matched message %s" % repr(m))
-        for i, (pattern, callable, result) in enumerate(reversed(self.rules)):
-            log.info("Pattern %i: %s" % (i, repr(pattern)))
+        for i, (pattern, callable, result) in enumerate(reversed(self.patterns)):
+            log.info("Pattern %i: %s -> %s" % (i, repr(pattern), result))
+        for i, (pred, result) in enumerate(reversed(self.predicates)):
+            log.info("Predicate %i: %s -> %s" % (i, repr(pred), result))
         return False
     
     def run(self, *args):

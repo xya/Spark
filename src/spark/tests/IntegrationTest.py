@@ -24,8 +24,7 @@ import threading
 import functools
 import time
 from spark.async import *
-from spark.messaging.messages import *
-from spark.messaging.service import TcpMessenger, Service
+from spark.messaging import *
 from spark.tests.common import run_tests, processTimeout, assertMatch
 
 BIND_ADDRESS = "127.0.0.1"
@@ -40,13 +39,12 @@ class TestServer(Service):
         super(TestServer, self).initPatterns(loop, state)
         loop.suscribeTo(state.messenger.listening, callable=self.handleListening)
         loop.suscribeTo(state.messenger.disconnected, result=False)
-        loop.addPattern(Request("swap", basestring, basestring), self.handleSwap)
     
     def handleListening(self, m, state):
         self.listening(m)
     
-    def handleSwap(self, req, state):
-        self.sendResponse(state, req, req[4], req[3])
+    def handleSwap(self, req, a, b, state):
+        self.sendResponse(state, req, b, a)
     
 class ProcessIntegrationTest(unittest.TestCase):
     @processTimeout(1.0)

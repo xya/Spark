@@ -90,7 +90,7 @@ class Notification(TextMessage):
     def __init__(self, tag, *params):
         super(Notification, self).__init__(TextMessage.NOTIFICATION, tag, None, *params)
 
-class Blob(Message):
+class Blob(Message, Sequence):
     Type = Struct("BB")
     
     def __init__(self):
@@ -104,6 +104,25 @@ class Blob(Message):
         data = self.data
         cls = self.__class__
         return "".join([cls.Type.pack(0, cls.ID), data])
+    
+    def __len__(self):
+        return 3
+    
+    def __getitem__(self, index):
+        cls = self.__class__
+        if isinstance(index, slice):
+            return tuple(self)[index]
+        elif index == 0:
+            return cls.__name__
+        elif index == 1:
+            return cls.ID
+        elif index == 2:
+            return self.data
+        else:
+            raise IndexError("Index '%i' out of range" % index)
+    
+    def __repr__(self):
+        return repr(self[:])
 
 class Block(Blob):
     Header = Struct("!HIH")
