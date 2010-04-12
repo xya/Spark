@@ -81,46 +81,47 @@ class TcpMessenger(object):
     
     def _entry(self):
         state = TcpProcessState()
-        loop = MessageMatcher()
-        # public messages
-        loop.addPattern(Command("connect", None, int), self._connect)
-        loop.addPattern(Command("listen", None, int), self._listen)
-        loop.addPattern(Command("accept", int), self._accept)
-        loop.addPattern(Command("disconnect"), self._disconnect)
-        loop.addPattern(Command("send", None, int), self._send)
+        loop = RequestMatcher()
         loop.addPattern(Command("stop"), result=False)
-        # internal messages
-        loop.addPattern(Event("connected", None, None, bool), self._connected)
-        loop.addPattern(Event("end-of-stream", int), self._endOfStream)
+        loop.addHandlers(self,
+            # public messages
+            Command("connect", None, int),
+            Command("listen", None, int),
+            Command("accept", int),
+            Command("disconnect"),
+            Command("send", None, int),
+            # internal messages
+            Event("connected", None, None, bool),
+            Event("end-of-stream", int))
         try:
             loop.run(state)
         finally:
             self._closeConnection(state)
             self._closeServer(state)
 
-    def _listen(self, m, state):
+    def doListen(self, m, bindAddr, senderPid, state):
         if state.server:
-            Process.send(m[3], Event("listen-error", "invalid-state"))
+            Process.send(senderPid, Event("listen-error", "invalid-state"))
             return
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
         try:
             state.logger.info("Listening to incoming connections on %s.", repr(m[2]))
-            server.bind(m[2])
+            server.bind(bindAddr)
             server.listen(1)
-            self.listening(m[2])
+            self.listening(bindAddr)
         except socket.error as e:
-            Process.send(m[3], Event("listen-error", e))
+            Process.send(senderPid, Event("listen-error", e))
         else:
             state.server = server
     
-    def _accept(self, m, state):
+    def doAccept(self, m, senderPid, state):
         if state.acceptReceiver:
             # we are already waiting for an incoming connection
             return
         elif (state.connState != TcpMessenger.DISCONNECTED) or not state.server:
-            Process.send(m[2], Event("accept-error", "invalid-state"))
+            Process.send(senderPid, Event("accept-error", "invalid-state"))
             return
-        args = (state.server, m[2], Process.current())
+        args = (state.server, senderPid, Process.current())
         state.acceptReceiver = Process.spawn(self._waitForAccept, args, "TcpServer")
 
     def _waitForAccept(self, server, senderPid, messengerPid):
@@ -137,11 +138,11 @@ class TcpMessenger(object):
         else:
             self._startSession(conn, remoteAddr, False, senderPid, messengerPid)
 
-    def _connect(self, m, state):
+    def doConnect(self, m, remoteAddr, senderPid, state):
         if (state.connState != TcpMessenger.DISCONNECTED) or state.connectReceiver:
-            Process.send(m[3], Event("connection-error", "invalid-state"))
+            Process.send(senderPid, Event("connection-error", "invalid-state"))
             return
-        args = (m[2], m[3], Process.current())
+        args = (remoteAddr, senderPid, Process.current())
         state.connectReceiver = Process.spawn(self._waitForConnect, args, "TcpClient")
     
     def _waitForConnect(self, remoteAddr, senderPid, messengerPid):
@@ -156,8 +157,7 @@ class TcpMessenger(object):
         else:
             self._startSession(conn, remoteAddr, True, senderPid, messengerPid)
 
-    def _connected(self, m, state):
-        conn, remoteAddr, initiating = m[2:5]
+    def onConnected(self, m, conn, remoteAddr, initiating, state):
         if initiating:
             receiver = state.connectReceiver
             state.connectReceiver = None
@@ -211,20 +211,20 @@ class TcpMessenger(object):
         finally:
             Process.try_send(messengerPid, Event("end-of-stream", senderPid))
     
-    def _endOfStream(self, m, state):
+    def onEndOfStream(self, m, snderPid, state):
         self._closeConnection(state)
         self.disconnected()
     
-    def _send(self, m, state):
+    def doSend(self, m, data, senderPid, state):
         if (state.connState != TcpMessenger.CONNECTED) or state.protocol is None:
-            Process.send(m[3], Event("send-error", "invalid-state"))
+            Process.send(senderPid, Event("send-error", "invalid-state"))
             return
-        state.logger.info("Sending message %s." % repr(m[2]))
-        state.writer.write(m[2])
+        state.logger.info("Sending message %s." % repr(data))
+        state.writer.write(data)
     
-    def _disconnect(self, m, state):
+    def doDisconnect(self, m, state):
         self._closeConnection(state)
-    
+
     def _closeConnection(self, state):
         if state.conn:
             state.logger.info("Disconnecting from %s." % repr(state.remoteAddr))
@@ -304,15 +304,17 @@ class Service(object):
         state.nextTransID = 1
     
     def initPatterns(self, loop, state):
-        # messages received from TcpMessenger
-        loop.suscribeTo(state.messenger.protocolNegociated, self.onProtocolNegociated)
-        loop.suscribeTo(state.messenger.disconnected, self.onDisconnected)
-        loop.addPattern(Event("connection-error", None), self.onConnectionError)
-        # messages received from the caller
-        loop.addPattern(Command("connect", None), self.connectMessenger)
-        loop.addPattern(Command("bind", None), self.bindMessenger)
-        loop.addPattern(Command("disconnect"), self.disconnectMessenger)
+        m = state.messenger
         loop.addPattern(Command("stop"), result=False)
+        loop.addHandlers(self,
+            # messages received from TcpMessenger
+            m.protocolNegociated.suscribe(),
+            m.disconnected.suscribe(),
+            Event("connection-error", None),
+            # messages received from the caller
+            Command("connect", None),
+            Command("bind", None),
+            Command("disconnect"))
         
     def run(self):
         """ Run the service. This method blocks until the service has finished executing. """
@@ -328,7 +330,7 @@ class Service(object):
     def onConnectionError(self, m, state):
         self.connectionError(m[2])
     
-    def onProtocolNegociated(self, m, state):
+    def onProtocolNegociated(self, m, protocol, state):
         self.connected()
     
     def onDisconnected(self, m, state):
@@ -336,16 +338,16 @@ class Service(object):
         if state.bindAddr:
             state.messenger.accept()
     
-    def connectMessenger(self, m, state):
-        state.messenger.connect(m[2])
+    def doConnect(self, m, remoteAddr, state):
+        state.messenger.connect(remoteAddr)
     
-    def bindMessenger(self, m, state):
+    def doBind(self, m, bindAddr, state):
         if not state.bindAddr:
-            state.bindAddr = m[2]
+            state.bindAddr = bindAddr
             state.messenger.listen(state.bindAddr)
             state.messenger.accept()
     
-    def disconnectMessenger(self, m, state):
+    def doDisconnect(self, m, state):
         state.messenger.disconnect()
     
     def _newTransID(self, state):
@@ -368,27 +370,6 @@ class Service(object):
         state.messenger.send(Notification(tag, *params).withID(transID))
 
 class RequestMatcher(MessageMatcher):
-    def addRequestHandler(self, handler):
-        """
-        Add a predicate matching requests and invoking the relevant handler methods.
-        For example a 'start-transfer' request would invoke the 'requestSartTransfer' method.
-        """
-        def matchRequestHandler(m, *args):
-            if isinstance(m, Sequence) and len(m) >= 2 and match(('>', basestring), m[0:2]):
-                method = self._findHandlerMethod(handler, m[1])
-                if method:
-                    method(m, *(m[2:] + args))
-                    return True
-            return False
-        self.addPredicate(matchRequestHandler)
-    
-    def _findHandlerMethod(self, handler, tag):
-        attrName = "request" + toPascalCase(tag)
-        attr = getattr(handler, attrName, None)
-        if hasattr(attr, "__call__"):
-            return attr
-        return None
-    
     def addHandlers(self, handler, *patterns):
         """ Calls addHandler() for every pattern in the list. """
         for pattern in patterns:
@@ -403,6 +384,8 @@ class RequestMatcher(MessageMatcher):
             prefix = pattern.__class__.__name__.lower()
             if prefix == "event":
                 prefix = "on"
+            elif prefix == "command":
+                prefix = "do"
             attrName = prefix + toPascalCase(pattern[1])
             def invokeHandler(m, *args):
                 attr = getattr(handler, attrName, None)

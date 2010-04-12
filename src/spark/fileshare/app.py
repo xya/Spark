@@ -126,15 +126,11 @@ class SparkApplication(object):
         """ Suscribe to Spark's internal processes events so the state is kept up to date. """
         if pid == None:
             pid = Process.current()
-        self.session.connected.suscribe(pid)
-        self.session.connectionError.suscribe(pid)
-        self.session.stateChanged.suscribe(pid)
-        self.session.filesUpdated.suscribe(pid)
         matcher.addHandlers(self,
-            self.session.connected.pattern,
-            self.session.connectionError.pattern,
-            self.session.stateChanged.pattern,
-            self.session.filesUpdated.pattern,
+            self.session.connected.suscribe(pid),
+            self.session.connectionError.suscribe(pid),
+            self.session.stateChanged.suscribe(pid),
+            self.session.filesUpdated.suscribe(pid),
             Event("list-files", None))
     
     def onConnected(self, m, *args):

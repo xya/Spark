@@ -28,7 +28,7 @@ from spark.messaging import *
 from spark.tests.common import run_tests, processTimeout, assertMatch
 
 BIND_ADDRESS = "127.0.0.1"
-BIND_PORT = 4550
+BIND_PORT = 4559
 
 class TestServer(Service):
     def __init__(self):

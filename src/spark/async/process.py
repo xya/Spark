@@ -119,6 +119,7 @@ class Process(object):
                 log.info("Process killed.")
             except Exception:
                 log.exception("An exception was raised by the process")
+                log.error("Process died.")
             else:
                 log.info("Process stopped.")
             finally:
@@ -385,6 +386,11 @@ class EventSender(ProcessNotifier):
         super(EventSender, self).__init__()
         self.pattern = Event(name, *args)
     
+    def suscribe(self, pid=None):
+        """ Suscribe a process to start receiving events and return its pattern. """
+        super(EventSender, self).suscribe(pid)
+        return self.pattern
+    
     def __call__(self, *args):
         """ Send a notification to all suscribed processes. """
         event = Event(self.pattern.name, *args)
@@ -393,6 +399,10 @@ class EventSender(ProcessNotifier):
         else:
             raise TypeError("%s doesn't match the pattern %s" %
                             (repr(event), repr(self.pattern)))
+
+class NoMatchException(Exception):
+    """ Error that occurs when MessageMatcher.match() is called and no match was found. """
+    pass
 
 class MessageMatcher(object):
     """ Matches messages against a list of patterns. """
@@ -415,14 +425,6 @@ class MessageMatcher(object):
             Process.send(pid, m)
         self.addPattern(pattern, forward, result)
     
-    def addPredicate(self, pred, result=True):
-        """ Add a predicate to match messages. """
-        self.predicates.append((pred, result))
-    
-    def removePredicate(self, pred, result=True):
-        """ Remove a predicate from the list. """
-        self.predicates.remove((pred, result))
-    
     def suscribeTo(self, sender, callable=None, result=True):
         """ Suscribe to an event after adding its pattern to the list. """
         self.addPattern(sender.pattern, callable, result)
@@ -435,16 +437,10 @@ class MessageMatcher(object):
                 if callable:
                     callable(m, *args)
                 return result
-        for pred, result in reversed(self.predicates):
-            if pred(m, *args):
-                return result
-        log = Process.logger()
-        log.info("No rule matched message %s" % repr(m))
+        error = ["No pattern matched message %s.\nPossible patterns:" % repr(m)]
         for i, (pattern, callable, result) in enumerate(reversed(self.patterns)):
-            log.info("Pattern %2d: %s" % (i, repr(pattern)))
-        for i, (pred, result) in enumerate(reversed(self.predicates)):
-            log.info("Predicate %2d: %s" % (i, repr(pred)))
-        return False
+            error.append("%2d: %s" % (i, repr(pattern)))
+        raise NoMatchException("\n".join(error))
     
     def run(self, *args):
         """ Retrieve messages from the current process' queue while they match any pattern. """

@@ -70,22 +70,22 @@ class FileShare(Service):
             Notification("transfer-state-changed", int, basestring)
         )
     
-    def onProtocolNegociated(self, m, state):
-        super(FileShare, self).onProtocolNegociated(m, state)
+    def onProtocolNegociated(self, m, protocol, state):
+        super(FileShare, self).onProtocolNegociated(m, protocol, state)
         state.isConnected = True
-        self.commandUpdateSessionState(m, state)
+        self.doUpdateSessionState(m, state)
         self.sendRequest(state, "list-files", True)
     
     def onDisconnected(self, m, state):
         super(FileShare, self).onDisconnected(m, state)
         state.isConnected = False
-        self.commandUpdateSessionState(m, state)
+        self.doUpdateSessionState(m, state)
     
-    def commandUpdateSessionState(self, m, state):
+    def doUpdateSessionState(self, m, state):
         self.stateChanged({"isConnected" : state.isConnected,
             "activeTransfers" : 0, "uploadSpeed" : 0.0, "downloadSpeed" : 0.0})
 
-    def commandListFiles(self, m, excludeRemoved, senderPid, state):
+    def doListFiles(self, m, excludeRemoved, senderPid, state):
         """ Return a copy of the current file table, which maps file IDs to files. """
         cache = state.fileTable.listFiles()
         if excludeRemoved:
@@ -100,15 +100,15 @@ class FileShare(Service):
     def responseListFiles(self, m, transID, files, state):
         state.fileTable.updateTable(files, False)
         
-    def commandAddFile(self, m, path, senderPid, state):
+    def doAddFile(self, m, path, senderPid, state):
         """ Add the local file with the given path to the list. """
         state.fileTable.addFile(path)
     
-    def commandRemoveFile(self, m, fileID, senderPid, state):
+    def doRemoveFile(self, m, fileID, senderPid, state):
         """ Remove the file (local or remote) with the given ID from the list. """
         state.fileTable.removeFile(fileID, True)
     
-    def commandStartTransfer(self, m, fileID, senderPid, state):
+    def doStartTransfer(self, m, fileID, senderPid, state):
         """ Start receiving the remote file with the given ID. """
         file = state.fileTable[fileID]
         if file.transfer is None:
@@ -122,7 +122,7 @@ class FileShare(Service):
         self.filesUpdated()
         self.sendRequest(state, "start-transfer", transferID)
     
-    def commandStopTransfer(self, m, fileID, state):
+    def doStopTransfer(self, m, fileID, state):
         """ Stop receiving the remote file with the given ID. """
         raise NotImplementedError()
     
