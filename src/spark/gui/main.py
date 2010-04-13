@@ -192,7 +192,7 @@ class MainWindow(QMainWindow):
             widget.setStatusToolTip("Receiving from peer", 1)
         elif file.isSending:
             widget.setStatusIcon("actions/go-next", 1)
-            widget.setStatusToolTip("Sending topeer", 1)
+            widget.setStatusToolTip("Sending to peer", 1)
         else:
             widget.setStatusIcon(None, 1)
             widget.setStatusToolTip("", 1)

@@ -23,7 +23,7 @@ from functools import partial
 from spark.async import *
 from spark.messaging import *
 from spark.fileshare import SharedFile, FileTable, LOCAL, REMOTE
-from spark.fileshare import TransferTable, UPLOAD, DOWNLOAD
+from spark.fileshare import Transfer, TransferTable, UPLOAD, DOWNLOAD
 
 __all__ = ["FileSharingSession"]
 
@@ -49,22 +49,22 @@ class FileSharingSession(Service):
     def initPatterns(self, loop, state):
         super(FileSharingSession, self).initPatterns(loop, state)
         loop.addHandlers(self,
-            # internal commands
+            # internal messages
             Command("update-session-state"),
             Command("list-files", bool, int),
             Command("add-file", basestring, int),
             Command("remove-file", basestring, int),
-            Command("start-transfer", int, int),
-            Command("stop-transfer", int, int),
+            Command("start-transfer", basestring, int),
+            Command("stop-transfer", basestring, int),
+            Event("transfer-created", int, int, basestring, int),
+            Event("transfer-state-changed", int, int, basestring),
             # messages from the remote peer
             Request("list-files", bool),
             Response("list-files", None),
             Request("create-transfer", basestring),
-            Response("create-transfer", int, basestring),
+            Response("create-transfer", basestring, int),
             Request("start-transfer", int),
-            Response("start-transfer"),
             Request("close-transfer", int),
-            Response("close-transfer"),
             Notification("file-added", None),
             Notification("file-removed", basestring),
             Notification("transfer-state-changed", int, basestring)
@@ -74,13 +74,13 @@ class FileSharingSession(Service):
         try:
             super(FileSharingSession, self).cleanup(state)
         finally:
-            pass    # TODO: perform session cleanup here
+            self._stopTransfers(state)
     
     def sessionStarted(self, state):
         self.sendRequest(state, "list-files", True)
     
     def sessionEnded(self, state):
-        pass
+        self._stopTransfers(state)
     
     def doUpdateSessionState(self, m, state):
         self.stateChanged({"activeTransfers" : 0,
@@ -99,49 +99,6 @@ class FileSharingSession(Service):
             files = cache.copy()
         Process.send(senderPid, Event("list-files", files))
     
-    def responseListFiles(self, m, transID, files, state):
-        state.fileTable.updateTable(files, REMOTE)
-        
-    def doAddFile(self, m, path, senderPid, state):
-        """ Add the local file with the given path to the list. """
-        state.fileTable.addFile(path)
-    
-    def doRemoveFile(self, m, fileID, senderPid, state):
-        """ Remove the file (local or remote) with the given ID from the list. """
-        state.fileTable.removeFile(fileID, True)
-    
-    def doStartTransfer(self, m, fileID, senderPid, state):
-        """ Start receiving the remote file with the given ID. """
-        file = state.fileTable[fileID]
-        if file.transfer is None:
-            self.sendRequest(state, "create-transfer", fileID)
-    
-    def responseCreateTransfer(self, m, transID, transferID, fileID, state):
-        file = state.fileTable[fileID]
-        transfer = state.transferTable.createTransfer(transferID, DOWNLOAD)
-        transfer.fileID = file.ID
-        file.transfer = transfer
-        self.filesUpdated()
-        self.sendRequest(state, "start-transfer", transferID)
-    
-    def doStopTransfer(self, m, fileID, state):
-        """ Stop receiving the remote file with the given ID. """
-        raise NotImplementedError()
-    
-    def cacheFileAdded(self, state, fileID, origin):
-        self.filesUpdated()
-        if (origin == LOCAL) and state.remoteNotifications and state.isConnected:
-            file = state.fileTable[fileID]
-            self.sendNotification(state, "file-added", file)
-    
-    def cacheFileUpdated(self, state, fileID, origin):
-        self.filesUpdated()
-    
-    def cacheFileRemoved(self, state, fileID, origin):
-        self.filesUpdated()
-        if (origin == LOCAL) and state.remoteNotifications and state.isConnected:
-            self.sendNotification(state, "file-removed", fileID)
-    
     def requestListFiles(self, m, transID, register, state):
         """ The remote peer sent a 'list-files' request. """
         if register is True:
@@ -149,41 +106,96 @@ class FileSharingSession(Service):
         files = state.fileTable.files.copy()
         self.sendResponse(state, m, files)
     
-    def requestCreateTransfer(self, m, transID, fileID, state):
-        """ The remote peer sent a 'create-transfer' request. """
-        file = self.fileTable[fileID]
-        transferID = self.transferTable.newTransferID()
-        transfer = self.transferTable.createTransfer(transferID, UPLOAD)
-        transfer.fileID = file.ID
-        transfer.state = "inactive"
-        file.transfer = transfer
-        self.filesUpdated()
-        self.sendResponse(state, m, transferID)
-        self.sendNotification("transfer-state-changed", transferID, transfer.state)
+    def responseListFiles(self, m, transID, files, state):
+        state.fileTable.updateTable(files, REMOTE)
     
-    def requestStartTransfer(self, m, transID, transferID, state):
-        """ The remote peer sent a 'start-transfer' request. """
-        transfer = state.transferTable.find(transferID, UPLOAD)
-        transfer.state = "starting"
+    def cacheFileUpdated(self, state, fileID, origin):
         self.filesUpdated()
-        self.sendResponse(state, m)
-        self.sendNotification("transfer-state-changed", transferID, transfer.state)
     
-    def requestCloseTransfer(self, m, transID, transferID, state):
-        """ The remote peer sent a 'close-transfer' request. """
-        transfer = state.transferTable.find(transferID, UPLOAD)
-        transfer.state = "closed"
+    def doAddFile(self, m, path, senderPid, state):
+        """ Add the local file with the given path to the list. """
+        state.fileTable.addFile(path)
+    
+    def cacheFileAdded(self, state, fileID, origin):
         self.filesUpdated()
-        self.sendResponse(state, m)
-        self.sendNotification("transfer-state-changed", transferID, transfer.state)
+        if (origin == LOCAL) and state.remoteNotifications and state.isConnected:
+            file = state.fileTable[fileID]
+            self.sendNotification(state, "file-added", file)
     
     def notificationFileAdded(self, m, transID, fileInfo, state):
         """ The remote peer sent a 'file-added' notification. """
         state.fileTable.updateFile(fileInfo, REMOTE)
     
+    def doRemoveFile(self, m, fileID, senderPid, state):
+        """ Remove the file (local or remote) with the given ID from the list. """
+        state.fileTable.removeFile(fileID, True)
+    
+    def cacheFileRemoved(self, state, fileID, origin):
+        self.filesUpdated()
+        if (origin == LOCAL) and state.remoteNotifications and state.isConnected:
+            self.sendNotification(state, "file-removed", fileID)
+    
     def notificationFileRemoved(self, m, transID, fileID, state):
         """ The remote peer sent a 'file-removed' notification. """
         state.fileTable.removeFile(fileID, REMOTE)
+    
+    def doStartTransfer(self, m, fileID, senderPid, state):
+        """ Start receiving the remote file with the given ID. """
+        file = state.fileTable[fileID]
+        if file.transfer is None:
+            self.sendRequest(state, "create-transfer", fileID)
+    
+    def requestCreateTransfer(self, m, transID, fileID, state):
+        """ The remote peer sent a 'create-transfer' request. """
+        self._createTransferProcess(None, UPLOAD, fileID, transID, state)
+    
+    def responseCreateTransfer(self, m, transID, transferID, fileID, state):
+        self._createTransferProcess(transferID, DOWNLOAD, fileID, None, state)
+    
+    def _createTransferProcess(self, transferID, direction, fileID, reqID, state):
+        process = Transfer()
+        process.start()
+        if not transferID:
+            transferID = process.pid
+        process.stateChanged.suscribe()
+        file = state.fileTable[fileID]
+        Process.send(process.pid, Command("init-transfer",
+            transferID, direction, fileID, file.path, reqID, self.pid))
+        transfer = state.transferTable.createTransfer(transferID, direction, fileID, process.pid)
+        file.transfer = transfer
+    
+    def onTransferCreated(self, m, transferID, direction, fileID, reqID, state):
+        if direction == UPLOAD:
+            resp = Response("create-transfer", fileID, transferID).withID(reqID)
+            state.messenger.send(resp)
+        elif direction == DOWNLOAD:
+            self.sendRequest(state, "start-transfer", transferID)
+    
+    def requestStartTransfer(self, m, transID, transferID, state):
+        """ The remote peer sent a 'start-transfer' request. """
+        transfer = state.transferTable.find(transferID, UPLOAD)
+        Process.send(transfer.pid, Command("start-transfer"))
+    
+    def doStopTransfer(self, m, fileID, state):
+        """ Stop receiving the remote file with the given ID. """
+        raise NotImplementedError()
+    
+    def _stopTransfers(self, state):
+        state.transferTable.clear()
+        self.filesUpdated()
+    
+    def requestCloseTransfer(self, m, transID, transferID, state):
+        """ The remote peer sent a 'close-transfer' request. """
+        transfer = state.transferTable.find(transferID, UPLOAD)
+        Process.send(transfer.pid, Command("close-transfer"))
+    
+    def onTransferStateChanged(self, m, transferID, direction, transferState, state):
+        transfer = state.transferTable.find(transferID, direction)
+        if transfer:
+            transfer.state = transferState
+            if (direction == UPLOAD) and state.isConnected:
+                self.sendNotification(state, "transfer-state-changed", transferID, transferState)
+            self.filesUpdated()
     
     def notificationTransferStateChanged(self, m, transID, transferID, transferState, state):
         """ The remote peer sent a 'transfer-state-changed' notification. """

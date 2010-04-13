@@ -22,8 +22,8 @@
 from spark.messaging.messages import *
 from spark.messaging.parser import *
 from spark.messaging.protocol import *
-from spark.messaging.service import *
+from spark.messaging.transport import *
 
 __all__ = []
-for module in (messages, parser, protocol, service):
+for module in (messages, parser, protocol, transport):
     __all__.extend(module.__all__)

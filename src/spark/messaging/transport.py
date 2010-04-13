@@ -366,14 +366,20 @@ class Service(ProcessBase):
     
     def sendRequest(self, state, tag, *params):
         """ Send a request. """
+        if not hasattr(state, "nextTransID"):
+            raise TypeError("First argument should be the process' state")
         transID = self._newTransID(state)
         state.messenger.send(Request(tag, *params).withID(transID))
     
     def sendResponse(self, state, req, *params):
         """ Send a response to a request. """
+        if not hasattr(state, "nextTransID"):
+            raise TypeError("First argument should be the process' state")
         state.messenger.send(Response(req.tag, *params).withID(req.transID))
     
     def sendNotification(self, state, tag, *params):
         """ Send a notification. """
+        if not hasattr(state, "nextTransID"):
+            raise TypeError("First argument should be the process' state")
         transID = self._newTransID(state)
         state.messenger.send(Notification(tag, *params).withID(transID))

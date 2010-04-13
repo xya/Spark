@@ -311,7 +311,7 @@ def match(pattern, o):
         return True
     elif type(pattern) is type:
         # match types
-        return isinstance(o, pattern)
+        return isinstance(o, pattern) or (o is None)
     elif isinstance(pattern, basestring):
         # match strings
         return pattern == o
@@ -411,7 +411,7 @@ class PatternMatcher(object):
                 if hasattr(attr, "__call__"):
                     attr(m, *(m[2:] + args))
                 else:
-                    Process.logger().error("Could not find handler method '%s' for message %s"
+                    raise AttributeError("Could not find handler method '%s' for message %s"
                         % (attrName, repr(m)))
             self.addPattern(pattern, invokeHandler, result)
         else:
@@ -472,11 +472,7 @@ class ProcessBase(object):
     def initState(self, state):
         """ Initialize the process state. """
         pass
-    
-    def createLoop(self, state):
-        """ Create the message loop. """
-        return PatternMatcher()
-    
+
     def initPatterns(self, loop, state):
         """ Initialize the patterns used by the message loop. """
         loop.addPattern(Command("stop"), result=False)
@@ -486,7 +482,7 @@ class ProcessBase(object):
         state = ProcessState()
         self.initState(state)
         try:
-            loop = self.createLoop(state)
+            loop = PatternMatcher()
             self.initPatterns(loop, state)
             loop.run(state)
         finally:
