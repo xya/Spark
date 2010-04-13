@@ -21,9 +21,9 @@
 # TODO: refactor this
 from spark.fileshare.transfers import *
 from spark.fileshare.files import *
-from spark.fileshare.service import *
+from spark.fileshare.session import *
 from spark.fileshare.app import *
 
 __all__ = []
-for module in (transfers, files, service, app):
+for module in (transfers, files, session, app):
     __all__.extend(module.__all__)

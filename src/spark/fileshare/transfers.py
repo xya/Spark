@@ -26,7 +26,7 @@ from spark.async import Delegate
 __all__ = ["TransferInfo", "TransferTable", "UPLOAD", "DOWNLOAD"]
 
 UPLOAD = 0        # a local file is being sent
-DOWNLOAD = 1      # a remite file is being received
+DOWNLOAD = 1      # a remote file is being received
 
 class TransferInfo(object):
     """ Provides information about a file transfer. """

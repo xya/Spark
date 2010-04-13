@@ -23,7 +23,7 @@ import os
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from spark.gui.filelist import FileList, FileInfoWidget, iconPath
-from spark.fileshare import SharedFile, TransferInfo, UPLOAD, DOWNLOAD
+from spark.fileshare import SharedFile, TransferInfo, UPLOAD, DOWNLOAD, LOCAL, REMOTE
 
 __all__ = ["MainView"]
 
@@ -155,14 +155,27 @@ class MainWindow(QMainWindow):
             widget.setTypeIcon("mimetypes/%s" % file.mimeType)
         else:
             widget.setTypeIcon("mimetypes/gtk-file")
-        widget.setStatusIcon(file.isLocal and "actions/go-home" or None, 0)
+        if file.localCopy:
+            widget.setStatusIcon("actions/go-home", 0)
+            widget.setStatusToolTip("Local copy is %.0f%% complete"
+                % (file.localCopy.completion * 100.0), 0)
+        else:
+            widget.setStatusIcon(None, 0)
+        if file.remoteCopy:
+            widget.setStatusIcon("categories/applications-internet", 2)
+            widget.setStatusToolTip("Remote copy is %.0f%% complete"
+                % (file.remoteCopy.completion * 100.0), 2)
+        else:
+            widget.setStatusIcon(None, 2)
         if file.isReceiving:
             widget.setStatusIcon("actions/go-previous", 1)
+            widget.setStatusToolTip("Receiving from peer", 1)
         elif file.isSending:
             widget.setStatusIcon("actions/go-next", 1)
+            widget.setStatusToolTip("Sending topeer", 1)
         else:
             widget.setStatusIcon(None, 1)
-        widget.setStatusIcon(file.isRemote and "categories/applications-internet" or None, 2)
+            widget.setStatusToolTip("", 1)
         if file.transfer:
             widget.setTransferProgress(file.transfer.progress)
             widget.setTransferTime(file.transfer.duration)
@@ -187,13 +200,13 @@ class MainWindow(QMainWindow):
         elif name == "remove":
             return file.ID in self.sharedFiles
         elif name == "start":
-            return file.isRemote and connected
+            return connected and (file.origin == REMOTE)
         elif name == "pause":
-            return (file.isReceiving or file.isSending) and connected
+            return connected and file.isTransfering
         elif name == "stop":
-            return (file.isReceiving or file.isSending) and connected
+            return connected and file.isTransfering
         elif name == "open":
-            return file.isLocal
+            return file.localCopy and file.localCopy.isComplete or False
         else:
             return False
     

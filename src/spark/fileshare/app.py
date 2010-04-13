@@ -23,7 +23,7 @@ import functools
 import types
 from spark.async import *
 from spark.messaging import *
-from spark.fileshare.service import FileShare
+from spark.fileshare.session import FileSharingSession
 
 __all__ = ["SparkApplication"]
 
@@ -40,7 +40,7 @@ class SparkApplication(object):
         self.connectionError = Delegate()
         self.stateChanged = Delegate()
         self.filesUpdated = Delegate()
-        self.session = FileShare()
+        self.session = FileSharingSession()
         self.session.start()
     
     def __enter__(self):

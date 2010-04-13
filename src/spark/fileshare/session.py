@@ -22,22 +22,23 @@ from collections import Mapping
 from functools import partial
 from spark.async import *
 from spark.messaging import *
-from spark.fileshare import SharedFile, FileTable, TransferTable, UPLOAD, DOWNLOAD
+from spark.fileshare import SharedFile, FileTable, LOCAL, REMOTE
+from spark.fileshare import TransferTable, UPLOAD, DOWNLOAD
 
-__all__ = ["FileShare"]
+__all__ = ["FileSharingSession"]
 
-class FileShare(Service):
+class FileSharingSession(Service):
     """
     Represent one session of file sharing. An user can share files with only
     one user per session.
     """
     def __init__(self):
-        super(FileShare, self).__init__()
+        super(FileSharingSession, self).__init__()
         self.stateChanged = EventSender("session-state-changed", dict)
         self.filesUpdated = EventSender("files-updated")
         
     def initState(self, state):
-        super(FileShare, self).initState(state)
+        super(FileSharingSession, self).initState(state)
         state.isConnected = False
         state.remoteNotifications = False
         state.fileTable = FileTable()
@@ -47,7 +48,7 @@ class FileShare(Service):
         state.transferTable = TransferTable()
     
     def initPatterns(self, loop, state):
-        super(FileShare, self).initPatterns(loop, state)
+        super(FileSharingSession, self).initPatterns(loop, state)
         loop.addHandlers(self,
             # internal commands
             Command("update-session-state"),
@@ -72,18 +73,18 @@ class FileShare(Service):
     
     def cleanup(self, state):
         try:
-            super(FileShare, self).cleanup(state)
+            super(FileSharingSession, self).cleanup(state)
         finally:
             pass    # TODO: perform session cleanup here
     
     def onProtocolNegociated(self, m, protocol, state):
-        super(FileShare, self).onProtocolNegociated(m, protocol, state)
+        super(FileSharingSession, self).onProtocolNegociated(m, protocol, state)
         state.isConnected = True
         self.doUpdateSessionState(m, state)
         self.sendRequest(state, "list-files", True)
     
     def onDisconnected(self, m, state):
-        super(FileShare, self).onDisconnected(m, state)
+        super(FileSharingSession, self).onDisconnected(m, state)
         state.isConnected = False
         self.doUpdateSessionState(m, state)
     
@@ -93,18 +94,19 @@ class FileShare(Service):
 
     def doListFiles(self, m, excludeRemoved, senderPid, state):
         """ Return a copy of the current file table, which maps file IDs to files. """
-        cache = state.fileTable.listFiles()
+        cache = state.fileTable.files
         if excludeRemoved:
             files = {}
             for fileID, file in cache.items():
-                if not file.localRemoved:
+                # exclude local files that have been removed by the user
+                if (file.origin == REMOTE) or file.localCopy:
                     files[fileID] = file
         else:
             files = cache.copy()
         Process.send(senderPid, Event("list-files", files))
     
     def responseListFiles(self, m, transID, files, state):
-        state.fileTable.updateTable(files, False)
+        state.fileTable.updateTable(files, REMOTE)
         
     def doAddFile(self, m, path, senderPid, state):
         """ Add the local file with the given path to the list. """
@@ -132,25 +134,25 @@ class FileShare(Service):
         """ Stop receiving the remote file with the given ID. """
         raise NotImplementedError()
     
-    def cacheFileAdded(self, state, fileID, local):
+    def cacheFileAdded(self, state, fileID, origin):
         self.filesUpdated()
-        if local and state.remoteNotifications and state.isConnected:
+        if (origin == LOCAL) and state.remoteNotifications and state.isConnected:
             file = state.fileTable[fileID]
             self.sendNotification(state, "file-added", file)
     
-    def cacheFileUpdated(self, state, fileID, local):
+    def cacheFileUpdated(self, state, fileID, origin):
         self.filesUpdated()
     
-    def cacheFileRemoved(self, state, fileID, local):
+    def cacheFileRemoved(self, state, fileID, origin):
         self.filesUpdated()
-        if local and state.remoteNotifications and state.isConnected:
+        if (origin == LOCAL) and state.remoteNotifications and state.isConnected:
             self.sendNotification(state, "file-removed", fileID)
     
     def requestListFiles(self, m, transID, register, state):
         """ The remote peer sent a 'list-files' request. """
         if register is True:
             state.remoteNotifications = True
-        files = state.fileTable.listFiles() #TODO: only local
+        files = state.fileTable.files.copy()
         self.sendResponse(state, m, files)
     
     def requestCreateTransfer(self, m, transID, fileID, state):
@@ -183,11 +185,11 @@ class FileShare(Service):
     
     def notificationFileAdded(self, m, transID, fileInfo, state):
         """ The remote peer sent a 'file-added' notification. """
-        state.fileTable.updateFile(fileInfo, False)
+        state.fileTable.updateFile(fileInfo, REMOTE)
     
     def notificationFileRemoved(self, m, transID, fileID, state):
         """ The remote peer sent a 'file-removed' notification. """
-        state.fileTable.removeFile(fileID, False)
+        state.fileTable.removeFile(fileID, REMOTE)
     
     def notificationTransferStateChanged(self, m, transID, transferID, transferState, state):
         """ The remote peer sent a 'transfer-state-changed' notification. """

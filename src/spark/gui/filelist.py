@@ -177,7 +177,6 @@ class FileInfoWidget(QWidget):
         self.transferProgress.setTextVisible(False)
         self.transferProgress.setMaximumHeight(16)
         self.transferProgress.hide()
-        self.statusTooltip = ["Local file", "Transfering", "Remote file"]
         
         status = QHBoxLayout()
         for statusIcon in self.statusIcons:
@@ -227,10 +226,8 @@ class FileInfoWidget(QWidget):
         statusIcon = self.statusIcons[index]
         if icon:
             statusIcon.setPixmap(QPixmap(iconPath(icon, 16)))
-            statusIcon.setToolTip(self.statusTooltip[index])
         else:
             statusIcon.setPixmap(QPixmap())
-            statusIcon.setToolTip("")
     
     def setStatusToolTip(self, text, index):
         statusIcon = self.statusIcons[index]

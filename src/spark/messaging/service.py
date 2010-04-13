@@ -103,6 +103,7 @@ class TcpMessenger(ProcessBase):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
         try:
             state.logger.info("Listening to incoming connections on %s.", repr(m[2]))
+            server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             server.bind(bindAddr)
             server.listen(1)
             self.listening(bindAddr)
@@ -146,7 +147,6 @@ class TcpMessenger(ProcessBase):
     def _waitForConnect(self, remoteAddr, senderPid, messengerPid):
         log = Process.logger()
         conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
-        #conn.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         conn.bind(("0.0.0.0", 0))
         log.info("Connecting to %s.", repr(remoteAddr))
         try:
