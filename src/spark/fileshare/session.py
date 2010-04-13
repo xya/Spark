@@ -22,8 +22,8 @@ from collections import Mapping
 from functools import partial
 from spark.async import *
 from spark.messaging import *
-from spark.fileshare import SharedFile, FileTable, LOCAL, REMOTE
-from spark.fileshare import Transfer, TransferTable, UPLOAD, DOWNLOAD
+from spark.fileshare.tables import *
+from spark.fileshare.transfers import *
 
 __all__ = ["FileSharingSession"]
 
@@ -89,14 +89,11 @@ class FileSharingSession(Service):
     def doListFiles(self, m, excludeRemoved, senderPid, state):
         """ Return a copy of the current file table, which maps file IDs to files. """
         cache = state.fileTable.files
-        if excludeRemoved:
-            files = {}
-            for fileID, file in cache.items():
-                # exclude local files that have been removed by the user
-                if (file.origin == REMOTE) or file.localCopy:
-                    files[fileID] = file
-        else:
-            files = cache.copy()
+        files = {}
+        for fileID, file in cache.items():
+            # exclude local files that have been removed by the user
+            if not excludeRemoved or (file.origin == REMOTE) or file.hasCopy(LOCAL):
+                files[fileID] = file.copy()
         Process.send(senderPid, Event("list-files", files))
     
     def requestListFiles(self, m, transID, register, state):
@@ -149,7 +146,7 @@ class FileSharingSession(Service):
         """ The remote peer sent a 'create-transfer' request. """
         self._createTransferProcess(None, UPLOAD, fileID, transID, state)
     
-    def responseCreateTransfer(self, m, transID, transferID, fileID, state):
+    def responseCreateTransfer(self, m, transID, fileID, transferID, state):
         self._createTransferProcess(transferID, DOWNLOAD, fileID, None, state)
     
     def _createTransferProcess(self, transferID, direction, fileID, reqID, state):
@@ -160,7 +157,7 @@ class FileSharingSession(Service):
         process.stateChanged.suscribe()
         file = state.fileTable[fileID]
         Process.send(process.pid, Command("init-transfer",
-            transferID, direction, fileID, file.path, reqID, self.pid))
+            transferID, direction, file, reqID, self.pid))
         transfer = state.transferTable.createTransfer(transferID, direction, fileID, process.pid)
         file.transfer = transfer
     
@@ -174,6 +171,14 @@ class FileSharingSession(Service):
     def requestStartTransfer(self, m, transID, transferID, state):
         """ The remote peer sent a 'start-transfer' request. """
         transfer = state.transferTable.find(transferID, UPLOAD)
+        file = state.fileTable[transfer.fileID]
+        # TODO: the Transfer process should send a message when it creates a local copy
+        if (transfer.direction == DOWNLOAD) and not file.hasCopy(LOCAL):
+            file.localCopySize = 0
+            self.filesUpdated()
+        elif (transfer.direction == UPLOAD) and not file.hasCopy(REMOTE):
+            file.remoteCopySize = 0
+            self.filesUpdated()
         Process.send(transfer.pid, Command("start-transfer"))
     
     def doStopTransfer(self, m, fileID, state):
@@ -181,6 +186,7 @@ class FileSharingSession(Service):
         raise NotImplementedError()
     
     def _stopTransfers(self, state):
+        state.fileTable.clearTransfers()
         state.transferTable.clear()
         self.filesUpdated()
     
@@ -195,7 +201,7 @@ class FileSharingSession(Service):
             transfer.state = transferState
             if (direction == UPLOAD) and state.isConnected:
                 self.sendNotification(state, "transfer-state-changed", transferID, transferState)
-            self.filesUpdated()
+        self.filesUpdated()
     
     def notificationTransferStateChanged(self, m, transID, transferID, transferState, state):
         """ The remote peer sent a 'transfer-state-changed' notification. """

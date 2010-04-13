@@ -55,7 +55,7 @@ class MainWindow(QMainWindow):
         self.app.connected += self.onStateChanged
         self.app.disconnected += self.onStateChanged
         self.app.stateChanged += self.onStateChanged
-        self.app.filesUpdated += self.onFilesUpdated
+        self.app.filesUpdated += self.onStateChanged
         self.updateStatusBar()
         self.updateToolBar()
     
@@ -167,22 +167,22 @@ class MainWindow(QMainWindow):
             widget.setTypeIcon("mimetypes/%s" % file.mimeType)
         else:
             widget.setTypeIcon("mimetypes/gtk-file")
-        if file.localCopy:
+        if file.hasCopy(LOCAL):
             widget.setStatusIcon("actions/go-home", 0)
             if file.origin == LOCAL:
                 localStatus = "Local copy is the original"
             else:
-                localStatus = "Local copy is %.0f%% complete" % (file.localCopy.completion * 100.0)
+                localStatus = "Local copy is %.0f%% complete" % (file.completion(LOCAL) * 100.0)
         else:
             widget.setStatusIcon(None, 0)
             localStatus = ""
         widget.setStatusToolTip(localStatus, 0)
-        if file.remoteCopy:
+        if file.hasCopy(REMOTE):
             widget.setStatusIcon("categories/applications-internet", 2)
             if file.origin == REMOTE:
                 remoteStatus = "Remote copy is the original"
             else:
-                remoteStatus = "Remote copy is %.0f%% complete" % (file.remoteCopy.completion * 100.0)
+                remoteStatus = "Remote copy is %.0f%% complete" % (file.completion(REMOTE) * 100.0)
         else:
             widget.setStatusIcon(None, 2)
             remoteStatus = ""
@@ -226,7 +226,7 @@ class MainWindow(QMainWindow):
         elif name == "stop":
             return connected and file.isTransfering
         elif name == "open":
-            return file.localCopy and file.localCopy.isComplete or False
+            return file.isComplete(LOCAL)
         else:
             return False
     
@@ -252,10 +252,8 @@ class MainWindow(QMainWindow):
         if self.selectedID is not None:
             self.app.startTransfer(self.selectedID)
     
-    def onFilesUpdated(self):
-        self.updateTransferList(self.app.files)
-    
     def onStateChanged(self):
+        self.updateTransferList(self.app.files)
         self.updateStatusBar()
         self.updateToolBar()
 
