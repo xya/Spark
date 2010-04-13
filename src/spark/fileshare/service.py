@@ -36,8 +36,8 @@ class FileShare(Service):
         self.stateChanged = EventSender("session-state-changed", dict)
         self.filesUpdated = EventSender("files-updated")
         
-    def initState(self, loop, state):
-        super(FileShare, self).initState(loop, state)
+    def initState(self, state):
+        super(FileShare, self).initState(state)
         state.isConnected = False
         state.remoteNotifications = False
         state.fileTable = FileTable()
@@ -69,6 +69,12 @@ class FileShare(Service):
             Notification("file-removed", basestring),
             Notification("transfer-state-changed", int, basestring)
         )
+    
+    def cleanup(self, state):
+        try:
+            super(FileShare, self).cleanup(state)
+        finally:
+            pass    # TODO: perform session cleanup here
     
     def onProtocolNegociated(self, m, protocol, state):
         super(FileShare, self).onProtocolNegociated(m, protocol, state)

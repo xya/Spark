@@ -26,8 +26,8 @@ import logging
 from spark.async.queue import BlockingQueue, QueueClosedError
 
 __all__ = ["Process", "ProcessState", "ProcessRunner",
-           "ProcessNotifier", "Command", "Event", "EventSender", "match", "MessageMatcher",
-           "ProcessExited", "ProcessKilled"]
+           "ProcessNotifier", "Command", "Event", "EventSender", "match", "PatternMatcher",
+           "ProcessBase", "ProcessExited", "ProcessKilled"]
 
 class Process(object):
     """ A process can execute callables and communicate using messages. """
@@ -404,7 +404,11 @@ class NoMatchException(Exception):
     """ Error that occurs when MessageMatcher.match() is called and no match was found. """
     pass
 
-class MessageMatcher(object):
+def toPascalCase(tag):
+    """ Convert the tag to Pascal case (e.g. "create-transfer" becomes "CreateTransfer"). """
+    return "".join([word.capitalize() for word in tag.split("-")])
+
+class PatternMatcher(object):
     """ Matches messages against a list of patterns. """
     def __init__(self):
         self.patterns = []
@@ -417,6 +421,34 @@ class MessageMatcher(object):
     def removePattern(self, pattern, callable=None, result=True):
         """ Remove a pattern from the list. """
         self.patterns.remove((pattern, callable, result))
+    
+    def addHandlers(self, handler, *patterns):
+        """ Calls addHandler() for every pattern in the list. """
+        for pattern in patterns:
+            self.addHandler(pattern, handler)
+    
+    def addHandler(self, pattern, handler, result=True, prefixes={"Event": "on", "Command": "do"}):
+        """
+        Add a rule that invokes the relevant handler methods when a message is matched.
+        For example a 'connect' command would invoke the 'doCommand' method (with the default prefixes).
+        """
+        if match((basestring, basestring), pattern[0:2]):
+            name = pattern.__class__.__name__
+            if name in prefixes:
+                prefix = prefixes[name]
+            else:
+                prefix = name.lower()
+            attrName = prefix + toPascalCase(pattern[1])
+            def invokeHandler(m, *args):
+                attr = getattr(handler, attrName, None)
+                if hasattr(attr, "__call__"):
+                    attr(m, *(m[2:] + args))
+                else:
+                    Process.logger().error("Could not find handler method '%s' for message %s"
+                        % (attrName, repr(m)))
+            self.addPattern(pattern, invokeHandler, result)
+        else:
+            raise TypeError("pattern should be a message (sequence starting with two strings)")
     
     def addForwarding(self, pattern, pid, result=True):
         """ Add a pattern to match messages. When a message matches the pattern,
@@ -448,3 +480,33 @@ class MessageMatcher(object):
             m = Process.receive()
             if not self.match(m, *args):
                 break
+
+class ProcessBase(object):
+    """ Base class for processes with a message loop. """
+    def initState(self, state):
+        """ Initialize the process state. """
+        pass
+    
+    def createLoop(self, state):
+        """ Create the message loop. """
+        return PatternMatcher()
+    
+    def initPatterns(self, loop, state):
+        """ Initialize the patterns used by the message loop. """
+        pass
+        
+    def run(self):
+        """ Run the process. This method blocks until the process has finished executing. """
+        state = ProcessState()
+        self.initState(state)
+        try:
+            loop = self.createLoop(state)
+            self.initPatterns(loop, state)
+            loop.run(state)
+        finally:
+            self.cleanup(state)
+    
+    def cleanup(self, state):
+        """ Perform cleanup tasks before the process stops.
+        This is guaranteed to be called if the process state was initialized properly. """
+        pass

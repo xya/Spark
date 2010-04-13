@@ -26,14 +26,13 @@ from PyQt4.QtCore import QObject, QEvent
 from PyQt4.QtGui import QApplication
 from spark.gui.main import MainWindow
 from spark.fileshare import SparkApplication
-from spark.async import Process
-from spark.messaging import RequestMatcher
+from spark.async import Process, PatternMatcher
 
 class GuiProcess(QObject):
     def __init__(self):
         super(GuiProcess, self).__init__()
         self.pid = Process.attach("GUI", self)
-        self.messages = RequestMatcher()
+        self.messages = PatternMatcher()
     
     def __enter__(self):
         return self

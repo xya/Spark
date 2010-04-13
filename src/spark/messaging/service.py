@@ -26,32 +26,20 @@ from spark.async import *
 from spark.messaging.protocol import *
 from spark.messaging.messages import *
 
-__all__ = ["TcpMessenger", "Service", "RequestMatcher"]
+__all__ = ["TcpMessenger", "Service"]
 
-def toCamelCase(tag):
-    """ Convert the tag to camel case (e.g. "create-transfer" becomes "createTransfer"). """
-    words = tag.split("-")
-    first = words.pop(0)
-    words = [word.capitalize() for word in words]
-    words.insert(0, first)
-    return "".join(words)
-
-def toPascalCase(tag):
-    """ Convert the tag to Pascal case (e.g. "create-transfer" becomes "CreateTransfer"). """
-    return "".join([word.capitalize() for word in tag.split("-")])
-
-class TcpMessenger(object):
+class TcpMessenger(ProcessBase):
     # The messenger is not connected to any peer.
     DISCONNECTED = 0
     # The messenger is connected to a peer.
     CONNECTED = 1
     
     def __init__(self):
-        self.pid = Process.spawn(self._entry, name="TcpMessenger")
         self.listening = EventSender("listening", None)
         self.connected = EventSender("connected", None)
         self.protocolNegociated = EventSender("protocol-negociated", basestring)
         self.disconnected = EventSender("disconnected")
+        self.pid = Process.spawn(self.run, name="TcpMessenger")
     
     def connect(self, addr, senderPid=None):
         if not senderPid:
@@ -79,9 +67,21 @@ class TcpMessenger(object):
     def close(self):
         Process.try_send(self.pid, Command("stop"))
     
-    def _entry(self):
-        state = TcpProcessState()
-        loop = RequestMatcher()
+    def initState(self, state):
+        state.connState = TcpMessenger.DISCONNECTED
+        state.server = None
+        state.conn = None
+        state.remoteAddr = None
+        state.recipient = None
+        state.protocol = None
+        state.stream = None
+        state.writer = None
+        state.receiver = None
+        state.acceptReceiver = None
+        state.connectReceiver = None
+        state.logger = Process.logger()
+    
+    def initPatterns(self, loop, state):
         loop.addPattern(Command("stop"), result=False)
         loop.addHandlers(self,
             # public messages
@@ -93,12 +93,11 @@ class TcpMessenger(object):
             # internal messages
             Event("connected", None, None, bool),
             Event("end-of-stream", int))
-        try:
-            loop.run(state)
-        finally:
-            self._closeConnection(state)
-            self._closeServer(state)
-
+    
+    def cleanup(self, state):
+        self._closeConnection(state)
+        self._closeServer(state)
+    
     def doListen(self, m, bindAddr, senderPid, state):
         if state.server:
             Process.send(senderPid, Event("listen-error", "invalid-state"))
@@ -134,6 +133,7 @@ class TcpMessenger(object):
                 # shutdown
                 return
             else:
+                log.error(str(e))
                 Process.send(senderPid, Event("accept-error", e))
         else:
             self._startSession(conn, remoteAddr, False, senderPid, messengerPid)
@@ -153,6 +153,7 @@ class TcpMessenger(object):
         try:
             conn.connect(remoteAddr)
         except socket.error as e:
+            log.error(str(e))
             Process.send(senderPid, Event("connection-error", e))
         else:
             self._startSession(conn, remoteAddr, True, senderPid, messengerPid)
@@ -262,21 +263,6 @@ class TcpMessenger(object):
                 state.logger.exception("server.close() failed")
             state.server = None
 
-class TcpProcessState(object):
-    def __init__(self):
-        self.connState = TcpMessenger.DISCONNECTED
-        self.server = None
-        self.conn = None
-        self.remoteAddr = None
-        self.recipient = None
-        self.protocol = None
-        self.stream = None
-        self.writer = None
-        self.receiver = None
-        self.acceptReceiver = None
-        self.connectReceiver = None
-        self.logger = Process.logger()
-
 class SocketWrapper(object):
     def __init__(self, sock):
         self.sock = sock
@@ -291,14 +277,14 @@ class SocketWrapper(object):
             else:
                 raise
 
-class Service(object):
+class Service(ProcessBase):
     """ Base class for services that handle requests using messaging. """
     def __init__(self):
         self.connected = EventSender("connected")
         self.connectionError = EventSender("connection-error", None)
         self.disconnected = EventSender("disconnected")
     
-    def initState(self, loop, state):
+    def initState(self, state):
         state.bindAddr = None
         state.messenger = TcpMessenger()
         state.nextTransID = 1
@@ -315,20 +301,12 @@ class Service(object):
             Command("connect", None),
             Command("bind", None),
             Command("disconnect"))
-        
-    def run(self):
-        """ Run the service. This method blocks until the service has finished executing. """
-        loop = RequestMatcher()
-        state = ProcessState()
-        self.initState(loop, state)
-        self.initPatterns(loop, state)
-        try:
-            loop.run(state)
-        finally:
-            state.messenger.close()
     
-    def onConnectionError(self, m, state):
-        self.connectionError(m[2])
+    def cleanup(self, state):
+        state.messenger.close()
+    
+    def onConnectionError(self, m, error, state):
+        self.connectionError(error)
     
     def onProtocolNegociated(self, m, protocol, state):
         self.connected()
@@ -368,32 +346,3 @@ class Service(object):
         """ Send a notification. """
         transID = self._newTransID(state)
         state.messenger.send(Notification(tag, *params).withID(transID))
-
-class RequestMatcher(MessageMatcher):
-    def addHandlers(self, handler, *patterns):
-        """ Calls addHandler() for every pattern in the list. """
-        for pattern in patterns:
-            self.addHandler(pattern, handler)
-    
-    def addHandler(self, pattern, handler, result=True):
-        """
-        Add a rule that invokes the relevant handler methods when a message is matched.
-        For example a 'start-transfer' request would invoke the 'requestSartTransfer' method.
-        """
-        if match((basestring, basestring), pattern[0:2]):
-            prefix = pattern.__class__.__name__.lower()
-            if prefix == "event":
-                prefix = "on"
-            elif prefix == "command":
-                prefix = "do"
-            attrName = prefix + toPascalCase(pattern[1])
-            def invokeHandler(m, *args):
-                attr = getattr(handler, attrName, None)
-                if hasattr(attr, "__call__"):
-                    attr(m, *(m[2:] + args))
-                else:
-                    Process.logger().error("Could not find handler method '%s' for message %s"
-                        % (attrName, repr(m)))
-            self.addPattern(pattern, invokeHandler, result)
-        else:
-            raise TypeError("pattern should be a message (sequence starting with two strings)")
