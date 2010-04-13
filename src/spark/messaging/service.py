@@ -285,13 +285,16 @@ class Service(ProcessBase):
     """ Base class for services that handle requests using messaging. """
     def __init__(self):
         super(Service, self).__init__()
-        self.connected = EventSender("connected")
+        self.connected = EventSender("connected", None)
         self.connectionError = EventSender("connection-error", None)
+        self.listening = EventSender("listening", None)
         self.disconnected = EventSender("disconnected")
     
     def initState(self, state):
         super(Service, self).initState(state)
         state.bindAddr = None
+        state.connAddr = None
+        state.isConnected = False
         state.messenger = TcpMessenger()
         state.messenger.start()
         state.nextTransID = 1
@@ -301,6 +304,8 @@ class Service(ProcessBase):
         m = state.messenger
         loop.addHandlers(self,
             # messages received from TcpMessenger
+            m.listening.suscribe(),
+            m.connected.suscribe(),
             m.protocolNegociated.suscribe(),
             m.disconnected.suscribe(),
             Event("connection-error", None),
@@ -312,14 +317,25 @@ class Service(ProcessBase):
     def cleanup(self, state):
         state.messenger.stop()
     
+    def onListening(self, m, bindAddr, state):
+        self.listening(bindAddr)
+    
+    def onConnected(self, m, connAddr, state):
+        state.connAddr = connAddr
+    
     def onConnectionError(self, m, error, state):
         self.connectionError(error)
     
     def onProtocolNegociated(self, m, protocol, state):
-        self.connected()
+        state.isConnected = True
+        self.connected(state.connAddr)
+        self.sessionStarted(state)
     
     def onDisconnected(self, m, state):
+        state.connAddr = None
+        state.isConnected = False
         self.disconnected()
+        self.sessionEnded(state)
         if state.bindAddr:
             state.messenger.accept()
     
@@ -339,6 +355,14 @@ class Service(ProcessBase):
         transID = state.nextTransID
         state.nextTransID += 1
         return transID
+    
+    def sessionStarted(self, state):
+        """ This method is called when the messaging session has just started. """
+        pass
+    
+    def sessionEnded(self, state):
+        """ This method is called when the messaging session has just ended. """
+        pass
     
     def sendRequest(self, state, tag, *params):
         """ Send a request. """

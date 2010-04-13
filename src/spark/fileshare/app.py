@@ -31,13 +31,16 @@ class SparkApplication(object):
     """ Hold the state of the whole application. """
     def __init__(self):
         self._myIPaddress = "127.0.0.1"
-        self._isConnected = False
+        self._connAddr = None
+        self._bindAddr = None
         self._activeTransfers = 0
         self._uploadSpeed = 0.0
         self._downloadSpeed = 0.0
         self._files = {}
+        self.listening = Delegate()
         self.connected = Delegate()
         self.connectionError = Delegate()
+        self.disconnected = Delegate()
         self.stateChanged = Delegate()
         self.filesUpdated = Delegate()
         self.session = FileSharingSession()
@@ -104,7 +107,22 @@ class SparkApplication(object):
     @property
     def isConnected(self):
         """ Determine whether the session is active, i.e. we are connected to a remote peer. """
-        return self._isConnected
+        return self._connAddr is not None
+    
+    @property
+    def isListening(self):
+        """ Determine whether the server is listening for incoming connections. """
+        return self._bindAddr is not None
+    
+    @property
+    def connectionAddress(self):
+        """ Return the remote peer's address, if a session is active. """
+        return self._connAddr
+    
+    @property
+    def bindAddress(self):
+        """ Return the address the server is bound to. """
+        return self._bindAddr
     
     @property
     def activeTransfers(self):
@@ -126,20 +144,30 @@ class SparkApplication(object):
         if pid == None:
             pid = Process.current()
         matcher.addHandlers(self,
+            self.session.listening.suscribe(pid),
             self.session.connected.suscribe(pid),
             self.session.connectionError.suscribe(pid),
+            self.session.disconnected.suscribe(pid),
             self.session.stateChanged.suscribe(pid),
             self.session.filesUpdated.suscribe(pid),
             Event("list-files", None))
     
-    def onConnected(self, m, *args):
+    def onListening(self, m, bindAddr, *args):
+        self._bindAddr = bindAddr
+        self.listening()
+    
+    def onConnected(self, m, connAddr, *args):
+        self._connAddr = connAddr
         self.connected()
     
     def onConnectionError(self, m, error, *args):
         self.connectionError(error)
     
+    def onDisconnected(self, m, *args):
+        self._connAddr = None
+        self.disconnected()
+    
     def onSessionStateChanged(self, m, sessionState, *args):
-        self._isConnected = sessionState["isConnected"]
         self._activeTransfers = sessionState["activeTransfers"]
         self._uploadSpeed = sessionState["uploadSpeed"]
         self._downloadSpeed = sessionState["downloadSpeed"]

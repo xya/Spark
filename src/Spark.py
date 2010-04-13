@@ -82,9 +82,7 @@ if __name__ == "__main__":
             app.installHandlers(pid.messages)
             view = MainWindow(app)
             if bindAddr:
-                view.setWindowTitle("Spark %s:%i" % bindAddr)
                 app.bind(bindAddr)
-            else:
-                view.setWindowTitle("Spark")
+            view.setWindowTitle("Spark")
             view.show()
             qtapp.exec_()

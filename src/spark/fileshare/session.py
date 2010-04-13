@@ -39,7 +39,6 @@ class FileSharingSession(Service):
         
     def initState(self, state):
         super(FileSharingSession, self).initState(state)
-        state.isConnected = False
         state.remoteNotifications = False
         state.fileTable = FileTable()
         state.fileTable.fileAdded += partial(self.cacheFileAdded, state)
@@ -77,20 +76,15 @@ class FileSharingSession(Service):
         finally:
             pass    # TODO: perform session cleanup here
     
-    def onProtocolNegociated(self, m, protocol, state):
-        super(FileSharingSession, self).onProtocolNegociated(m, protocol, state)
-        state.isConnected = True
-        self.doUpdateSessionState(m, state)
+    def sessionStarted(self, state):
         self.sendRequest(state, "list-files", True)
     
-    def onDisconnected(self, m, state):
-        super(FileSharingSession, self).onDisconnected(m, state)
-        state.isConnected = False
-        self.doUpdateSessionState(m, state)
+    def sessionEnded(self, state):
+        pass
     
     def doUpdateSessionState(self, m, state):
-        self.stateChanged({"isConnected" : state.isConnected,
-            "activeTransfers" : 0, "uploadSpeed" : 0.0, "downloadSpeed" : 0.0})
+        self.stateChanged({"activeTransfers" : 0,
+            "uploadSpeed" : 0.0, "downloadSpeed" : 0.0})
 
     def doListFiles(self, m, excludeRemoved, senderPid, state):
         """ Return a copy of the current file table, which maps file IDs to files. """

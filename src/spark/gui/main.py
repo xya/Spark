@@ -51,6 +51,9 @@ class MainWindow(QMainWindow):
         self.sharedFiles = {}
         self.fileIDs = []
         self.selectedID = None
+        self.app.listening += self.onStateChanged
+        self.app.connected += self.onStateChanged
+        self.app.disconnected += self.onStateChanged
         self.app.stateChanged += self.onStateChanged
         self.app.filesUpdated += self.onFilesUpdated
         self.updateStatusBar()
@@ -76,8 +79,8 @@ class MainWindow(QMainWindow):
         self.toolbar = self.addToolBar("Actions")
         self.toolbar.setIconSize(QSize(32, 32))
         self.toolbar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-        for name in ("connect", "disconnect", None, "add", "remove", None,
-                     "start", "pause", "stop", None, "open"):
+        for name in ("connect", "disconnect", None, "add", "remove",
+                     "start", "pause", "stop", "open"):
             if name:
                 self.toolbar.addAction(self.actions[name])
             else:
@@ -100,7 +103,9 @@ class MainWindow(QMainWindow):
         else:
             file = self.sharedFiles[self.selectedID]
         for key in ("add", "remove", "start", "pause", "stop", "open"):
-            self.actions[key].setEnabled(self.isActionAvailable(key, file))
+            available = self.isActionAvailable(key, file)
+            self.actions[key].setEnabled(available)
+            self.actions[key].setVisible(available)
     
     def initStatusBar(self):
         self.connStatus = QLabel(self.statusBar())
@@ -122,11 +127,18 @@ class MainWindow(QMainWindow):
     
     def updateStatusBar(self):
         if self.app.isConnected:
+            connStatus = "Connected to %s:%d" % self.app.connectionAddress
             self.connStatus.setPixmap(QPixmap(iconPath("status/network-idle", 24)))
-            self.connStatus.setToolTip("Connected to a peer")
         else:
+            connStatus = "Not connected to a peer"
             self.connStatus.setPixmap(QPixmap(iconPath("status/network-offline", 24)))
-            self.connStatus.setToolTip("Not connected")
+        if self.app.isListening:
+            listenStatus = "Listening for incoming connections on %s:%d" % self.app.bindAddress
+            self.setWindowTitle("Spark - %s:%d" % self.app.bindAddress)
+        else:
+            self.setWindowTitle("Spark")
+            listenStatus = "Not listening for incoming connections"
+        self.connStatus.setToolTip(connStatus + "\n" + listenStatus)
         self.myIP.setText("My IP: %s" % self.app.myIPaddress)
         self.transferCount.setText("%d transfer(s)" % self.app.activeTransfers)
         self.uploadSpeedText.setText("%s/s" % self.app.formatSize(self.app.uploadSpeed))
@@ -157,16 +169,24 @@ class MainWindow(QMainWindow):
             widget.setTypeIcon("mimetypes/gtk-file")
         if file.localCopy:
             widget.setStatusIcon("actions/go-home", 0)
-            widget.setStatusToolTip("Local copy is %.0f%% complete"
-                % (file.localCopy.completion * 100.0), 0)
+            if file.origin == LOCAL:
+                localStatus = "Local copy is the original"
+            else:
+                localStatus = "Local copy is %.0f%% complete" % (file.localCopy.completion * 100.0)
         else:
             widget.setStatusIcon(None, 0)
+            localStatus = ""
+        widget.setStatusToolTip(localStatus, 0)
         if file.remoteCopy:
             widget.setStatusIcon("categories/applications-internet", 2)
-            widget.setStatusToolTip("Remote copy is %.0f%% complete"
-                % (file.remoteCopy.completion * 100.0), 2)
+            if file.origin == REMOTE:
+                remoteStatus = "Remote copy is the original"
+            else:
+                remoteStatus = "Remote copy is %.0f%% complete" % (file.remoteCopy.completion * 100.0)
         else:
             widget.setStatusIcon(None, 2)
+            remoteStatus = ""
+        widget.setStatusToolTip(remoteStatus, 2)
         if file.isReceiving:
             widget.setStatusIcon("actions/go-previous", 1)
             widget.setStatusToolTip("Receiving from peer", 1)
