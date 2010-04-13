@@ -120,7 +120,7 @@ class TcpMessenger(ProcessBase):
             Process.send(senderPid, Event("accept-error", "invalid-state"))
             return
         args = (state.server, senderPid, Process.current())
-        state.acceptReceiver = Process.spawn(self._waitForAccept, args, "TcpServer")
+        state.acceptReceiver = Process.spawn_linked(self._waitForAccept, args, "TcpServer")
 
     def _waitForAccept(self, server, senderPid, messengerPid):
         log = Process.logger()
@@ -142,7 +142,7 @@ class TcpMessenger(ProcessBase):
             Process.send(senderPid, Event("connection-error", "invalid-state"))
             return
         args = (remoteAddr, senderPid, Process.current())
-        state.connectReceiver = Process.spawn(self._waitForConnect, args, "TcpClient")
+        state.connectReceiver = Process.spawn_linked(self._waitForConnect, args, "TcpClient")
     
     def _waitForConnect(self, remoteAddr, senderPid, messengerPid):
         log = Process.logger()
@@ -296,7 +296,7 @@ class Service(ProcessBase):
         state.connAddr = None
         state.isConnected = False
         state.messenger = TcpMessenger()
-        state.messenger.start()
+        state.messenger.start_linked()
         state.nextTransID = 1
     
     def initPatterns(self, loop, state):

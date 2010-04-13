@@ -154,7 +154,7 @@ class FileSharingSession(Service):
     
     def _createTransferProcess(self, transferID, direction, fileID, reqID, state):
         process = Transfer()
-        process.start()
+        process.start_linked()
         if not transferID:
             transferID = process.pid
         process.stateChanged.suscribe()

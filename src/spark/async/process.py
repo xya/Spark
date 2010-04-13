@@ -41,6 +41,7 @@ class Process(object):
         self.queue = BlockingQueue(64)
         self.thread = None
         self.logger = None
+        self.linked = set()
     
     def displayName(self):
         if self.name:
@@ -104,30 +105,57 @@ class Process(object):
     @classmethod
     def spawn(cls, fun, args=(), name=None):
         """ Create a new process and return its PID. """
+        return cls._spawn(fun, args, name, None)
+    
+    @classmethod
+    def spawn_linked(cls, fun, args=(), name=None):
+        """ Create a new process linked to the current one and return its PID.
+        When a process dies, every process in its link set is killed. """
+        currentPid = cls.current()
+        if not currentPid:
+            raise Exception("The current thread has no PID")
+        return cls._spawn(fun, args, name, currentPid)
+    
+    @classmethod
+    def _spawn(cls, fun, args=(), name=None, linkedPid=None):
         with cls._lock:
             pid = cls._new_id()
             p = cls._create_process(pid, name)
-        def entry():
-            with cls._lock:
-                cls._set_current_process(pid)
-            log = cls.logger()
-            log.info("Process started.")
-            try:
-                fun(*args)
-            except ProcessKilled:
-                log.info("Process killed.")
-            except Exception:
-                log.exception("An exception was raised by the process")
-                log.error("Process died.")
-            else:
-                log.info("Process stopped.")
-            finally:
-                with cls._lock:
-                    cls._remove_current_process(pid)
-        p.thread = threading.Thread(target=entry)
+            if linkedPid:
+                p.linked.add(linkedPid)
+                cls._processes[linkedPid].linked.add(pid)
+        p.thread = threading.Thread(target=cls._entry, args=(pid, fun, args))
         #p.thread.daemon = True
         p.thread.start()
         return pid
+    
+    @classmethod
+    def _entry(cls, pid, fun, args):
+        with cls._lock:
+            cls._set_current_process(pid)
+            p = cls._current.p
+        log = cls.logger()
+        log.info("Process started.")
+        try:
+            fun(*args)
+        except ProcessKilled:
+            log.error("Process killed.")
+            gracefulExit = False
+        except Exception:
+            log.exception("An exception was raised by the process")
+            log.error("Process died.")
+            gracefulExit = False
+        else:
+            log.info("Process stopped.")
+            gracefulExit = True
+        finally:
+            with cls._lock:
+                cls._remove_current_process(pid)
+                if not gracefulExit:
+                    # kill any linked process
+                    for linkedPid in p.linked:
+                        if cls._processes[linkedPid].queue.close():
+                            log.error("Killing linked process %d.", linkedPid)
     
     @classmethod
     def send(cls, pid, m):
@@ -461,6 +489,12 @@ class ProcessBase(object):
         """ Start the new process if it is not already running. """
         if not self.pid:
             self.pid = Process.spawn(self.run, name=self.name)
+        return self.pid
+    
+    def start_linked(self):
+        """ Start the new process as a linked process if it is not already running. """
+        if not self.pid:
+            self.pid = Process.spawn_linked(self.run, name=self.name)
         return self.pid
     
     def stop(self):

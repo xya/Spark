@@ -43,7 +43,10 @@ class GuiProcess(QObject):
     def event(self, ev):
         """ Handle events sent to the object. """
         if ev.type() == MessageReceivedEvent.Type:
-            self.messages.match(ev.m)
+            try:
+                self.messages.match(ev.m)
+            except Exception:
+                Process.logger().exception("An exception was raised by the process")
             return True
         else:
             return False

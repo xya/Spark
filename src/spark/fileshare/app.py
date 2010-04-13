@@ -56,43 +56,43 @@ class SparkApplication(object):
             logging.exception("Error while stoping the session")
     
     def connect(self, address):
-        Process.send(self.session.pid, Command("connect", address))
+        Process.try_send(self.session.pid, Command("connect", address))
     
     def bind(self, address):
-        Process.send(self.session.pid, Command("bind", address))
+        Process.try_send(self.session.pid, Command("bind", address))
     
     def disconnect(self):
-        Process.send(self.session.pid, Command("disconnect"))
+        Process.try_send(self.session.pid, Command("disconnect"))
     
     def listFiles(self, excludeRemoved=True, senderPid=None):
         """ Return a copy of the current file table, which maps file IDs to files. """
         if not senderPid:
             senderPid = Process.current()
-        Process.send(self.session.pid, Command("list-files", excludeRemoved, senderPid))
+        Process.try_send(self.session.pid, Command("list-files", excludeRemoved, senderPid))
     
     def addFile(self, path, senderPid=None):
         """ Add the local file with the given path to the list. """
         if not senderPid:
             senderPid = Process.current()
-        Process.send(self.session.pid, Command("add-file", path, senderPid))
+        Process.try_send(self.session.pid, Command("add-file", path, senderPid))
     
     def removeFile(self, fileID, senderPid=None):
         """ Remove the file (local or remote) with the given ID from the list. """
         if not senderPid:
             senderPid = Process.current()
-        Process.send(self.session.pid, Command("remove-file", fileID, senderPid))
+        Process.try_send(self.session.pid, Command("remove-file", fileID, senderPid))
     
     def startTransfer(self, fileID, senderPid=None):
         """ Start receiving the remote file with the given ID. """
         if not senderPid:
             senderPid = Process.current()
-        Process.send(self.session.pid, Command("start-transfer", fileID, senderPid))
+        Process.try_send(self.session.pid, Command("start-transfer", fileID, senderPid))
     
     def stopTransfer(self, fileID, senderPid=None):
         """ Stop receiving the remote file with the given ID. """
         if not senderPid:
             senderPid = Process.current()
-        Process.send(self.session.pid, Command("stop-transfer", fileID, senderPid))
+        Process.try_send(self.session.pid, Command("stop-transfer", fileID, senderPid))
     
     @property
     def files(self):

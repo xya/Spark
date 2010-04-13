@@ -125,6 +125,7 @@ class BlockingQueue(object):
     def close(self, waitEmpty=False):
         """
         Close the queue, raising an exception on threads waiting for put or get to complete.
+        Return true if the queue was still open when close() was called, False otherwise.
         
         If waitEmpty is true, then calling get() doesn't raise an exception as long
         as there are still items in the queue. In either case put() raises an exception.
@@ -141,3 +142,6 @@ class BlockingQueue(object):
                 self.__list = None
                 self.__closing = False
                 self.__wait.notifyAll()
+                return True
+            else:
+                return False
