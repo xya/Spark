@@ -50,20 +50,18 @@ class TestServer(Service):
 class ProcessIntegrationTest(unittest.TestCase):
     @processTimeout(1.0)
     def testTcpSession(self):
-        pid = Process.current()
-        server = TestServer()
-        runner = ProcessRunner(server)
-        runner.start()
-        server.listening.suscribe()
-        Process.send(runner.pid, Command("bind", (BIND_ADDRESS, BIND_PORT)))
-        assertMatch(Event("listening", None), Process.receive())
-        clientMessenger = TcpMessenger()
-        clientMessenger.protocolNegociated.suscribe()
-        clientMessenger.connect((BIND_ADDRESS, BIND_PORT))
-        assertMatch(Event("protocol-negociated", basestring), Process.receive())
-        clientMessenger.send(Request("swap", "foo", "bar").withID(1))
-        assertMatch(Response("swap", "bar", "foo").withID(1), Process.receive())
-        clientMessenger.close()
+        with TestServer() as server:
+            server.listening.suscribe()
+            Process.send(server.pid, Command("bind", (BIND_ADDRESS, BIND_PORT)))
+            assertMatch(Event("listening", None), Process.receive())
+            with TcpMessenger() as client:
+                client.protocolNegociated.suscribe()
+                client.disconnected.suscribe()
+                client.connect((BIND_ADDRESS, BIND_PORT))
+                assertMatch(Event("protocol-negociated", basestring), Process.receive())
+                client.send(Request("swap", "foo", "bar").withID(1))
+                assertMatch(Response("swap", "bar", "foo").withID(1), Process.receive())
+            assertMatch(Event("disconnected"), Process.receive())
 
 if __name__ == '__main__':
     import logging

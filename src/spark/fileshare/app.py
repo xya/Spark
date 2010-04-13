@@ -41,56 +41,55 @@ class SparkApplication(object):
         self.stateChanged = Delegate()
         self.filesUpdated = Delegate()
         self.session = FileShare()
-        self.runner = ProcessRunner(self.session)
-        self.runner.start()
+        self.session.start()
     
     def __enter__(self):
         return self
     
     def __exit__(self, type, val, tb):
         try:
-            self.runner.stop()
+            self.session.stop()
         except Exception:
             logging.exception("Error while stoping the session")
     
     def connect(self, address):
-        Process.send(self.runner.pid, Command("connect", address))
+        Process.send(self.session.pid, Command("connect", address))
     
     def bind(self, address):
-        Process.send(self.runner.pid, Command("bind", address))
+        Process.send(self.session.pid, Command("bind", address))
     
     def disconnect(self):
-        Process.send(self.runner.pid, Command("disconnect"))
+        Process.send(self.session.pid, Command("disconnect"))
     
     def listFiles(self, excludeRemoved=True, senderPid=None):
         """ Return a copy of the current file table, which maps file IDs to files. """
         if not senderPid:
             senderPid = Process.current()
-        Process.send(self.runner.pid, Command("list-files", excludeRemoved, senderPid))
+        Process.send(self.session.pid, Command("list-files", excludeRemoved, senderPid))
     
     def addFile(self, path, senderPid=None):
         """ Add the local file with the given path to the list. """
         if not senderPid:
             senderPid = Process.current()
-        Process.send(self.runner.pid, Command("add-file", path, senderPid))
+        Process.send(self.session.pid, Command("add-file", path, senderPid))
     
     def removeFile(self, fileID, senderPid=None):
         """ Remove the file (local or remote) with the given ID from the list. """
         if not senderPid:
             senderPid = Process.current()
-        Process.send(self.runner.pid, Command("remove-file", fileID, senderPid))
+        Process.send(self.session.pid, Command("remove-file", fileID, senderPid))
     
     def startTransfer(self, fileID, senderPid=None):
         """ Start receiving the remote file with the given ID. """
         if not senderPid:
             senderPid = Process.current()
-        Process.send(self.runner.pid, Command("start-transfer", fileID, senderPid))
+        Process.send(self.session.pid, Command("start-transfer", fileID, senderPid))
     
     def stopTransfer(self, fileID, senderPid=None):
         """ Stop receiving the remote file with the given ID. """
         if not senderPid:
             senderPid = Process.current()
-        Process.send(self.runner.pid, Command("stop-transfer", fileID, senderPid))
+        Process.send(self.session.pid, Command("stop-transfer", fileID, senderPid))
     
     @property
     def files(self):

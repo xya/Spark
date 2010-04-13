@@ -35,11 +35,11 @@ class TcpMessenger(ProcessBase):
     CONNECTED = 1
     
     def __init__(self):
+        super(TcpMessenger, self).__init__()
         self.listening = EventSender("listening", None)
         self.connected = EventSender("connected", None)
         self.protocolNegociated = EventSender("protocol-negociated", basestring)
         self.disconnected = EventSender("disconnected")
-        self.pid = Process.spawn(self.run, name="TcpMessenger")
     
     def connect(self, addr, senderPid=None):
         if not senderPid:
@@ -63,11 +63,9 @@ class TcpMessenger(ProcessBase):
         if not senderPid:
             senderPid = Process.current()
         Process.send(self.pid, Command("send", message, senderPid))
-    
-    def close(self):
-        Process.try_send(self.pid, Command("stop"))
-    
+
     def initState(self, state):
+        super(TcpMessenger, self).initState(state)
         state.connState = TcpMessenger.DISCONNECTED
         state.server = None
         state.conn = None
@@ -82,7 +80,7 @@ class TcpMessenger(ProcessBase):
         state.logger = Process.logger()
     
     def initPatterns(self, loop, state):
-        loop.addPattern(Command("stop"), result=False)
+        super(TcpMessenger, self).initPatterns(loop, state)
         loop.addHandlers(self,
             # public messages
             Command("connect", None, int),
@@ -148,6 +146,7 @@ class TcpMessenger(ProcessBase):
     def _waitForConnect(self, remoteAddr, senderPid, messengerPid):
         log = Process.logger()
         conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
+        #conn.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         conn.bind(("0.0.0.0", 0))
         log.info("Connecting to %s.", repr(remoteAddr))
         try:
@@ -214,7 +213,6 @@ class TcpMessenger(ProcessBase):
     
     def onEndOfStream(self, m, snderPid, state):
         self._closeConnection(state)
-        self.disconnected()
     
     def doSend(self, m, data, senderPid, state):
         if (state.connState != TcpMessenger.CONNECTED) or state.protocol is None:
@@ -228,7 +226,7 @@ class TcpMessenger(ProcessBase):
 
     def _closeConnection(self, state):
         if state.conn:
-            state.logger.info("Disconnecting from %s." % repr(state.remoteAddr))
+            remoteAddr = state.remoteAddr
             state.stream = None
             state.protocol = None
             state.writer = None
@@ -248,7 +246,13 @@ class TcpMessenger(ProcessBase):
                 state.logger.exception("conn.close() failed")
             state.conn = None
             state.remoteAddr = None
+            wasDisconnected = (state.connState == TcpMessenger.CONNECTED)
             state.connState = TcpMessenger.DISCONNECTED
+        else:
+            wasDisconnected = False
+        if wasDisconnected:
+            state.logger.info("Disconnected from %s." % repr(remoteAddr))
+            self.disconnected()
     
     def _closeServer(self, state):
         if state.server:
@@ -280,18 +284,21 @@ class SocketWrapper(object):
 class Service(ProcessBase):
     """ Base class for services that handle requests using messaging. """
     def __init__(self):
+        super(Service, self).__init__()
         self.connected = EventSender("connected")
         self.connectionError = EventSender("connection-error", None)
         self.disconnected = EventSender("disconnected")
     
     def initState(self, state):
+        super(Service, self).initState(state)
         state.bindAddr = None
         state.messenger = TcpMessenger()
+        state.messenger.start()
         state.nextTransID = 1
     
     def initPatterns(self, loop, state):
+        super(Service, self).initPatterns(loop, state)
         m = state.messenger
-        loop.addPattern(Command("stop"), result=False)
         loop.addHandlers(self,
             # messages received from TcpMessenger
             m.protocolNegociated.suscribe(),
@@ -303,7 +310,7 @@ class Service(ProcessBase):
             Command("disconnect"))
     
     def cleanup(self, state):
-        state.messenger.close()
+        state.messenger.stop()
     
     def onConnectionError(self, m, error, state):
         self.connectionError(error)

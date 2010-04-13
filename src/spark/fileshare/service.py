@@ -53,7 +53,7 @@ class FileShare(Service):
             Command("update-session-state"),
             Command("list-files", bool, int),
             Command("add-file", basestring, int),
-            Command("remove-file", int, int),
+            Command("remove-file", basestring, int),
             Command("start-transfer", int, int),
             Command("stop-transfer", int, int),
             # messages from the remote peer

@@ -25,9 +25,8 @@ import threading
 import logging
 from spark.async.queue import BlockingQueue, QueueClosedError
 
-__all__ = ["Process", "ProcessState", "ProcessRunner",
-           "ProcessNotifier", "Command", "Event", "EventSender", "match", "PatternMatcher",
-           "ProcessBase", "ProcessExited", "ProcessKilled"]
+__all__ = ["Process", "ProcessState", "ProcessBase", "ProcessExited", "ProcessKilled",
+           "ProcessNotifier", "Command", "Event", "EventSender", "match", "PatternMatcher"]
 
 class Process(object):
     """ A process can execute callables and communicate using messages. """
@@ -126,7 +125,7 @@ class Process(object):
                 with cls._lock:
                     cls._remove_current_process(pid)
         p.thread = threading.Thread(target=entry)
-        p.thread.daemon = True
+        #p.thread.daemon = True
         p.thread.start()
         return pid
     
@@ -224,38 +223,6 @@ class Process(object):
         p.queue.close()
         del cls._current.p
         #del cls._processes[current_pid]
-
-class ProcessRunner(object):
-    """ Run objects that have a run() method in a separate process. """
-    def __init__(self, runnable, name=None):
-        self.pid = None
-        self.runnable = runnable
-        if name:
-            self.name = name
-        else:
-            self.name = runnable.__class__.__name__
-    
-    def __enter__(self):
-        """ Start a new process to run the object. """
-        self.start()
-        return self
-    
-    def __exit__(self, type, val, tb):
-        """ Stop the process if it is running. """
-        self.stop()
-    
-    def start(self):
-        """ Start a new process to run the object. """
-        if not self.pid:
-            p = self.runnable
-            self.pid = Process.spawn(p.run, name=self.name)
-        return self.pid
-    
-    def stop(self):
-        """ Stop the process if it is running. """
-        if self.pid:
-            Process.try_send(self.pid, Command("stop"))
-            self.pid = None
 
 class ProcessExited(Exception):
     pass
@@ -483,6 +450,25 @@ class PatternMatcher(object):
 
 class ProcessBase(object):
     """ Base class for processes with a message loop. """
+    def __init__(self, name=None):
+        self.pid = None
+        if name:
+            self.name = name
+        else:
+            self.name = self.__class__.__name__
+    
+    def start(self):
+        """ Start the new process if it is not already running. """
+        if not self.pid:
+            self.pid = Process.spawn(self.run, name=self.name)
+        return self.pid
+    
+    def stop(self):
+        """ Stop the process if it is running. """
+        if self.pid:
+            Process.try_send(self.pid, Command("stop"))
+            self.pid = None
+    
     def initState(self, state):
         """ Initialize the process state. """
         pass
@@ -493,7 +479,7 @@ class ProcessBase(object):
     
     def initPatterns(self, loop, state):
         """ Initialize the patterns used by the message loop. """
-        pass
+        loop.addPattern(Command("stop"), result=False)
         
     def run(self):
         """ Run the process. This method blocks until the process has finished executing. """
@@ -510,3 +496,12 @@ class ProcessBase(object):
         """ Perform cleanup tasks before the process stops.
         This is guaranteed to be called if the process state was initialized properly. """
         pass
+    
+    def __enter__(self):
+        """ Start the new process if it is not already running. """
+        self.start()
+        return self
+    
+    def __exit__(self, type, val, tb):
+        """ Stop the process if it is running. """
+        self.stop()
