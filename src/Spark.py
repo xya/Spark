@@ -33,6 +33,7 @@ class GuiProcess(QObject):
         super(GuiProcess, self).__init__()
         self.pid = Process.attach("GUI", self)
         self.messages = PatternMatcher()
+        self.isOpen = True
     
     def __enter__(self):
         return self

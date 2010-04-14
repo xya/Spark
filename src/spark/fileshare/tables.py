@@ -266,7 +266,7 @@ class TransferInfo(object):
             return None
         else:
             seconds = duration.seconds
-            seconds += (duration.microseconds * 10e-6)
+            seconds += (duration.microseconds * 10e-7)
             seconds += (duration.days * 24 * 3600)
             return self.completedSize / seconds
     

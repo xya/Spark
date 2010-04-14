@@ -97,6 +97,10 @@ class Blob(Message, Sequence):
         super(Blob, self).__init__()
     
     @property
+    def params(self):
+        raise NotImplementedError()
+    
+    @property
     def data(self):
         raise NotImplementedError()
     
@@ -106,7 +110,7 @@ class Blob(Message, Sequence):
         return "".join([cls.Type.pack(0, cls.ID), data])
     
     def __len__(self):
-        return 3
+        return 1 + len(self.params)
     
     def __getitem__(self, index):
         cls = self.__class__
@@ -114,12 +118,12 @@ class Blob(Message, Sequence):
             return tuple(self)[index]
         elif index == 0:
             return cls.__name__
-        elif index == 1:
-            return cls.ID
-        elif index == 2:
-            return self.data
         else:
-            raise IndexError("Index '%i' out of range" % index)
+            params = self.params
+            if index < (len(params) + 1):
+                return params[index - 1]
+            else:
+                raise IndexError("Index '%i' out of range" % index)
     
     def __repr__(self):
         return repr(self[:])
@@ -128,11 +132,15 @@ class Block(Blob):
     Header = Struct("!HIH")
     ID = 1
     
-    def __init__(self, transferID, blockID, blockData):
+    def __init__(self, transferID=None, blockID=None, blockData=None):
         super(Block, self).__init__()
         self.transferID = transferID
         self.blockID = blockID
         self.blockData = blockData
+    
+    @property
+    def params(self):
+        return (self.transferID, self.blockID, self.blockData)
     
     @property
     def data(self):

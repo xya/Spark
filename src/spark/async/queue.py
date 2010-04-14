@@ -86,6 +86,18 @@ class BlockingQueue(object):
     
     _iter_get = _iter_wrap(get)
     
+    def get_unless_empty(self):
+        """ If the queue is not empty, return (True, <first item>). Otherwise return (False, None). """
+        with self.__lock:
+            self.__assertRead()
+            if self.__count > 0:
+                item = self.__list.pop(0)
+                self.__count -= 1
+                self.__wait.notifyAll()
+                return (True, item)
+            else:
+                return (False, None)
+    
     def get_nowait(self):
         """ If the queue is not empty, return (True, <first item>). Otherwise return (False, None). """
         if self.__lock.acquire(0):
@@ -121,6 +133,12 @@ class BlockingQueue(object):
             if self.__list is None:
                 self.__count = 0
                 self.__list = []
+    
+    @property
+    def isOpen(self):
+        """ Determine whether the queue is opened or not. """
+        with self.__lock:
+            return self.__list is not None
     
     def close(self, waitEmpty=False):
         """

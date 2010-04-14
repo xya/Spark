@@ -38,7 +38,6 @@ class File(ProcessBase):
         state.file = None
         state.offset = None
         state.senderPid = None
-        state.logger = Process.logger()
     
     def initPatterns(self, loop, state):
         super(File, self).initPatterns(loop, state)
@@ -63,6 +62,6 @@ class File(ProcessBase):
         state.path = path
         state.file = open(path, mode)
         state.offset = 0
-        state.logger("Opened file '%s'.", path)
+        state.logger.info("Opened file '%s'.", path)
         state.senderPid = senderPid
         Process.send(senderPid, Event("file-opened", path))

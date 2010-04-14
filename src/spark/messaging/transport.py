@@ -40,6 +40,7 @@ class TcpMessenger(ProcessBase):
         self.connected = EventSender("connected", None)
         self.protocolNegociated = EventSender("protocol-negociated", basestring)
         self.disconnected = EventSender("disconnected")
+        self.sendIdle = EventSender("send-idle")
     
     def connect(self, addr, senderPid=None):
         if not senderPid:
@@ -77,7 +78,6 @@ class TcpMessenger(ProcessBase):
         state.receiver = None
         state.acceptReceiver = None
         state.connectReceiver = None
-        state.logger = Process.logger()
     
     def initPatterns(self, loop, state):
         super(TcpMessenger, self).initPatterns(loop, state)
@@ -95,6 +95,11 @@ class TcpMessenger(ProcessBase):
     def cleanup(self, state):
         self._closeConnection(state)
         self._closeServer(state)
+    
+    def idle(self, state):
+        # send the 'send-idle' event when we can send and there is no message in the queue
+        if state.writer:
+            self.sendIdle()
     
     def doListen(self, m, bindAddr, senderPid, state):
         if state.server:
@@ -207,7 +212,6 @@ class TcpMessenger(ProcessBase):
                 if m is None:
                     break
                 else:
-                    log.info("Received message %s." % repr(m))
                     Process.send(senderPid, m)
         finally:
             Process.try_send(messengerPid, Event("end-of-stream", senderPid))
@@ -217,9 +221,8 @@ class TcpMessenger(ProcessBase):
     
     def doSend(self, m, data, senderPid, state):
         if (state.connState != TcpMessenger.CONNECTED) or state.protocol is None:
-            Process.send(senderPid, Event("send-error", "invalid-state"))
+            Process.send(senderPid, Event("send-error", "invalid-state", data))
             return
-        state.logger.info("Sending message %s." % repr(data))
         state.writer.write(data)
     
     def doDisconnect(self, m, state):

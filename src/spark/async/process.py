@@ -25,7 +25,7 @@ import threading
 import logging
 from spark.async.queue import BlockingQueue, QueueClosedError
 
-__all__ = ["Process", "ProcessState", "ProcessBase", "ProcessExited", "ProcessKilled",
+__all__ = ["Process", "ProcessState", "ProcessBase", "ProcessExit", "ProcessExited", "ProcessKilled",
            "ProcessNotifier", "Command", "Event", "EventSender", "match", "PatternMatcher"]
 
 class Process(object):
@@ -138,28 +138,34 @@ class Process(object):
         log.info("Process started.")
         try:
             fun(*args)
+            gracefulExit = True
+        except ProcessExit:
+            gracefulExit = True
         except ProcessKilled:
-            log.error("Process killed.")
+            gracefulExit = False
+        except NoMatchException as nme:
+            log.error(str(nme))
             gracefulExit = False
         except Exception:
             log.exception("An exception was raised by the process")
-            log.error("Process died.")
             gracefulExit = False
-        else:
-            log.info("Process stopped.")
-            gracefulExit = True
         finally:
             with cls._lock:
                 cls._remove_current_process(pid)
                 if not gracefulExit:
+                    log.error("Process died.")
                     # kill any linked process
                     for linkedPid in p.linked:
                         if cls._processes[linkedPid].queue.close():
                             log.error("Killing linked process %d.", linkedPid)
+                else:
+                    log.info("Process stopped.")
     
     @classmethod
     def send(cls, pid, m):
         """ Send a message to the specified process. """
+        if not cls._current.p.queue.isOpen:
+            raise ProcessKilled()
         pid = cls._to_pid(pid)
         with cls._lock:
             try:
@@ -198,13 +204,16 @@ class Process(object):
     def try_receive(cls):
         """
         Retrieve a message from the current process' queue and return (True, message).
-        If a message can't be retrieved now, return (False, None).
+        If the queue is empty, return (False, None).
         """
         try:
             p = cls._current.p
         except NameError:
             raise Exception("The current thread has no PID")
-        return p.queue.get_nowait()
+        try:
+            return p.queue.get_unless_empty()
+        except QueueClosedError:
+            raise ProcessKilled("The process got killed (PID: %i)" % p.pid)
     
     @classmethod
     def kill(cls, pid, flushQueue=True):
@@ -251,6 +260,9 @@ class Process(object):
         p.queue.close()
         del cls._current.p
         #del cls._processes[current_pid]
+
+class ProcessExit(Exception):
+    pass
 
 class ProcessExited(Exception):
     pass
@@ -505,7 +517,7 @@ class ProcessBase(object):
     
     def initState(self, state):
         """ Initialize the process state. """
-        pass
+        state.logger = Process.logger()
 
     def initPatterns(self, loop, state):
         """ Initialize the patterns used by the message loop. """
@@ -516,11 +528,22 @@ class ProcessBase(object):
         state = ProcessState()
         self.initState(state)
         try:
-            loop = PatternMatcher()
-            self.initPatterns(loop, state)
-            loop.run(state)
+            matcher = PatternMatcher()
+            self.initPatterns(matcher, state)
+            while True:
+                ok, m = Process.try_receive()
+                if not ok:
+                    # no message in the queue, notify that we are idle
+                    self.idle(state)
+                    m = Process.receive()
+                if not matcher.match(m, state):
+                    break
         finally:
             self.cleanup(state)
+    
+    def idle(self, state):
+        """ Called when there is no message in the process' queue. """
+        pass
     
     def cleanup(self, state):
         """ Perform cleanup tasks before the process stops.

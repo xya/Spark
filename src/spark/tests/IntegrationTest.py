@@ -31,18 +31,10 @@ BIND_ADDRESS = "127.0.0.1"
 BIND_PORT = 4559
 
 class TestServer(Service):
-    def __init__(self):
-        super(TestServer, self).__init__()
-        self.listening = EventSender("listening", None)
-    
     def initPatterns(self, loop, state):
         super(TestServer, self).initPatterns(loop, state)
-        loop.suscribeTo(state.messenger.listening, callable=self.handleListening)
         loop.suscribeTo(state.messenger.disconnected, result=False)
         loop.addHandler(Request("swap", basestring, basestring), self)
-    
-    def handleListening(self, m, state):
-        self.listening(m)
     
     def requestSwap(self, req, transID, a, b, state):
         self.sendResponse(state, req, b, a)

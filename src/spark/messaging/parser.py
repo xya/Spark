@@ -38,14 +38,25 @@ class MessageReader(object):
             Block.ID : self.parseBlock
         }
     
+    def _readData(self, size):
+        chunks = []
+        left = size
+        while left > 0:
+            data = self.file.read(left)
+            if len(data) == 0:
+                break
+            left -= len(data)
+            chunks.append(data)
+        return "".join(chunks)
+    
     def read(self):
         """ Read a message from the file. """
-        sizeText = self.file.read(4)
+        sizeText = self._readData(4)
         if len(sizeText) == 0:
             return None
         else:
             size = int(sizeText, 16)
-            data = self.file.read(size)
+            data = self._readData(size)
             if len(data) == 0:
                 raise EOFError()
             else:
