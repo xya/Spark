@@ -108,6 +108,7 @@ class TcpMessenger(ProcessBase):
             server.listen(1)
             self.listening(bindAddr)
         except socket.error as e:
+            state.logger.error(str(e))
             Process.send(senderPid, Event("listen-error", e))
         else:
             state.server = server
@@ -288,6 +289,7 @@ class Service(ProcessBase):
         self.connected = EventSender("connected", None)
         self.connectionError = EventSender("connection-error", None)
         self.listening = EventSender("listening", None)
+        self.listenError = EventSender("listen-error", None)
         self.disconnected = EventSender("disconnected")
     
     def initState(self, state):
@@ -305,6 +307,7 @@ class Service(ProcessBase):
         loop.addHandlers(self,
             # messages received from TcpMessenger
             m.listening.suscribe(),
+            Event("listen-error", None),
             m.connected.suscribe(),
             m.protocolNegociated.suscribe(),
             m.disconnected.suscribe(),
@@ -319,6 +322,10 @@ class Service(ProcessBase):
     
     def onListening(self, m, bindAddr, state):
         self.listening(bindAddr)
+        state.messenger.accept()
+    
+    def onListenError(self, m, error, state):
+        self.listenError(error)
     
     def onConnected(self, m, connAddr, state):
         state.connAddr = connAddr
@@ -346,7 +353,6 @@ class Service(ProcessBase):
         if not state.bindAddr:
             state.bindAddr = bindAddr
             state.messenger.listen(state.bindAddr)
-            state.messenger.accept()
     
     def doDisconnect(self, m, state):
         state.messenger.disconnect()

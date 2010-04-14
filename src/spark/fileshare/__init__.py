@@ -19,11 +19,11 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 # TODO: refactor this
+from spark.fileshare.tables import *
 from spark.fileshare.transfers import *
-from spark.fileshare.files import *
 from spark.fileshare.session import *
 from spark.fileshare.app import *
 
 __all__ = []
-for module in (transfers, files, session, app):
+for module in (tables, transfers, session, app):
     __all__.extend(module.__all__)
