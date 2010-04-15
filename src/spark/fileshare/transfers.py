@@ -64,7 +64,6 @@ class Transfer(ProcessBase):
             Command("start-transfer"),
             Command("close-transfer"),
             Command("transfer-info"),
-            Event("send-idle"),
             Event("remote-state-changed", basestring),
             Event("block-received", Block()))
     
@@ -87,6 +86,7 @@ class Transfer(ProcessBase):
                 state.transferState, transferState)
             state.transferState = transferState
             self.stateChanged(state.transferID, state.direction, transferState)
+            self._sendTransferInfo(state)
     
     def onRemoteStateChanged(self, m, transferState, state):
         self._changeTransferState(state, transferState)
@@ -134,8 +134,16 @@ class Transfer(ProcessBase):
             self._sendFile(state)
     
     def _sendFile(self, state):
-        if state.transferState != "active":
-            return
+        while state.transferState == "active":
+            # we have to keep checking the process' message queue while sending blocks
+            # otherwise the process will be unresponsive (can't pause or cancel)
+            ok, m = Process.try_receive()
+            if ok:
+                self.handleMessage(m, state)
+            else:
+                self._sendBlock(state)
+    
+    def _sendBlock(self, state):
         if state.nextBlock >= state.totalBlocks:
             self._transferComplete(state)
         else:
@@ -147,10 +155,6 @@ class Transfer(ProcessBase):
             state.completedSize += len(blockData)
             # send it
             Process.send(state.messengerPid, Command("send", block, self.pid))
-    
-    def onSendIdle(self, m, state):
-        if (state.direction == UPLOAD) and (state.started is not None):
-            self._sendFile(state)
     
     def onBlockReceived(self, m, b, state):
         blockID = b.blockID
@@ -176,7 +180,7 @@ class Transfer(ProcessBase):
     
     def doTransferInfo(self, m, state):
         """ Send current transfer information to the process. """
-        self._sendTransferInfo(state)
+        pass #self._sendTransferInfo(state)
     
     def _sendTransferInfo(self, state):
         info = self._transferInfo(state)

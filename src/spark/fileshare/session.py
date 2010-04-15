@@ -157,22 +157,26 @@ class FileSharingSession(Service):
     
     def requestCreateTransfer(self, m, transID, fileID, state):
         """ The remote peer sent a 'create-transfer' request. """
-        self._createTransferProcess(None, UPLOAD, fileID, transID, state)
+        file = state.fileTable[fileID]
+        if file and (file.origin == LOCAL):
+            self._createTransferProcess(None, UPLOAD, file, transID, state)
+        else:
+            state.messenger.send(Response("create-transfer-error", fileID).withID(transID))
     
     def responseCreateTransfer(self, m, transID, fileID, transferID, state):
-        self._createTransferProcess(transferID, DOWNLOAD, fileID, None, state)
+        file = state.fileTable[fileID]
+        if file and (file.origin == REMOTE):
+            self._createTransferProcess(transferID, DOWNLOAD, file, None, state)
     
-    def _createTransferProcess(self, transferID, direction, fileID, reqID, state):
+    def _createTransferProcess(self, transferID, direction, file, reqID, state):
         process = Transfer()
         process.start_linked()
         if not transferID:
             transferID = process.pid
         process.stateChanged.suscribe()
-        state.messenger.sendIdle.suscribe(process.pid)
-        file = state.fileTable[fileID]
         Process.send(process.pid, Command("init-transfer",
             transferID, direction, file, reqID, self.pid, state.messenger.pid))
-        transfer = state.transferTable.createTransfer(transferID, direction, fileID, process.pid)
+        transfer = state.transferTable.createTransfer(transferID, direction, file.ID, process.pid)
         file.transfer = transfer
     
     def onTransferCreated(self, m, transferID, direction, fileID, reqID, state):

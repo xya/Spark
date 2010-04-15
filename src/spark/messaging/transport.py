@@ -40,7 +40,6 @@ class TcpMessenger(ProcessBase):
         self.connected = EventSender("connected", None)
         self.protocolNegociated = EventSender("protocol-negociated", basestring)
         self.disconnected = EventSender("disconnected")
-        self.sendIdle = EventSender("send-idle")
     
     def connect(self, addr, senderPid=None):
         if not senderPid:
@@ -96,11 +95,6 @@ class TcpMessenger(ProcessBase):
         self._closeConnection(state)
         self._closeServer(state)
     
-    def idle(self, state):
-        # send the 'send-idle' event when we can send and there is no message in the queue
-        if state.writer:
-            self.sendIdle()
-    
     def doListen(self, m, bindAddr, senderPid, state):
         if state.server:
             Process.send(senderPid, Event("listen-error", "invalid-state"))
@@ -113,7 +107,7 @@ class TcpMessenger(ProcessBase):
             server.listen(1)
             self.listening(bindAddr)
         except socket.error as e:
-            state.logger.error(str(e))
+            state.logger.error("Error while listening: %s", str(e))
             Process.send(senderPid, Event("listen-error", e))
         else:
             state.server = server
@@ -138,7 +132,7 @@ class TcpMessenger(ProcessBase):
                 # shutdown
                 return
             else:
-                log.error(str(e))
+                log.error("Error while accepting: %s", str(e))
                 Process.send(senderPid, Event("accept-error", e))
         else:
             self._startSession(conn, remoteAddr, False, senderPid, messengerPid)
@@ -158,7 +152,7 @@ class TcpMessenger(ProcessBase):
         try:
             conn.connect(remoteAddr)
         except socket.error as e:
-            log.error(str(e))
+            log.error("Error while connecting: %s", str(e))
             Process.send(senderPid, Event("connection-error", e))
         else:
             self._startSession(conn, remoteAddr, True, senderPid, messengerPid)
@@ -223,7 +217,13 @@ class TcpMessenger(ProcessBase):
         if (state.connState != TcpMessenger.CONNECTED) or state.protocol is None:
             Process.send(senderPid, Event("send-error", "invalid-state", data))
             return
-        state.writer.write(data)
+        try:
+            state.writer.write(data)
+        except socket.error as e:
+            state.logger.error("Error when trying to send: %s", str(e))
+            if e.errno == os.errno.EPIPE:
+                state.logger.error("TODO: should disconnect when receiving EPIPE")
+            raise
     
     def doDisconnect(self, m, state):
         self._closeConnection(state)

@@ -34,6 +34,7 @@ class GuiProcess(QObject):
         self.pid = Process.attach("GUI", self)
         self.messages = PatternMatcher()
         self.isOpen = True
+        self.logger = Process.logger()
     
     def __enter__(self):
         return self
@@ -44,6 +45,7 @@ class GuiProcess(QObject):
     def event(self, ev):
         """ Handle events sent to the object. """
         if ev.type() == MessageReceivedEvent.Type:
+            self.logger.info("Received message %s.", repr(ev.m))
             try:
                 self.messages.match(ev.m)
             except Exception:
@@ -83,6 +85,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     with GuiProcess() as pid:
         with SparkApplication() as app:
+            app.start()
             app.installHandlers(pid.messages)
             view = MainWindow(app)
             if bindAddr:

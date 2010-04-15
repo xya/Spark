@@ -45,7 +45,6 @@ class SparkApplication(object):
         self.filesUpdated = Delegate()
         self.transferUpdated = Delegate()
         self.session = FileSharingSession()
-        self.session.start()
     
     def __enter__(self):
         return self
@@ -55,6 +54,12 @@ class SparkApplication(object):
             self.session.stop()
         except Exception:
             logging.exception("Error while stoping the session")
+    
+    def start(self):
+        self.session.start()
+    
+    def start_linked(self):
+        self.session.start_linked()
     
     def connect(self, address):
         Process.try_send(self.session.pid, Command("connect", address))

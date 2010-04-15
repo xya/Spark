@@ -521,6 +521,18 @@ class ProcessBase(object):
             self.pid = Process.spawn_linked(self.run, name=self.name)
         return self.pid
     
+    def attach(self, queue=None):
+        """ Create a process that is attached to the current thread and run it. """
+        if not self.pid:
+            try:
+                self.pid = Process.attach(self.name, queue)
+                self.run()
+            except ProcessKilled:
+                Process.logger().error("Process killed.")
+            finally:
+                Process.detach()
+                self.pid = None
+    
     def stop(self):
         """ Stop the process if it is running. """
         if self.pid:
@@ -534,28 +546,31 @@ class ProcessBase(object):
     def initPatterns(self, loop, state):
         """ Initialize the patterns used by the message loop. """
         loop.addPattern(Command("stop"), result=False)
-        
+    
+    def onStart(self, state):
+        """ Called just before the process enters its message loop. """
+        pass
+    
+    def handleMessage(self, message, state):
+        """ Handle a message that was sent to the process. """
+        if not state.matcher.match(message, state):
+            raise ProcessExit()
+    
     def run(self):
         """ Run the process. This method blocks until the process has finished executing. """
         state = ProcessState()
         self.initState(state)
         try:
-            matcher = PatternMatcher()
-            self.initPatterns(matcher, state)
+            state.matcher = PatternMatcher()
+            self.initPatterns(state.matcher, state)
+            self.onStart(state)
             while True:
-                ok, m = Process.try_receive()
-                if not ok:
-                    # no message in the queue, notify that we are idle
-                    self.idle(state)
-                    m = Process.receive()
-                if not matcher.match(m, state):
-                    break
+                m = Process.receive()
+                self.handleMessage(m, state)
+        except ProcessExit:
+            pass
         finally:
             self.cleanup(state)
-    
-    def idle(self, state):
-        """ Called when there is no message in the process' queue. """
-        pass
     
     def cleanup(self, state):
         """ Perform cleanup tasks before the process stops.
