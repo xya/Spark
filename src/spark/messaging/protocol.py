@@ -24,17 +24,17 @@ from spark.messaging.messages import MessageWriter
 
 __all__ = ["messageReader", "messageWriter", "negociateProtocol", "Supported", "NegociationError"]
 
-VERSION_1 = "SPARKv1"
-Supported = frozenset([VERSION_1])
+VERSION_ALPHA = "SPARK_ALPHA"
+Supported = frozenset([VERSION_ALPHA])
 
-def messageReader(file, protocol=VERSION_1):
-    if protocol == VERSION_1:
+def messageReader(file, protocol=VERSION_ALPHA):
+    if protocol == VERSION_ALPHA:
         return MessageReader(file)
     else:
         raise ValueError("Protocol '%s' not supported" % protocol)
 
-def messageWriter(file, protocol=VERSION_1):
-    if protocol == VERSION_1:
+def messageWriter(file, protocol=VERSION_ALPHA):
+    if protocol == VERSION_ALPHA:
         return MessageWriter(file)
     else:
         raise ValueError("Protocol '%s' not supported" % protocol)

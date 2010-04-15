@@ -19,6 +19,10 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+import signal
+import os
+import time
+import thread
 import logging
 from functools import partial
 from spark.async import *
@@ -45,6 +49,8 @@ class MainProcess(ProcessBase):
             state.app.session.stop()
         finally:
             super(MainProcess, self).cleanup(state)
+            # signal the main thread that MainProcess exited
+            thread.interrupt_main()
     
     def onStart(self, state):
         state.app.bind((BIND_ADDRESS, BIND_PORT))
@@ -58,8 +64,11 @@ class MainProcess(ProcessBase):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     main = MainProcess()
+    main.start()
     try:
-        main.attach()
-    except ProcessExit as e:
-        if e.reason is not None:
-            logging.error("Main process exited with reason %s.", repr(e.reason))
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pid = main.pid
+        if pid is not None:
+            Process.kill(pid, False)

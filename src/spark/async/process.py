@@ -246,7 +246,6 @@ class Process(object):
                 queue = p.queue
             except KeyError:
                 return False
-        cls.logger().info("Killing process %i.", pid)
         queue.close(flushQueue)
         return True
     
