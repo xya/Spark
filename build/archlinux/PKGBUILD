@@ -10,7 +10,7 @@ depends=('python>=2.6' 'pyqt>=4')
 makedepends=()
 provides=('spark')
 source=('http://pasaulais.free.fr/spark/icons.tar.gz')
-md5sums=('d4e391c0c050b5976ac4abff3c5ccd9d')
+md5sums=('6f6357c7e0b8f934cc9a8db08690864b')
 
 build() {
     cd "$srcdir"
