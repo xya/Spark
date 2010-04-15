@@ -96,7 +96,7 @@ class Transfer(ProcessBase):
             self._closeTransfer(state)
     
     def doInitTransfer(self, m, transferID, direction, file, reqID, sessionPid, messengerPid, state):
-        state.logger.info("Initializing transfer for file '%s'.", file.ID) 
+        state.logger.info("Initializing transfer for file %s.", repr((file.ID, direction)))
         state.transferID = transferID
         state.direction = direction
         state.file = file
@@ -180,11 +180,11 @@ class Transfer(ProcessBase):
     
     def doTransferInfo(self, m, state):
         """ Send current transfer information to the process. """
-        pass #self._sendTransferInfo(state)
+        self._sendTransferInfo(state)
     
     def _sendTransferInfo(self, state):
         info = self._transferInfo(state)
-        Process.send(state.sessionPid, Event("transfer-info-updated",
+        Process.try_send(state.sessionPid, Event("transfer-info-updated",
             state.transferID, state.direction, info))
     
     def _transferInfo(self, state):

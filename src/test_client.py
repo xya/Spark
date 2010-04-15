@@ -56,8 +56,8 @@ class MainProcess(ProcessBase):
     def _connected(self, state):
         pass
     
-    def _connectionError(self, e, state):
-        raise ProcessExit()
+    def _connectionError(self, state, e):
+        raise ProcessExit(("connection-error", e))
     
     def _filesUpdated(self, state):
         if not state.startedTransfer:
@@ -79,4 +79,8 @@ class MainProcess(ProcessBase):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     main = MainProcess()
-    main.attach()
+    try:
+        main.attach()
+    except ProcessExit as e:
+        if e.reason is not None:
+            logging.error("Main process exited with reason %s.", repr(e.reason))

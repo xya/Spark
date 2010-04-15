@@ -58,4 +58,8 @@ class MainProcess(ProcessBase):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     main = MainProcess()
-    main.attach()
+    try:
+        main.attach()
+    except ProcessExit as e:
+        if e.reason is not None:
+            logging.error("Main process exited with reason %s.", repr(e.reason))

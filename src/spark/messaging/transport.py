@@ -207,6 +207,12 @@ class TcpMessenger(ProcessBase):
                     break
                 else:
                     Process.send(senderPid, m)
+        except socket.error as e:
+            log.error("Error while receiving: %s", str(e))
+            if e.errno == os.errno.ECONNRESET:
+                raise ProcessExit("connection-reset")
+            else:
+                raise
         finally:
             Process.try_send(messengerPid, Event("end-of-stream", senderPid))
     
@@ -220,10 +226,12 @@ class TcpMessenger(ProcessBase):
         try:
             state.writer.write(data)
         except socket.error as e:
-            state.logger.error("Error when trying to send: %s", str(e))
+            state.logger.error("Error while sending: %s", str(e))
             if e.errno == os.errno.EPIPE:
-                state.logger.error("TODO: should disconnect when receiving EPIPE")
-            raise
+                # the remote peer reset the connection
+                raise ProcessExit("connection-reset")
+            else:
+                raise
     
     def doDisconnect(self, m, state):
         self._closeConnection(state)
@@ -274,16 +282,8 @@ class TcpMessenger(ProcessBase):
 class SocketWrapper(object):
     def __init__(self, sock):
         self.sock = sock
+        self.read = sock.recv
         self.write = sock.send
-    
-    def read(self, size):
-        try:
-            return self.sock.recv(size)
-        except socket.error as e:
-            if (e.errno == os.errno.ECONNRESET) or (e.errno == os.errno.EBADF):
-                return ""
-            else:
-                raise
 
 class Service(ProcessBase):
     """ Base class for services that handle requests using messaging. """

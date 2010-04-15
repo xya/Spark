@@ -139,8 +139,12 @@ class Process(object):
         try:
             fun(*args)
             gracefulExit = True
-        except ProcessExit:
-            gracefulExit = True
+        except ProcessExit as e:
+            if e.reason is None:
+                gracefulExit = True
+            else:
+                log.error("Process exited with reason %s." % repr(e.reason))
+                gracefulExit = False
         except ProcessKilled:
             gracefulExit = False
         except NoMatchException as nme:
@@ -164,17 +168,22 @@ class Process(object):
     @classmethod
     def _getQueue(cls, pid):
         """ Return the queue of the specified process. """
+        with cls._lock:
+            try:
+                p = cls._processes[pid]
+            except KeyError:
+                raise Exception("Invalid PID")
+        return p.queue
+    
+    @classmethod
+    def _getQueueCached(cls, pid):
+        """ Return the queue of the specified process, using the cache if possible. """
         if not hasattr(cls._current, "queues"):
             cls._current.queues = {}
         try:
             return cls._current.queues[pid]
         except KeyError:
-            with cls._lock:
-                try:
-                    p = cls._processes[pid]
-                except KeyError:
-                    raise Exception("Invalid PID")
-            queue = p.queue
+            queue = cls._getQueue(pid)
             cls._current.queues[pid] = queue
             return queue
     
@@ -274,7 +283,12 @@ class Process(object):
         #del cls._processes[current_pid]
 
 class ProcessExit(Exception):
-    pass
+    """ Exception raised when a process has to stop executing.
+    If reason is None the exit is graceful.
+    To indicate an error pass a reason other than None."""
+    def __init__(self, reason=None):
+        super(Exception, self).__init__()
+        self.reason = reason
 
 class ProcessExited(Exception):
     pass
@@ -567,8 +581,9 @@ class ProcessBase(object):
             while True:
                 m = Process.receive()
                 self.handleMessage(m, state)
-        except ProcessExit:
-            pass
+        except ProcessExit as e:
+            if e.reason is not None:
+                raise
         finally:
             self.cleanup(state)
     

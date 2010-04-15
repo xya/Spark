@@ -125,7 +125,7 @@ class FileSharingSession(Service):
         state.fileTable.addFile(path)
     
     def cacheFileAdded(self, state, fileID, origin):
-        state.logger.info("Added file '%s' (origin: %i)", fileID, origin)
+        state.logger.info("Added file %s", repr((fileID, origin)))
         self.filesUpdated()
         if (origin == LOCAL) and state.remoteNotifications and state.isConnected:
             file = state.fileTable[fileID]
@@ -140,7 +140,7 @@ class FileSharingSession(Service):
         state.fileTable.removeFile(fileID, True)
     
     def cacheFileRemoved(self, state, fileID, origin):
-        state.logger.info("Removed file '%s' (origin: %i)", fileID, origin)
+        state.logger.info("Removed file %s", repr((fileID, origin)))
         self.filesUpdated()
         if (origin == LOCAL) and state.remoteNotifications and state.isConnected:
             self.sendNotification(state, "file-removed", fileID)
