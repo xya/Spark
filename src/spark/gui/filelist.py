@@ -26,9 +26,9 @@ __all__ = ["FileList", "FileInfoWidget", "iconPath"]
 def iconPath(name, size=None):
     """ Return the path of the specified GNOME icon. """
     if size:
-        return "icons/gnome/%ix%i/%s.png" % (size, size, name)
+        return "/usr/share/spark/icons/%ix%i/%s.png" % (size, size, name)
     else:
-        return "icons/gnome/scalable/%s.svg" % name
+        return "/usr/share/spark/icons/scalable/%s.svg" % name
 
 class CustomList(QWidget):
     def __init__(self, parent=None):
