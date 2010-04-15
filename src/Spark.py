@@ -30,12 +30,13 @@ from spark.async import Process, PatternMatcher
 from spark import watcher
 
 class GuiProcess(QObject):
-    def __init__(self):
+    def __init__(self, logMessages=False):
         super(GuiProcess, self).__init__()
         self.pid = Process.attach("GUI", self)
         self.messages = PatternMatcher()
         self.isOpen = True
         self.logger = Process.logger()
+        self.logMessages = logMessages
     
     def __enter__(self):
         return self
@@ -46,6 +47,8 @@ class GuiProcess(QObject):
     def event(self, ev):
         """ Handle events sent to the object. """
         if ev.type() == MessageReceivedEvent.Type:
+            if self.logMessages:
+                self.logger.info("Received message %s.", repr(ev.m))
             try:
                 self.messages.match(ev.m)
             except Exception:

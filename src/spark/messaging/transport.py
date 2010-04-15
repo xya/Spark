@@ -92,8 +92,11 @@ class TcpMessenger(ProcessBase):
             Event("end-of-stream", int))
     
     def cleanup(self, state):
-        self._closeConnection(state)
-        self._closeServer(state)
+        try:
+            self._closeConnection(state)
+            self._closeServer(state)
+        finally:
+            super(TcpMessenger, self).cleanup(state)
     
     def doListen(self, m, bindAddr, senderPid, state):
         if state.server:
@@ -320,10 +323,14 @@ class Service(ProcessBase):
             Command("disconnect"))
     
     def onStart(self, state):
+        super(Service, self).onStart(state)
         state.messenger.start_linked()
     
     def cleanup(self, state):
-        state.messenger.stop()
+        try:
+            state.messenger.stop()
+        finally:
+            super(Service, self).cleanup(state)
     
     def onListening(self, m, bindAddr, state):
         self.listening(bindAddr)

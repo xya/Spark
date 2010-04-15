@@ -23,7 +23,8 @@ import os
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from spark.gui.filelist import FileList, FileInfoWidget, iconPath
-from spark.fileshare import SharedFile, TransferInfo, UPLOAD, DOWNLOAD, LOCAL, REMOTE
+from spark.fileshare import UPLOAD, DOWNLOAD, LOCAL, REMOTE
+from spark.fileshare import SharedFile, TransferInfo, formatSize, formatDuration
 
 __all__ = ["MainView"]
 
@@ -56,8 +57,8 @@ class MainWindow(QMainWindow):
         self.app.connected += self.onStateChanged
         self.app.disconnected += self.onStateChanged
         self.app.stateChanged += self.onStateChanged
-        self.app.filesUpdated += self.onStateChanged
-        self.app.transferUpdated += self.onTransferUpdated
+        self.app.fileListUpdated += self.onStateChanged
+        self.app.fileUpdated += self.onFileUpdated
         self.updateStatusBar()
         self.updateToolBar()
     
@@ -73,7 +74,7 @@ class MainWindow(QMainWindow):
         self.actions["disconnect"] = self.createAction("actions/process-stop", 32, "Disconnect", "Close the connection to the peer")
         self.actions["add"] = self.createAction("actions/list-add", 32, "Add", "Add a file to the list")
         self.actions["remove"] = self.createAction("actions/list-remove", 32, "Remove", "Remove the file from the list")
-        self.actions["start"] = self.createAction("actions/media-playback-start", 32, "Start", "Start receiving the file")
+        self.actions["start"] = self.createAction("actions/media-playback-start", 32, "Receive", "Start receiving the file")
         self.actions["pause"] = self.createAction("actions/media-playback-pause", 32, "Pause", "Pause the transfer")
         self.actions["stop"] = self.createAction("actions/media-playback-stop", 32, "Stop", "Cancel the transfer")
         self.actions["open"] = self.createAction("places/folder-saved-search", 32, "Open", "Open the file")
@@ -143,8 +144,8 @@ class MainWindow(QMainWindow):
         self.connStatus.setToolTip(connStatus + "\n" + listenStatus)
         self.myIP.setText("My IP: %s" % self.app.myIPaddress)
         self.transferCount.setText("%d transfer(s)" % self.app.activeTransfers)
-        self.uploadSpeedText.setText("%s/s" % self.app.formatSize(self.app.uploadSpeed))
-        self.downloadSpeedText.setText("%s/s" % self.app.formatSize(self.app.downloadSpeed))
+        self.uploadSpeedText.setText(formatSize(self.app.uploadSpeed, "%s/s"))
+        self.downloadSpeedText.setText(formatSize(self.app.downloadSpeed, "%s/s"))
     
     def initTransferList(self):
         self.transferList = FileList()
@@ -192,30 +193,33 @@ class MainWindow(QMainWindow):
         if file.isReceiving:
             widget.setStatusIcon("actions/go-previous", 1)
             widget.setStatusToolTip("Receiving from peer", 1)
-            state = "Received"
         elif file.isSending:
             widget.setStatusIcon("actions/go-next", 1)
             widget.setStatusToolTip("Sending to peer", 1)
-            state = "Sent"
         else:
             widget.setStatusIcon(None, 1)
             widget.setStatusToolTip("", 1)
-            state = ""
+        if file.origin == LOCAL:
+            state = "Sent"
+        elif file.origin == REMOTE:
+            state = "Received"
         if file.transfer and (file.transfer.progress is not None):
-            averageSpeed = file.transfer.averageSpeed
-            if averageSpeed is None:
-                transferTime = "n/a"
+            averageSpeed = formatSize(file.transfer.averageSpeed, "%s/s")
+            if file.transfer.ended is not None:
+                transferSize = formatSize(file.transfer.originalSize, "Size: %s")
+                transferTime = "%s in %s (%s)" % (state,
+                    formatDuration(file.transfer.totalSeconds), averageSpeed)
             else:
-                transferTime = "%s/s" % self.app.formatSize(averageSpeed)
-            transferSize = "%s %s out of %s (%.1f%%)" % (state,
-                self.app.formatSize(file.transfer.completedSize),
-                self.app.formatSize(file.transfer.originalSize),
-                file.transfer.progress * 100.0)
+                transferSize = "%s %s out of %s (%.1f%%)" % (state,
+                    formatSize(file.transfer.completedSize),
+                    formatSize(file.transfer.originalSize),
+                    file.transfer.progress * 100.0)
+                transferTime = "%s left (%s)" % (formatDuration(file.transfer.left), averageSpeed)
             widget.setTransferProgress(file.transfer.progress)
             widget.setTransferTime(transferTime)
             widget.setTransferSize(transferSize)
         else:
-            widget.setTransferSize("Size: %s" % self.app.formatSize(file.size))
+            widget.setTransferSize("Size: %s" % formatSize(file.size))
     
     def updateSelectedTransfer(self, index):
         if index < 0:
@@ -285,7 +289,7 @@ class MainWindow(QMainWindow):
         elif (self.app.activeTransfers == 0) and self.updateTimer.isActive():
             self.updateTimer.stop()
     
-    def onTransferUpdated(self, fileID):
+    def onFileUpdated(self, fileID):
         widget = None
         for i, widgetID in enumerate(self.fileIDs):
             if widgetID == fileID:

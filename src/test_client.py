@@ -40,8 +40,8 @@ class MainProcess(ProcessBase):
         state.app.connected += partial(self._connected, state)
         state.app.connectionError += partial(self._connectionError, state)
         state.app.disconnected += partial(self._disconnected, state)
-        state.app.filesUpdated += partial(self._filesUpdated, state)
-        state.app.transferUpdated += partial(self._transferUpdated, state)
+        state.app.fileListUpdated += partial(self._fileListUpdated, state)
+        state.app.transferFinished += partial(self._transferFinished, state)
         state.app.start_linked()
     
     def initPatterns(self, matcher, state):
@@ -65,18 +65,16 @@ class MainProcess(ProcessBase):
     def _connectionError(self, state, e):
         raise ProcessExit(("connection-error", e))
     
-    def _filesUpdated(self, state):
+    def _fileListUpdated(self, state):
         if not state.startedTransfer:
             for fileID in state.app.files:
                 state.startedTransfer = True
                 state.app.startTransfer(fileID)
                 return
     
-    def _transferUpdated(self, state, fileID):
+    def _transferFinished(self, state, transferID, direction, fileID):
         if state.startedTransfer:
-            file = state.app.files[fileID]
-            if file and file.transfer and file.transfer.state == "closed":
-                state.app.disconnect()
+            state.app.disconnect()
 
     def _disconnected(self, state):
         raise ProcessExit()

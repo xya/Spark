@@ -42,8 +42,9 @@ class SparkApplication(object):
         self.connectionError = Delegate()
         self.disconnected = Delegate()
         self.stateChanged = Delegate()
-        self.filesUpdated = Delegate()
-        self.transferUpdated = Delegate()
+        self.fileListUpdated = Delegate()
+        self.fileUpdated = Delegate()
+        self.transferFinished = Delegate()
         self.session = FileSharingSession()
     
     def __enter__(self):
@@ -158,8 +159,9 @@ class SparkApplication(object):
             self.session.connectionError.suscribe(pid),
             self.session.disconnected.suscribe(pid),
             self.session.stateChanged.suscribe(pid),
-            self.session.filesUpdated.suscribe(pid),
-            self.session.transferUpdated.suscribe(pid),
+            self.session.fileListUpdated.suscribe(pid),
+            self.session.fileUpdated.suscribe(pid),
+            self.session.ended.suscribe(pid),
             Event("list-files", None))
     
     def onListening(self, m, bindAddr, *args):
@@ -183,22 +185,26 @@ class SparkApplication(object):
         self._downloadSpeed = sessionState["downloadSpeed"]
         self.stateChanged()
     
-    def onFilesUpdated(self, m, *args):
+    def onFileListUpdated(self, m, *args):
         self.listFiles()
     
     def onListFiles(self, m, files, *args):
         self._files = files
-        self.filesUpdated()
+        self.fileListUpdated()
     
-    def onTransferUpdated(self, m, fileID, transfer, *args):
-        if fileID in self._files:
-            file = self._files[fileID]
-            file.transfer = transfer
-            self.transferUpdated(fileID)
+    def onFileUpdated(self, m, file, *args):
+        self._files[file.ID] = file
+        self.fileUpdated(file.ID)
+        transfer = file.transfer
+        if transfer and transfer.state == "closed":
+            self.transferFinished(transfer.transferID, transfer.direction, file.ID)
     
-    Units = [("KiB", 1024), ("MiB", 1024 * 1024), ("GiB", 1024 * 1024 * 1024)]
-    def formatSize(self, size):
-        for unit, count in reversed(SparkApplication.Units):
-            if size >= count:
-                return "%0.2f %s" % (size / float(count), unit)
-        return "%d byte" % size
+    def onEnded(self, m, *args):
+        self._bindAddr = None
+        if self._connAddr:
+            self._connAddr = None
+            self._activeTransfers = 0
+            self._uploadSpeed = 0.0
+            self._downloadSpeed = 0.0
+            self.disconnected()
+            self.stateChanged()

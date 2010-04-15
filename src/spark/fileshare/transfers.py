@@ -26,13 +26,6 @@ from spark.async import *
 from spark.messaging import *
 from spark.fileshare.tables import *
 
-Units = [("KiB", 1024), ("MiB", 1024 * 1024), ("GiB", 1024 * 1024 * 1024)]
-def formatSize(size):
-    for unit, count in reversed(Units):
-        if size >= count:
-            return "%0.2f %s" % (size / float(count), unit)
-    return "%d byte" % size
-
 __all__ = ["Transfer"]
 class Transfer(ProcessBase):
     def __init__(self):
@@ -68,10 +61,10 @@ class Transfer(ProcessBase):
     
     def cleanup(self, state):
         try:
-            super(Transfer, self).cleanup(state)
-        finally:
             self._closeFile(state)
             self._changeTransferState(state, "closed")
+        finally:
+            super(Transfer, self).cleanup(state)
     
     def _closeFile(self, state):
         if state.stream:
@@ -173,7 +166,9 @@ class Transfer(ProcessBase):
         state.logger.info("Transfer complete.")
         info = self._transferInfo(state)
         state.logger.info("Transfered %s in %s (%s/s).",
-            formatSize(info.completedSize), info.duration, formatSize(info.averageSpeed))
+            formatSize(info.completedSize),
+            info.duration,
+            formatSize(info.averageSpeed))
     
     def doTransferInfo(self, m, state):
         """ Send current transfer information to the process. """

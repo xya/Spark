@@ -27,13 +27,38 @@ from datetime import datetime, timedelta
 from spark.async import *
 
 __all__ = ["SharedFile", "FileTable", "LOCAL", "REMOTE",
-           "TransferInfo", "TransferTable", "UPLOAD", "DOWNLOAD"]
+           "TransferInfo", "TransferTable", "UPLOAD", "DOWNLOAD",
+           "formatSize", "formatDuration"]
 
 LOCAL = 1
 REMOTE = 2
 
 UPLOAD = 1        # a local file is being sent
 DOWNLOAD = 2      # a remote file is being received
+
+Units = [("KiB", 1024), ("MiB", 1024 * 1024), ("GiB", 1024 * 1024 * 1024)]
+def formatSize(size, format="%s"):
+    if size is None:
+        return "n/a"
+    for unit, count in reversed(Units):
+        if size >= count:
+            return format % ("%0.2f %s" % (size / float(count), unit))
+    return format % ("%d byte" % size)
+
+SecInMinute = 60.0
+SecInHour = 60.0 * 60.0
+SecInDay = 60.0 * 60.0 * 24.0
+def formatDuration(seconds):
+    if seconds < 1.0:
+        return "<1 second"
+    elif seconds < SecInMinute:
+        return "%d seconds" % int(seconds)
+    elif seconds < SecInHour:
+        return "%.1f minutes" % (seconds / SecInMinute)
+    elif seconds < SecInDay:
+        return "%.1f hours" % (seconds / SecInHour)
+    else:
+        return "%.1f days" % (seconds / SecInDay)
 
 class SharedFile(object):
     """ Represents a file that can be shared between two peers. """
@@ -157,7 +182,9 @@ class FileTable(object):
             if file.localCopySize is None:
                 remove.append(fileID)
         for fileID in remove:
+            file = self.entries[fileID]
             del self.entries[fileID]
+            self.fileRemoved(fileID, file.origin)
             
     @property
     def files(self):
@@ -239,6 +266,11 @@ class TransferInfo(object):
         """ Return the object's state. Used for serialization. """
         return {"transferID": self.transferID, "fileID": self.fileID, "state": self.state}
     
+    def __repr__(self):
+        attr = ["%s=%s" % (name, repr(getattr(self, name)))
+                for name in ("state", "progress")]
+        return "TransferInfo(%s)" % ", ".join(attr) 
+    
     def copy(self):
         """ Return a copy of the object. """
         newTransfer = TransferInfo(self.transferID, self.direction, self.fileID, self.pid)
@@ -298,15 +330,14 @@ class TransferInfo(object):
             return None
     
     @property
-    def eta(self):
-        """ Return an estimation of the time when the transfer will be completed. """
+    def left(self):
+        """ Return an estimation of the time left before the transfer is complete, in seconds. """
         progress = self.progress
         seconds = self.totalSeconds
         if (progress is None) or (seconds is None) or (progress == 0.0):
             return None
         else:
-            secondsLeft = (seconds / progress) - seconds
-            return timedelta(0, secondsLeft)
+            return (seconds / progress) - seconds
 
 class TransferTable(object):
     def __init__(self):
