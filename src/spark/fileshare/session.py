@@ -46,6 +46,7 @@ class FileSharingSession(Service):
         state.fileTable.fileUpdated += partial(self.cacheFileUpdated, state)
         state.fileTable.fileRemoved += partial(self.cacheFileRemoved, state)
         state.transferTable = TransferTable()
+        state.pendingTransferReqs = {}
     
     def initPatterns(self, loop, state):
         super(FileSharingSession, self).initPatterns(loop, state)
@@ -58,7 +59,7 @@ class FileSharingSession(Service):
             Command("remove-file", basestring, int),
             Command("start-transfer", basestring, int),
             Command("stop-transfer", basestring, int),
-            Event("transfer-created", int, int, basestring, int),
+            Event("transfer-created", int, int),
             Event("transfer-state-changed", int, int, basestring),
             Event("transfer-info-updated", int, int, TransferInfo),
             # messages from the remote peer
@@ -159,28 +160,32 @@ class FileSharingSession(Service):
         """ The remote peer sent a 'create-transfer' request. """
         file = state.fileTable[fileID]
         if file and (file.origin == LOCAL):
-            self._createTransferProcess(None, UPLOAD, file, transID, state)
+            transferID = self._createTransferProcess(None, UPLOAD, file, state)
+            state.pendingTransferReqs[transferID] = (transID, fileID)
         else:
             state.messenger.send(Response("create-transfer-error", fileID).withID(transID))
     
     def responseCreateTransfer(self, m, transID, fileID, transferID, state):
         file = state.fileTable[fileID]
         if file and (file.origin == REMOTE):
-            self._createTransferProcess(transferID, DOWNLOAD, file, None, state)
+            self._createTransferProcess(transferID, DOWNLOAD, file, state)
     
-    def _createTransferProcess(self, transferID, direction, file, reqID, state):
+    def _createTransferProcess(self, transferID, direction, file, state):
         process = Transfer()
         process.start_linked()
         if not transferID:
             transferID = process.pid
         process.stateChanged.suscribe()
         Process.send(process.pid, Command("init-transfer",
-            transferID, direction, file, reqID, self.pid, state.messenger.pid))
+            transferID, direction, file, self.pid, state.messenger.pid))
         transfer = state.transferTable.createTransfer(transferID, direction, file.ID, process.pid)
         file.transfer = transfer
+        return transferID
     
-    def onTransferCreated(self, m, transferID, direction, fileID, reqID, state):
+    def onTransferCreated(self, m, transferID, direction, state):
         if direction == UPLOAD:
+            reqID, fileID = state.pendingTransferReqs[transferID]
+            del state.pendingTransferReqs[transferID]
             resp = Response("create-transfer", fileID, transferID).withID(reqID)
             state.messenger.send(resp)
         elif direction == DOWNLOAD:

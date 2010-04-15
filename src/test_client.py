@@ -73,7 +73,6 @@ class MainProcess(ProcessBase):
                 return
     
     def _transferUpdated(self, state, fileID):
-        state.logger.info("transferUpdated(%s)", fileID)
         if state.startedTransfer:
             file = state.app.files[fileID]
             if file and file.transfer and file.transfer.state == "closed":

@@ -124,7 +124,8 @@ class Process(object):
             if linkedPid:
                 p.linked.add(linkedPid)
                 cls._processes[linkedPid].linked.add(pid)
-        p.thread = threading.Thread(target=cls._entry, args=(pid, fun, args))
+        p.thread = threading.Thread(target=cls._entry,
+            name=p.displayName(), args=(pid, fun, args))
         #p.thread.daemon = True
         p.thread.start()
         return pid

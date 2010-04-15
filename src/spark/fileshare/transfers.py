@@ -44,7 +44,6 @@ class Transfer(ProcessBase):
         super(Transfer, self).initState(state)
         state.sessionPid = None
         state.messengerPid = None
-        state.reqID = None
         state.transferID = None
         state.direction = None
         state.transferState = None
@@ -60,7 +59,7 @@ class Transfer(ProcessBase):
         """ Initialize the patterns used by the message loop. """
         super(Transfer, self).initPatterns(loop, state)
         loop.addHandlers(self,
-            Command("init-transfer", int, int, None, int, int, int),
+            Command("init-transfer", int, int, None, int, int),
             Command("start-transfer"),
             Command("close-transfer"),
             Command("transfer-info"),
@@ -95,12 +94,11 @@ class Transfer(ProcessBase):
         elif transferState == "closed":
             self._closeTransfer(state)
     
-    def doInitTransfer(self, m, transferID, direction, file, reqID, sessionPid, messengerPid, state):
+    def doInitTransfer(self, m, transferID, direction, file, sessionPid, messengerPid, state):
         state.logger.info("Initializing transfer for file %s.", repr((file.ID, direction)))
         state.transferID = transferID
         state.direction = direction
         state.file = file
-        state.reqID = reqID
         state.sessionPid = sessionPid
         state.messengerPid = messengerPid
         state.blockSize = 1024
@@ -119,8 +117,7 @@ class Transfer(ProcessBase):
         state.logger.info("Opened file '%s'.", state.path)
         state.offset = 0
         state.transferState = "created"
-        Process.send(sessionPid, Event("transfer-created",
-            state.transferID, state.direction, state.file.ID, state.reqID))
+        Process.send(sessionPid, Event("transfer-created", state.transferID, state.direction))
         self._changeTransferState(state, "inactive")
     
     def doStartTransfer(self, m, state):

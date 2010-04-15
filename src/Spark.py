@@ -27,6 +27,7 @@ from PyQt4.QtGui import QApplication
 from spark.gui.main import MainWindow
 from spark.fileshare import SparkApplication
 from spark.async import Process, PatternMatcher
+from spark import watcher
 
 class GuiProcess(QObject):
     def __init__(self):
@@ -45,7 +46,6 @@ class GuiProcess(QObject):
     def event(self, ev):
         """ Handle events sent to the object. """
         if ev.type() == MessageReceivedEvent.Type:
-            self.logger.info("Received message %s.", repr(ev.m))
             try:
                 self.messages.match(ev.m)
             except Exception:
@@ -83,6 +83,7 @@ if __name__ == "__main__":
         bindAddr = None
     qtapp = QApplication(sys.argv)
     logging.basicConfig(level=logging.DEBUG)
+    watcher.start_watcher()
     with GuiProcess() as pid:
         with SparkApplication() as app:
             app.start()

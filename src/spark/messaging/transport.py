@@ -301,7 +301,6 @@ class Service(ProcessBase):
         state.connAddr = None
         state.isConnected = False
         state.messenger = TcpMessenger()
-        state.messenger.start_linked()
         state.nextTransID = 1
     
     def initPatterns(self, loop, state):
@@ -319,6 +318,9 @@ class Service(ProcessBase):
             Command("connect", None),
             Command("bind", None),
             Command("disconnect"))
+    
+    def onStart(self, state):
+        state.messenger.start_linked()
     
     def cleanup(self, state):
         state.messenger.stop()
