@@ -11,7 +11,6 @@ makedepends=()
 provides=('spark')
 source=('http://pasaulais.free.fr/spark/icons.tar.gz')
 md5sums=('d4e391c0c050b5976ac4abff3c5ccd9d')
-noextract=('icons.tar.gz')
 
 build() {
     cd "$srcdir"
@@ -23,6 +22,10 @@ build() {
         git pull
     fi
     python setup.py install --root=$pkgdir/ --optimize=1 || return 1
-    install -d -D "$pkgdir/usr/share/spark"
-    tar xfz "$srcdir/icons.tar.gz" --directory "$pkgdir/usr/share/spark"
+    install -d -D "$pkgdir/usr/share/spark/icons"
+    cd "$srcdir/icons"
+    find . -type f | sed 's/.\///' | while read path
+    do
+        install -D -m644 "$srcdir/icons/$path" "$pkgdir/usr/share/spark/icons/$path"
+    done
 }
