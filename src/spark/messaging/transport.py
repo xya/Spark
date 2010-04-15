@@ -89,7 +89,7 @@ class TcpMessenger(ProcessBase):
             Command("send", None, int),
             # internal messages
             Event("connected", None, None, bool),
-            Event("end-of-stream", int))
+            Event("child-exited", int))
     
     def cleanup(self, state):
         try:
@@ -97,6 +97,15 @@ class TcpMessenger(ProcessBase):
             self._closeServer(state)
         finally:
             super(TcpMessenger, self).cleanup(state)
+    
+    def _childWrapper(self, fun):
+        messengerPid = Process.current()
+        def wrapper(*args):
+            try:
+                fun(*args)
+            finally:
+                Process.try_send(messengerPid, Event("child-exited", Process.current()))
+        return wrapper
     
     def doListen(self, m, bindAddr, senderPid, state):
         if state.server:
@@ -110,7 +119,7 @@ class TcpMessenger(ProcessBase):
             server.listen(1)
             self.listening(bindAddr)
         except socket.error as e:
-            state.logger.error("Error while listening: %s", str(e))
+            state.logger.error("Error while listening: %s.", str(e))
             Process.send(senderPid, Event("listen-error", e))
         else:
             state.server = server
@@ -122,8 +131,9 @@ class TcpMessenger(ProcessBase):
         elif (state.connState != TcpMessenger.DISCONNECTED) or not state.server:
             Process.send(senderPid, Event("accept-error", "invalid-state"))
             return
+        entry = self._childWrapper(self._waitForAccept)
         args = (state.server, senderPid, Process.current())
-        state.acceptReceiver = Process.spawn_linked(self._waitForAccept, args, "TcpServer")
+        state.acceptReceiver = Process.spawn_linked(entry, args, "TcpServer")
 
     def _waitForAccept(self, server, senderPid, messengerPid):
         log = Process.logger()
@@ -135,7 +145,7 @@ class TcpMessenger(ProcessBase):
                 # shutdown
                 return
             else:
-                log.error("Error while accepting: %s", str(e))
+                log.error("Error while accepting: %s.", str(e))
                 Process.send(senderPid, Event("accept-error", e))
         else:
             self._startSession(conn, remoteAddr, False, senderPid, messengerPid)
@@ -144,8 +154,9 @@ class TcpMessenger(ProcessBase):
         if (state.connState != TcpMessenger.DISCONNECTED) or state.connectReceiver:
             Process.send(senderPid, Event("connection-error", "invalid-state"))
             return
+        entry = self._childWrapper(self._waitForConnect)
         args = (remoteAddr, senderPid, Process.current())
-        state.connectReceiver = Process.spawn_linked(self._waitForConnect, args, "TcpClient")
+        state.connectReceiver = Process.spawn_linked(entry, args, "TcpClient")
     
     def _waitForConnect(self, remoteAddr, senderPid, messengerPid):
         log = Process.logger()
@@ -155,7 +166,7 @@ class TcpMessenger(ProcessBase):
         try:
             conn.connect(remoteAddr)
         except socket.error as e:
-            log.error("Error while connecting: %s", str(e))
+            log.error("Error while connecting: %s.", str(e))
             Process.send(senderPid, Event("connection-error", e))
         else:
             self._startSession(conn, remoteAddr, True, senderPid, messengerPid)
@@ -163,10 +174,8 @@ class TcpMessenger(ProcessBase):
     def onConnected(self, m, conn, remoteAddr, initiating, state):
         if initiating:
             receiver = state.connectReceiver
-            state.connectReceiver = None
         else:
             receiver = state.acceptReceiver
-            state.acceptReceiver = None
         if state.receiver:
             state.logger.info("Dropping redundant connection to %s.", repr(remoteAddr))
             Process.send(receiver, Command("close"))
@@ -211,17 +220,12 @@ class TcpMessenger(ProcessBase):
                 else:
                     Process.send(senderPid, m)
         except socket.error as e:
-            log.error("Error while receiving: %s", str(e))
+            log.error("Error while receiving: %s.", str(e))
             if e.errno == os.errno.ECONNRESET:
                 raise ProcessExit("connection-reset")
             else:
                 raise
-        finally:
-            Process.try_send(messengerPid, Event("end-of-stream", senderPid))
-    
-    def onEndOfStream(self, m, snderPid, state):
-        self._closeConnection(state)
-    
+
     def doSend(self, m, data, senderPid, state):
         if (state.connState != TcpMessenger.CONNECTED) or state.protocol is None:
             Process.send(senderPid, Event("send-error", "invalid-state", data))
@@ -229,12 +233,21 @@ class TcpMessenger(ProcessBase):
         try:
             state.writer.write(data)
         except socket.error as e:
-            state.logger.error("Error while sending: %s", str(e))
+            state.logger.error("Error while sending: %s.", str(e))
             if e.errno == os.errno.EPIPE:
                 # the remote peer reset the connection
                 raise ProcessExit("connection-reset")
             else:
                 raise
+    
+    def onChildExited(self, m, childPid, state):
+        if state.connectReceiver == childPid:
+            state.connectReceiver = None
+        if state.acceptReceiver == childPid:
+            state.acceptReceiver = None
+        if state.receiver == childPid:
+            self._closeConnection(state)
+            state.receiver = None
     
     def doDisconnect(self, m, state):
         self._closeConnection(state)
