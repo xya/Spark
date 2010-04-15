@@ -35,8 +35,9 @@ class FileSharingSession(Service):
     def __init__(self):
         super(FileSharingSession, self).__init__()
         self.stateChanged = EventSender("session-state-changed", dict)
+        self.transferUpdated = EventSender("transfer-updated", basestring, None)
         self.filesUpdated = EventSender("files-updated")
-        
+    
     def initState(self, state):
         super(FileSharingSession, self).initState(state)
         state.remoteNotifications = False
@@ -51,14 +52,16 @@ class FileSharingSession(Service):
         loop.addHandlers(self,
             # internal messages
             Command("update-session-state"),
+            Command("update-transfer-info"),
             Command("list-files", bool, int),
             Command("add-file", basestring, int),
             Command("remove-file", basestring, int),
             Command("start-transfer", basestring, int),
             Command("stop-transfer", basestring, int),
-            Command("send-block", Block()),
+            Command("send-block", Block),
             Event("transfer-created", int, int, basestring, int),
             Event("transfer-state-changed", int, int, basestring),
+            Event("transfer-info-updated", int, int, TransferInfo),
             # messages from the remote peer
             Request("list-files", bool),
             Response("list-files", None),
@@ -70,7 +73,7 @@ class FileSharingSession(Service):
             Notification("file-removed", basestring),
             Notification("transfer-state-changed", int, basestring)
         )
-        loop.addPattern(Block(), self._blockReceived)
+        loop.addPattern(Block, self._blockReceived)
         
     def cleanup(self, state):
         try:
@@ -85,9 +88,16 @@ class FileSharingSession(Service):
         self._stopTransfers(state)
     
     def doUpdateSessionState(self, m, state):
-        self.stateChanged({"activeTransfers" : 0,
+        self._updateSessionState(state)
+    
+    def _updateSessionState(self, state):
+        activeTransfers = 0
+        for transfer in state.transferTable:
+            if transfer.state == "active":
+                activeTransfers += 1
+        self.stateChanged({"activeTransfers" : activeTransfers,
             "uploadSpeed" : 0.0, "downloadSpeed" : 0.0})
-
+    
     def doListFiles(self, m, excludeRemoved, senderPid, state):
         """ Return a copy of the current file table, which maps file IDs to files. """
         cache = state.fileTable.files
@@ -95,7 +105,7 @@ class FileSharingSession(Service):
         for fileID, file in cache.items():
             # exclude local files that have been removed by the user
             if not excludeRemoved or (file.origin == REMOTE) or file.hasCopy(LOCAL):
-                files[fileID] = file.copy()
+                files[fileID] = file.copy(includeTransfer=False)
         Process.send(senderPid, Event("list-files", files))
     
     def requestListFiles(self, m, transID, register, state):
@@ -204,6 +214,7 @@ class FileSharingSession(Service):
             Process.send(transfer.pid, Command("close-transfer"))
     
     def onTransferStateChanged(self, m, transferID, direction, transferState, state):
+        # TODO: remove this event, use only transfer-info-updated?
         transfer = state.transferTable.find(transferID, direction)
         if transfer:
             transfer.state = transferState
@@ -211,10 +222,27 @@ class FileSharingSession(Service):
                 self.sendNotification(state, "transfer-state-changed", transferID, transferState)
             if (direction == DOWNLOAD) and (transferState == "finished"):
                 self.sendRequest(state, "close-transfer", transferID)
+            self._updateSessionState(state)
             self.filesUpdated()
+            Process.try_send(transfer.pid, Command("transfer-info"))
     
     def notificationTransferStateChanged(self, m, transID, transferID, transferState, state):
         """ The remote peer sent a 'transfer-state-changed' notification. """
         transfer = state.transferTable.find(transferID, DOWNLOAD)
         if transfer:
             Process.send(transfer.pid, Event("remote-state-changed", transferState))
+    
+    def onTransferInfoUpdated(self, m, transferID, direction, transfer, state):
+        cached = state.transferTable.find(transferID, direction)
+        if cached:
+            cached.updateState(transfer)
+            file = state.fileTable[transfer.fileID]
+            if direction == UPLOAD:
+                file.remoteCopySize = transfer.completedSize
+            elif direction == DOWNLOAD:
+                file.localCopySize = transfer.completedSize
+            self.transferUpdated(transfer.fileID, transfer)
+    
+    def doUpdateTransferInfo(self, m, state):
+        for transfer in state.transferTable:
+            Process.try_send(transfer.pid, Command("transfer-info"))

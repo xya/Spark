@@ -58,7 +58,7 @@ class SharedFile(object):
     def __repr__(self):
         return "SharedFile(%s)" % repr(self.__getstate__())
     
-    def copy(self):
+    def copy(self, includeTransfer=True):
         """ Return a copy of the file information. """
         newFile = SharedFile()
         newFile.name = self.name
@@ -70,7 +70,7 @@ class SharedFile(object):
         newFile.origin = self.origin
         newFile.localCopySize = self.localCopySize
         newFile.remoteCopySize = self.remoteCopySize
-        if self.transfer:
+        if includeTransfer and self.transfer:
             newFile.transfer = self.transfer.copy()
         return newFile
 
@@ -230,6 +230,7 @@ class TransferInfo(object):
         self.pid = pid
         self.state = "created"
         self.completedSize = 0
+        self.originalSize = 0
         self.transferSpeed = 0
         self.started = None
         self.ended = None
@@ -243,10 +244,19 @@ class TransferInfo(object):
         newTransfer = TransferInfo(self.transferID, self.direction, self.fileID, self.pid)
         newTransfer.state = self.state
         newTransfer.completedSize = self.completedSize
+        newTransfer.originalSize = self.originalSize
         newTransfer.transferSpeed = self.transferSpeed
         newTransfer.started = self.started
         newTransfer.ended = self.ended
         return newTransfer
+    
+    def updateState(self, info):
+        self.state = info.state
+        self.completedSize = info.completedSize
+        self.originalSize = info.originalSize
+        self.transferSpeed = info.transferSpeed
+        self.started = info.started
+        self.ended = info.ended
     
     @property
     def duration(self):
@@ -254,13 +264,13 @@ class TransferInfo(object):
         if self.started is None:
             return None
         elif self.ended is None:
-            return datetime.now - self.started
+            return datetime.now() - self.started
         else:
             return self.ended - self.started
     
     @property
-    def averageSpeed(self):
-        """ Return the average transfer speed, in bytes/s. """
+    def totalSeconds(self):
+        """ Same than duration, but in seconds. """
         duration = self.duration
         if duration is None:
             return None
@@ -268,21 +278,42 @@ class TransferInfo(object):
             seconds = duration.seconds
             seconds += (duration.microseconds * 10e-7)
             seconds += (duration.days * 24 * 3600)
+            return seconds
+    
+    @property
+    def averageSpeed(self):
+        """ Return the average transfer speed, in bytes/s. """
+        seconds = self.totalSeconds
+        if seconds is None:
+            return None
+        else:
             return self.completedSize / seconds
     
     @property
     def progress(self):
         """ Return a number between 0.0 and 1.0 indicating the progress of the transfer. """
-        return None
+        if self.originalSize:
+            return float(self.completedSize) / float(self.originalSize)
+        else:
+            return None
     
     @property
     def eta(self):
         """ Return an estimation of the time when the transfer will be completed. """
-        raise NotImplementedError()
+        progress = self.progress
+        seconds = self.totalSeconds
+        if (progress is None) or (seconds is None) or (progress == 0.0):
+            return None
+        else:
+            secondsLeft = (seconds / progress) - seconds
+            return timedelta(0, secondsLeft)
 
 class TransferTable(object):
     def __init__(self):
         self.entries = {}
+    
+    def __iter__(self):
+        return self.entries.itervalues()
     
     def find(self, transferID, direction):
         try:

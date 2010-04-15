@@ -349,7 +349,7 @@ def match(pattern, o):
     """ Try to match an object against a pattern. Return True if the pattern is matched or False otherwise. """
     if (pattern is None) or (pattern == o):
         return True
-    elif type(pattern) is type:
+    elif isinstance(pattern, type):
         # match types
         return isinstance(o, pattern) or (o is None)
     elif isinstance(pattern, basestring):

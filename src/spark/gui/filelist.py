@@ -212,11 +212,7 @@ class FileInfoWidget(QWidget):
         self.transferSize.setText(size)
     
     def setTransferTime(self, time):
-        if time is None:
-            text = ""
-        else:
-            text = str(time)
-        self.transferTime.setText(text)
+        self.transferTime.setText(time)
     
     def setTypeIcon(self, icon):
         self.typeIconSet = QIcon(iconPath(icon))
@@ -235,7 +231,7 @@ class FileInfoWidget(QWidget):
     
     def setTransferProgress(self, progress):
         if progress is not None:
-            self.transferProgress.setValue(progress)
+            self.transferProgress.setValue(progress * 100.0)
             self.transferProgress.show()
         else:
             self.transferProgress.hide()

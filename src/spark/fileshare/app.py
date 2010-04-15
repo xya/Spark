@@ -43,6 +43,7 @@ class SparkApplication(object):
         self.disconnected = Delegate()
         self.stateChanged = Delegate()
         self.filesUpdated = Delegate()
+        self.transferUpdated = Delegate()
         self.session = FileSharingSession()
         self.session.start()
     
@@ -93,6 +94,9 @@ class SparkApplication(object):
         if not senderPid:
             senderPid = Process.current()
         Process.try_send(self.session.pid, Command("stop-transfer", fileID, senderPid))
+    
+    def updateTransferInfo(self):
+        Process.try_send(self.session.pid, Command("update-transfer-info"))
     
     @property
     def files(self):
@@ -150,6 +154,7 @@ class SparkApplication(object):
             self.session.disconnected.suscribe(pid),
             self.session.stateChanged.suscribe(pid),
             self.session.filesUpdated.suscribe(pid),
+            self.session.transferUpdated.suscribe(pid),
             Event("list-files", None))
     
     def onListening(self, m, bindAddr, *args):
@@ -179,6 +184,12 @@ class SparkApplication(object):
     def onListFiles(self, m, files, *args):
         self._files = files
         self.filesUpdated()
+    
+    def onTransferUpdated(self, m, fileID, transfer, *args):
+        if fileID in self._files:
+            file = self._files[fileID]
+            file.transfer = transfer
+            self.transferUpdated(fileID)
     
     Units = [("KiB", 1024), ("MiB", 1024 * 1024), ("GiB", 1024 * 1024 * 1024)]
     def formatSize(self, size):

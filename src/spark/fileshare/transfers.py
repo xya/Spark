@@ -62,6 +62,7 @@ class Transfer(ProcessBase):
             Command("init-transfer", int, int, None, int, int),
             Command("start-transfer"),
             Command("close-transfer"),
+            Command("transfer-info"),
             Event("send-idle"),
             Event("remote-state-changed", basestring),
             Event("block-received", Block()))
@@ -81,7 +82,7 @@ class Transfer(ProcessBase):
     
     def _changeTransferState(self, state, transferState):
         if state.transferState != transferState:
-            state.logger.info("Transfer state changed from '%s' to '%s'",
+            state.logger.info("Transfer state changed from '%s' to '%s'.",
                 state.transferState, transferState)
             state.transferState = transferState
             self.stateChanged(state.transferID, state.direction, transferState)
@@ -171,12 +172,22 @@ class Transfer(ProcessBase):
         state.logger.info("Transfered %s in %s (%s/s).",
             formatSize(info.completedSize), info.duration, formatSize(info.averageSpeed))
     
+    def doTransferInfo(self, m, state):
+        """ Send current transfer information to the process. """
+        self._sendTransferInfo(state)
+    
+    def _sendTransferInfo(self, state):
+        info = self._transferInfo(state)
+        Process.send(state.sessionPid, Event("transfer-info-updated",
+            state.transferID, state.direction, info))
+    
     def _transferInfo(self, state):
         info = TransferInfo(state.transferID, state.direction, state.file.ID, self.pid)
         info.started = state.started
         info.ended = state.ended
         info.state = state.transferState
         info.completedSize = state.completedSize
+        info.originalSize = state.file.size
         return info
     
     def doCloseTransfer(self, m, state):

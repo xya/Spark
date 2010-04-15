@@ -39,6 +39,7 @@ class MessageMatchingTest(unittest.TestCase):
         """ match() should properly match message patterns """
         assertMatch(Request("swap", str, str), Request("swap", "foo", "bar").withID(1))
         assertMatch(Event("listening", None), Event('listening', ('127.0.0.1', 4550)))
+        assertMatch(Block, Block(0, 1, 'foo'))
         assertNoMatch(Request("paws"), Request("swap", "foo", "bar").withID(1))
         assertNoMatch(Request("swap", "foo", "bar").withID(1), Request("swap"))
         assertNoMatch(('disconnect', ), Event("protocol-negociated", "SPARKv1"))

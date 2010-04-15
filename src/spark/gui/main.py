@@ -48,6 +48,7 @@ class MainWindow(QMainWindow):
         self.initToolbar()
         self.initTransferList()
         self.initStatusBar()
+        self.initTimer()
         self.sharedFiles = {}
         self.fileIDs = []
         self.selectedID = None
@@ -56,6 +57,7 @@ class MainWindow(QMainWindow):
         self.app.disconnected += self.onStateChanged
         self.app.stateChanged += self.onStateChanged
         self.app.filesUpdated += self.onStateChanged
+        self.app.transferUpdated += self.onTransferUpdated
         self.updateStatusBar()
         self.updateToolBar()
     
@@ -155,14 +157,14 @@ class MainWindow(QMainWindow):
         self.sharedFiles = files
         self.fileIDs = files.keys()
         for file in (self.sharedFiles[ID] for ID in self.fileIDs):
-            self.transferList.addItem(self.createFileWidget(file))
+            widget = FileInfoWidget(self)
+            self.updateFileWidget(widget, file)
+            self.transferList.addItem(widget)
         self.transferList.addSpace()
         self.updateSelectedTransfer(-1)
     
-    def createFileWidget(self, file):
-        widget = FileInfoWidget(self)
+    def updateFileWidget(self, widget, file):
         widget.setName(file.name)
-        widget.setTransferSize("Size: %s" % self.app.formatSize(file.size))
         if file.mimeType:
             widget.setTypeIcon("mimetypes/%s" % file.mimeType)
         else:
@@ -190,16 +192,26 @@ class MainWindow(QMainWindow):
         if file.isReceiving:
             widget.setStatusIcon("actions/go-previous", 1)
             widget.setStatusToolTip("Receiving from peer", 1)
+            state = "Received"
         elif file.isSending:
             widget.setStatusIcon("actions/go-next", 1)
             widget.setStatusToolTip("Sending to peer", 1)
+            state = "Sent"
         else:
             widget.setStatusIcon(None, 1)
             widget.setStatusToolTip("", 1)
-        if file.transfer:
+            state = ""
+        if file.transfer and (file.transfer.progress is not None):
+            transferTime = "%s/s" % self.app.formatSize(file.transfer.averageSpeed)
+            transferSize = "%s %s out of %s (%.1f%%)" % (state,
+                self.app.formatSize(file.transfer.completedSize),
+                self.app.formatSize(file.transfer.originalSize),
+                file.transfer.progress * 100.0)
             widget.setTransferProgress(file.transfer.progress)
-            widget.setTransferTime(file.transfer.duration)
-        return widget
+            widget.setTransferTime(transferTime)
+            widget.setTransferSize(transferSize)
+        else:
+            widget.setTransferSize("Size: %s" % self.app.formatSize(file.size))
     
     def updateSelectedTransfer(self, index):
         if index < 0:
@@ -252,10 +264,32 @@ class MainWindow(QMainWindow):
         if self.selectedID is not None:
             self.app.startTransfer(self.selectedID)
     
+    def initTimer(self):
+        self.updateTimer = QTimer(self)
+        self.updateTimer.setInterval(250)
+        QObject.connect(self.updateTimer, SIGNAL('timeout()'), self.onTimerTicked)
+    
+    def onTimerTicked(self):
+        self.app.updateTransferInfo()
+    
     def onStateChanged(self):
         self.updateTransferList(self.app.files)
         self.updateStatusBar()
         self.updateToolBar()
+        if (self.app.activeTransfers > 0) and not self.updateTimer.isActive():
+            self.updateTimer.start()
+        elif (self.app.activeTransfers == 0) and self.updateTimer.isActive():
+            self.updateTimer.stop()
+    
+    def onTransferUpdated(self, fileID):
+        widget = None
+        for i, widgetID in enumerate(self.fileIDs):
+            if widgetID == fileID:
+                widget = self.transferList.list.items[i]
+                break
+        if widget:
+            file = self.app.files[fileID]
+            self.updateFileWidget(widget, file)
 
 class ConnectionDialog(QDialog):
     def __init__(self, app, parent=None):
