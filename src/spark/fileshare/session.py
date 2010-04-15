@@ -165,7 +165,7 @@ class FileSharingSession(Service):
         """ The remote peer sent a 'create-transfer' request. """
         file = state.fileTable[fileID]
         if file and (file.origin == LOCAL):
-            transferID = self._createTransferProcess(None, UPLOAD, file, state)
+            transferID = self._createTransferProcess(None, Upload, file, state)
             state.pendingTransferReqs[transferID] = (transID, fileID)
         else:
             state.messenger.send(Response("create-transfer-error", fileID).withID(transID))
@@ -173,16 +173,17 @@ class FileSharingSession(Service):
     def responseCreateTransfer(self, m, transID, fileID, transferID, state):
         file = state.fileTable[fileID]
         if file and (file.origin == REMOTE):
-            self._createTransferProcess(transferID, DOWNLOAD, file, state)
+            self._createTransferProcess(transferID, Download, file, state)
     
-    def _createTransferProcess(self, transferID, direction, file, state):
-        process = Transfer()
+    def _createTransferProcess(self, transferID, factory, file, state):
+        direction = factory.direction
+        # either create an instance of class Upload or Download
+        process = factory()
         process.start_linked()
         if not transferID:
             transferID = process.pid
         process.stateChanged.suscribe()
-        Process.send(process.pid, Command("init-transfer",
-            transferID, direction, file, self.pid, state.messenger.pid))
+        Process.send(process.pid, Command("init-transfer", transferID, direction, file, self.pid))
         transfer = state.transferTable.createTransfer(transferID, direction, file.ID, process.pid)
         file.transfer = transfer
         return transferID
@@ -200,7 +201,7 @@ class FileSharingSession(Service):
         """ The remote peer sent a 'start-transfer' request. """
         transfer = state.transferTable.find(transferID, UPLOAD)
         if transfer:
-            Process.send(transfer.pid, Command("start-transfer"))
+            Process.send(transfer.pid, Command("start-upload", state.messenger.pid))
     
     def _blockReceived(self, m, state):
         transfer = state.transferTable.find(m.transferID, DOWNLOAD)

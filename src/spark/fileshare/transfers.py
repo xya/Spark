@@ -26,7 +26,7 @@ from spark.core import *
 from spark.messaging import *
 from spark.fileshare.tables import *
 
-__all__ = ["Transfer"]
+__all__ = ["Transfer", "Upload", "Download"]
 class Transfer(ProcessBase):
     def __init__(self):
         super(Transfer, self).__init__()
@@ -36,15 +36,12 @@ class Transfer(ProcessBase):
         """ Initialize the process state. """
         super(Transfer, self).initState(state)
         state.sessionPid = None
-        state.messengerPid = None
         state.transferID = None
         state.direction = None
         state.transferState = None
         state.file = None
         state.path = None
         state.stream = None
-        state.blockTable = None
-        state.offset = None
         state.started = None
         state.ended = None
     
@@ -52,12 +49,9 @@ class Transfer(ProcessBase):
         """ Initialize the patterns used by the message loop. """
         super(Transfer, self).initPatterns(loop, state)
         loop.addHandlers(self,
-            Command("init-transfer", int, int, None, int, int),
-            Command("start-transfer"),
+            Command("init-transfer", int, int, None, int),
             Command("close-transfer"),
-            Command("transfer-info"),
-            Event("remote-state-changed", basestring),
-            Event("block-received", Block()))
+            Command("transfer-info"))
     
     def cleanup(self, state):
         try:
@@ -80,48 +74,87 @@ class Transfer(ProcessBase):
             self.stateChanged(state.transferID, state.direction, transferState)
             self._sendTransferInfo(state)
     
-    def onRemoteStateChanged(self, m, transferState, state):
-        self._changeTransferState(state, transferState)
-        if transferState == "active":
-            self._startTransfer(state)
-        elif transferState == "closed":
-            self._closeTransfer(state)
-    
-    def doInitTransfer(self, m, transferID, direction, file, sessionPid, messengerPid, state):
-        state.logger.info("Initializing transfer for file %s.", repr((file.ID, direction)))
+    def doInitTransfer(self, m, transferID, direction, file, sessionPid, state):
         state.transferID = transferID
         state.direction = direction
         state.file = file
         state.sessionPid = sessionPid
-        state.messengerPid = messengerPid
         state.blockSize = 1024
         state.receivedBlocks = 0
         state.completedSize = 0
         state.totalBlocks = int(math.ceil(float(file.size) / state.blockSize))
-        if state.direction == UPLOAD:
-            state.path = file.path
-            state.stream = open(state.path, "rb")
-            state.nextBlock = 0
-        elif state.direction == DOWNLOAD:
-            state.blockTable = defaultdict(bool)
-            receiveDir = os.path.join(os.path.expanduser("~"), "Desktop")
-            state.path = os.path.join(receiveDir, file.name)
-            state.stream = open(state.path, "wb")
-        state.logger.info("Opened file '%s'.", state.path)
-        state.offset = 0
         state.transferState = "created"
         Process.send(sessionPid, Event("transfer-created", state.transferID, state.direction))
         self._changeTransferState(state, "inactive")
     
-    def doStartTransfer(self, m, state):
-        self._startTransfer(state)
+    def _transferComplete(self, state):
+        state.ended = datetime.now()
+        self._changeTransferState(state, "finished")
+        state.logger.info("Transfer complete.")
+        info = self._transferInfo(state)
+        state.logger.info("Transfered %s in %s (%s/s).",
+            formatSize(info.completedSize),
+            info.duration,
+            formatSize(info.averageSpeed))
     
-    def _startTransfer(self, state):
-        state.logger.info("Starting transfer.")
+    def doTransferInfo(self, m, state):
+        """ Send current transfer information to the process. """
+        self._sendTransferInfo(state)
+    
+    def _sendTransferInfo(self, state):
+        if state.sessionPid:
+            info = self._transferInfo(state)
+            Process.try_send(state.sessionPid, Event("transfer-info-updated",
+                state.transferID, state.direction, info))
+    
+    def _transferInfo(self, state):
+        info = TransferInfo(state.transferID, state.direction, state.file.ID, self.pid)
+        info.started = state.started
+        info.ended = state.ended
+        info.state = state.transferState
+        info.completedSize = state.completedSize
+        info.originalSize = state.file.size
+        return info
+    
+    def doCloseTransfer(self, m, state):
+        self._closeTransfer(state)
+    
+    def _closeTransfer(self, state):
+        state.logger.info("Closing transfer.")
+        self._closeFile(state)
+        raise ProcessExit()
+
+class Upload(Transfer):
+    direction = UPLOAD
+    
+    def initState(self, state):
+        """ Initialize the process state. """
+        super(Upload, self).initState(state)
+        state.messengerPid = None
+        state.nextBlock = None
+        state.offset = None
+    
+    def initPatterns(self, loop, state):
+        """ Initialize the patterns used by the message loop. """
+        super(Upload, self).initPatterns(loop, state)
+        loop.addHandlers(self,
+            Command("start-upload", int))
+    
+    def doInitTransfer(self, m, transferID, direction, file, sessionPid, state):
+        state.logger.info("Initializing upload of file %s.", repr((file.ID, direction)))
+        state.nextBlock = 0
+        state.offset = 0
+        state.path = file.path
+        state.stream = open(state.path, "rb")
+        state.logger.info("Opened file '%s' for reading.", state.path)
+        super(Upload, self).doInitTransfer(m, transferID, direction, file, sessionPid, state)
+    
+    def doStartUpload(self, m, messengerPid, state):
+        state.messengerPid = messengerPid
+        state.logger.info("Starting to send.")
         state.started = datetime.now()
-        if state.direction == UPLOAD:
-            self._changeTransferState(state, "active")
-            self._sendFile(state)
+        self._changeTransferState(state, "active")
+        self._sendFile(state)
     
     def _sendFile(self, state):
         while state.transferState == "active":
@@ -145,6 +178,40 @@ class Transfer(ProcessBase):
             state.completedSize += len(blockData)
             # send it
             Process.send(state.messengerPid, Command("send", block, self.pid))
+
+class Download(Transfer):
+    direction = DOWNLOAD
+    
+    def initState(self, state):
+        """ Initialize the process state. """
+        super(Download, self).initState(state)
+        state.blockTable = None
+        state.offset = None
+    
+    def initPatterns(self, loop, state):
+        """ Initialize the patterns used by the message loop. """
+        super(Download, self).initPatterns(loop, state)
+        loop.addHandlers(self,
+            Event("remote-state-changed", basestring),
+            Event("block-received", Block))
+    
+    def doInitTransfer(self, m, transferID, direction, file, sessionPid, state):
+        state.logger.info("Initializing download of file %s.", repr((file.ID, direction)))
+        state.blockTable = defaultdict(bool)
+        state.offset = 0
+        receiveDir = os.path.join(os.path.expanduser("~"), "Desktop")
+        state.path = os.path.join(receiveDir, file.name)
+        state.stream = open(state.path, "wb")
+        state.logger.info("Opened file '%s' for writing.", state.path)
+        super(Download, self).doInitTransfer(m, transferID, direction, file, sessionPid, state)
+    
+    def onRemoteStateChanged(self, m, transferState, state):
+        self._changeTransferState(state, transferState)
+        if transferState == "active":
+            state.logger.info("Preparing to receive.")
+            state.started = datetime.now()
+        elif transferState == "closed":
+            self._closeTransfer(state)
     
     def onBlockReceived(self, m, b, state):
         blockID = b.blockID
@@ -159,39 +226,3 @@ class Transfer(ProcessBase):
             state.completedSize += len(b.blockData)
         if state.receivedBlocks == state.totalBlocks:
             self._transferComplete(state)
-    
-    def _transferComplete(self, state):
-        state.ended = datetime.now()
-        self._changeTransferState(state, "finished")
-        state.logger.info("Transfer complete.")
-        info = self._transferInfo(state)
-        state.logger.info("Transfered %s in %s (%s/s).",
-            formatSize(info.completedSize),
-            info.duration,
-            formatSize(info.averageSpeed))
-    
-    def doTransferInfo(self, m, state):
-        """ Send current transfer information to the process. """
-        self._sendTransferInfo(state)
-    
-    def _sendTransferInfo(self, state):
-        info = self._transferInfo(state)
-        Process.try_send(state.sessionPid, Event("transfer-info-updated",
-            state.transferID, state.direction, info))
-    
-    def _transferInfo(self, state):
-        info = TransferInfo(state.transferID, state.direction, state.file.ID, self.pid)
-        info.started = state.started
-        info.ended = state.ended
-        info.state = state.transferState
-        info.completedSize = state.completedSize
-        info.originalSize = state.file.size
-        return info
-    
-    def doCloseTransfer(self, m, state):
-        self._closeTransfer(state)
-    
-    def _closeTransfer(self, state):
-        state.logger.info("Closing transfer.")
-        self._closeFile(state)
-        raise ProcessExit()
