@@ -22,7 +22,7 @@
 import unittest
 import os
 import functools
-from spark.async import Future
+from spark.core import Future
 from spark.fileshare import FileShare
 from spark.tests.common import ReactorTestBase, run_tests
 

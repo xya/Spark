@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2009 Pierre-André Saulais <pasaulais@free.fr>
+# Copyright (C) 2009, 2010 Pierre-André Saulais <pasaulais@free.fr>
 #
 # This file is part of the Spark File-transfer Tool.
 #
@@ -23,7 +23,7 @@ import unittest
 import copy
 import sys
 import os
-from spark.async import Future, TaskFailedError, Process
+from spark.core import Future, TaskFailedError, Process
 from spark.messaging import *
 from spark.tests.common import run_tests, processTimeout, assertMatch
 from StringIO import StringIO

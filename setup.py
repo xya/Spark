@@ -30,7 +30,7 @@ setup (
     author_email='pasaulais@free.fr',
     url='http://pasaulais.free.fr/spark',
     packages=['spark',
-              'spark.async',
+              'spark.core',
               'spark.fileshare',
               'spark.gui',
               'spark.messaging',

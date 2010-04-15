@@ -25,7 +25,8 @@ import os
 import threading
 import sys
 import traceback
-from spark.async import *
+import pdb
+from spark.core import *
 
 def start_watcher():
     if os.path.exists("spark_debug_pipe"):
@@ -42,6 +43,8 @@ def _entry():
             log.info("Received %s.", repr(line))
             if line == "dump-threads":
                 _dump_threads(log)
+            elif line == "pdb":
+                _pdb(log)
 
 def _dump_threads(log):
     currentID = threading.current_thread().ident
@@ -58,3 +61,6 @@ def _thread_name_by_id(threadID):
         if t.ident == threadID:
             return t.name
     return threadID
+
+def _pdb(log):
+    pdb.set_trace()

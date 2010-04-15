@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2009 Pierre-André Saulais <pasaulais@free.fr>
+# Copyright (C) 2009, 2010 Pierre-André Saulais <pasaulais@free.fr>
 #
 # This file is part of the Spark File-transfer Tool.
 #
@@ -21,7 +21,7 @@
 import logging
 import functools
 import types
-from spark.async import *
+from spark.core import *
 from spark.messaging import *
 from spark.fileshare.session import FileSharingSession
 

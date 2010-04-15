@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2009 Pierre-André Saulais <pasaulais@free.fr>
+# Copyright (C) 2009, 2010 Pierre-André Saulais <pasaulais@free.fr>
 #
 # This file is part of the Spark File-transfer Tool.
 #
@@ -19,9 +19,9 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 # TODO: refactor this
-from spark.async.tasks import *
-from spark.async.queue import *
-from spark.async.process import *
+from spark.core.tasks import *
+from spark.core.queue import *
+from spark.core.process import *
 
 __all__ = []
 for module in (tasks, queue, process):

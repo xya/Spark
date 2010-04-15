@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2009 Pierre-André Saulais <pasaulais@free.fr>
+# Copyright (C) 2009, 2010 Pierre-André Saulais <pasaulais@free.fr>
 #
 # This file is part of the Spark File-transfer Tool.
 #
@@ -24,7 +24,7 @@ import types
 from copy import deepcopy
 from collections import Mapping
 from datetime import datetime, timedelta
-from spark.async import *
+from spark.core import *
 
 __all__ = ["SharedFile", "FileTable", "LOCAL", "REMOTE",
            "TransferInfo", "TransferTable", "UPLOAD", "DOWNLOAD",

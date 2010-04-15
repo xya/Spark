@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2009 Pierre-André Saulais <pasaulais@free.fr>
+# Copyright (C) 2009, 2010 Pierre-André Saulais <pasaulais@free.fr>
 #
 # This file is part of the Spark File-transfer Tool.
 #
@@ -219,7 +219,7 @@ class MainWindow(QMainWindow):
             widget.setTransferTime(transferTime)
             widget.setTransferSize(transferSize)
         else:
-            widget.setTransferSize("Size: %s" % formatSize(file.size))
+            widget.setTransferSize(formatSize(file.size, "Size: %s"))
     
     def updateSelectedTransfer(self, index):
         if index < 0:

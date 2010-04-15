@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2009 Pierre-André Saulais <pasaulais@free.fr>
+# Copyright (C) 2009, 2010 Pierre-André Saulais <pasaulais@free.fr>
 #
 # This file is part of the Spark File-transfer Tool.
 #
@@ -20,7 +20,7 @@
 
 import unittest
 from spark.messaging import *
-from spark.async import Future, Event
+from spark.core import Future, Event
 from spark.tests.common import run_tests, assertMatch, assertNoMatch
 from spark.tests.ProtocolTest import testRequest, testResponse, testNotification, testBlock
 

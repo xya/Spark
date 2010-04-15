@@ -1,5 +1,5 @@
 __all__ = [
-    "AsyncTest",
+    "CoreTest",
     "ProtocolTest",
     "MessagingTest",
     "IntegrationTest",

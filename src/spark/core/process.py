@@ -23,7 +23,7 @@
 from collections import Sequence, Mapping
 import threading
 import logging
-from spark.async.queue import BlockingQueue, QueueClosedError
+from spark.core.queue import BlockingQueue, QueueClosedError
 
 __all__ = ["Process", "ProcessState", "ProcessBase", "ProcessExit", "ProcessExited", "ProcessKilled",
            "ProcessNotifier", "Command", "Event", "EventSender", "match", "PatternMatcher"]
