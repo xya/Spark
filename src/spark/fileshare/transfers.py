@@ -43,6 +43,7 @@ class Transfer(ProcessBase):
         """ Initialize the process state. """
         super(Transfer, self).initState(state)
         state.sessionPid = None
+        state.messengerPid = None
         state.reqID = None
         state.transferID = None
         state.direction = None
@@ -59,7 +60,7 @@ class Transfer(ProcessBase):
         """ Initialize the patterns used by the message loop. """
         super(Transfer, self).initPatterns(loop, state)
         loop.addHandlers(self,
-            Command("init-transfer", int, int, None, int, int),
+            Command("init-transfer", int, int, None, int, int, int),
             Command("start-transfer"),
             Command("close-transfer"),
             Command("transfer-info"),
@@ -94,13 +95,14 @@ class Transfer(ProcessBase):
         elif transferState == "closed":
             self._closeTransfer(state)
     
-    def doInitTransfer(self, m, transferID, direction, file, reqID, sessionPid, state):
+    def doInitTransfer(self, m, transferID, direction, file, reqID, sessionPid, messengerPid, state):
         state.logger.info("Initializing transfer for file '%s'.", file.ID) 
         state.transferID = transferID
         state.direction = direction
         state.file = file
         state.reqID = reqID
         state.sessionPid = sessionPid
+        state.messengerPid = messengerPid
         state.blockSize = 1024
         state.receivedBlocks = 0
         state.completedSize = 0
@@ -144,7 +146,7 @@ class Transfer(ProcessBase):
             state.nextBlock += 1
             state.completedSize += len(blockData)
             # send it
-            Process.send(state.sessionPid, Command("send-block", block))
+            Process.send(state.messengerPid, Command("send", block, self.pid))
     
     def onSendIdle(self, m, state):
         if (state.direction == UPLOAD) and (state.started is not None):

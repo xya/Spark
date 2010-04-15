@@ -202,7 +202,11 @@ class MainWindow(QMainWindow):
             widget.setStatusToolTip("", 1)
             state = ""
         if file.transfer and (file.transfer.progress is not None):
-            transferTime = "%s/s" % self.app.formatSize(file.transfer.averageSpeed)
+            averageSpeed = file.transfer.averageSpeed
+            if averageSpeed is None:
+                transferTime = "n/a"
+            else:
+                transferTime = "%s/s" % self.app.formatSize(averageSpeed)
             transferSize = "%s %s out of %s (%.1f%%)" % (state,
                 self.app.formatSize(file.transfer.completedSize),
                 self.app.formatSize(file.transfer.originalSize),

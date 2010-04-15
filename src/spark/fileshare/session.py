@@ -58,7 +58,6 @@ class FileSharingSession(Service):
             Command("remove-file", basestring, int),
             Command("start-transfer", basestring, int),
             Command("stop-transfer", basestring, int),
-            Command("send-block", Block),
             Event("transfer-created", int, int, basestring, int),
             Event("transfer-state-changed", int, int, basestring),
             Event("transfer-info-updated", int, int, TransferInfo),
@@ -172,7 +171,7 @@ class FileSharingSession(Service):
         state.messenger.sendIdle.suscribe(process.pid)
         file = state.fileTable[fileID]
         Process.send(process.pid, Command("init-transfer",
-            transferID, direction, file, reqID, self.pid))
+            transferID, direction, file, reqID, self.pid, state.messenger.pid))
         transfer = state.transferTable.createTransfer(transferID, direction, fileID, process.pid)
         file.transfer = transfer
     
@@ -188,9 +187,6 @@ class FileSharingSession(Service):
         transfer = state.transferTable.find(transferID, UPLOAD)
         if transfer:
             Process.send(transfer.pid, Command("start-transfer"))
-    
-    def doSendBlock(self, m, block, state):
-        state.messenger.send(block)
     
     def _blockReceived(self, m, state):
         transfer = state.transferTable.find(m.transferID, DOWNLOAD)

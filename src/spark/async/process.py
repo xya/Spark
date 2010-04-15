@@ -162,17 +162,29 @@ class Process(object):
                     log.info("Process stopped.")
     
     @classmethod
+    def _getQueue(cls, pid):
+        """ Return the queue of the specified process. """
+        if not hasattr(cls._current, "queues"):
+            cls._current.queues = {}
+        try:
+            return cls._current.queues[pid]
+        except KeyError:
+            with cls._lock:
+                try:
+                    p = cls._processes[pid]
+                except KeyError:
+                    raise Exception("Invalid PID")
+            queue = p.queue
+            cls._current.queues[pid] = queue
+            return queue
+    
+    @classmethod
     def send(cls, pid, m):
         """ Send a message to the specified process. """
         if not cls._current.p.queue.isOpen:
             raise ProcessKilled()
         pid = cls._to_pid(pid)
-        with cls._lock:
-            try:
-                p = cls._processes[pid]
-                queue = p.queue
-            except KeyError:
-                raise Exception("Invalid PID")
+        queue = cls._getQueue(pid)
         try:
             queue.put(m)
         except QueueClosedError:
