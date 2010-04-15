@@ -1,0 +1,28 @@
+# Contributor: Pierre-Andre Saulais <pasaulais@free.fr>
+pkgname=spark
+pkgver=0.0.1
+pkgrel=1
+pkgdesc="Simple file-transfer tool"
+arch=(any)
+url="http://pasaulais.free.fr/spark"
+license=('GPL')
+depends=('python>=2.6' 'pyqt>=4')
+makedepends=()
+provides=('spark')
+source=('http://pasaulais.free.fr/spark/icons.tar.gz')
+md5sums=('d4e391c0c050b5976ac4abff3c5ccd9d')
+noextract=('icons.tar.gz')
+
+build() {
+    cd "$srcdir"
+    if [ ! -d Spark.git ]; then
+        git clone git://github.com/xya/Spark.git Spark.git
+        cd Spark.git
+    else
+        cd Spark.git
+        git pull
+    fi
+    python setup.py install --root=$pkgdir/ --optimize=1 || return 1
+    install -d -D "$pkgdir/usr/share/spark"
+    tar xfz "$srcdir/icons.tar.gz" --directory "$pkgdir/usr/share/spark"
+}
