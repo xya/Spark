@@ -48,34 +48,14 @@ class TcpMessenger(TcpSocket):
             Command("send", None, int),
             Event("protocol-negociated", basestring))
     
+    def createReceiver(self, state):
+        return TcpMessageReceiver()
+    
     def onProtocolNegociated(self, m, protocol, state):
         stream = SocketWrapper(state.conn)
         state.protocol = protocol
         state.writer = messageWriter(stream, protocol)
         self.protocolNegociated(protocol)
-    
-    def onChildConnected(self, conn, remoteAddr, initiating, senderPid, messengerPid):
-        log = Process.logger()
-        # negociate the protocol to use for formatting messages
-        stream = SocketWrapper(conn)
-        name = negociateProtocol(stream, initiating)
-        log.info("Negociated protocol '%s'.", name)
-        Process.send(messengerPid, Event("protocol-negociated", name))
-        # start receiving messages
-        reader = messageReader(stream, name)
-        try:
-            while True:
-                m = reader.read()
-                if m is None:
-                    break
-                else:
-                    Process.send(senderPid, m)
-        except socket.error as e:
-            log.error("Error while receiving: %s.", str(e))
-            if e.errno == os.errno.ECONNRESET:
-                raise ProcessExit("connection-reset")
-            else:
-                raise
     
     def doSend(self, m, data, senderPid, state):
         if not state.isConnected or state.writer is None:
@@ -97,6 +77,39 @@ class TcpMessenger(TcpSocket):
             state.writer = None
         finally:
             super(TcpMessenger, self)._closeConnection(state)
+
+class TcpMessageReceiver(TcpReceiver):
+    def __init__(self, name="TcpReceiver"):
+        super(TcpMessageReceiver, self).__init__(name)
+        
+    def initState(self, state):
+        super(TcpMessageReceiver, self).initState(state)
+        state.reader = None
+        
+    def onConnected(self, m, state):
+        # negociate the protocol to use for formatting messages
+        stream = SocketWrapper(state.conn)
+        name = negociateProtocol(stream, state.initiating)
+        state.logger.info("Negociated protocol '%s'.", name)
+        Process.send(state.messengerPid, Event("protocol-negociated", name))
+        # start receiving messages
+        state.reader = messageReader(stream, name)
+        try:
+            self.receiveMessages(state)
+        except socket.error as e:
+            state.logger.error("Error while receiving: %s.", str(e))
+            if e.errno == os.errno.ECONNRESET:
+                raise ProcessExit("connection-reset")
+            else:
+                raise
+    
+    def receiveMessages(self, state):
+        while True:
+            m = state.reader.read()
+            if m is None:
+                raise ProcessExit()
+            else:
+                Process.send(state.senderPid, m)
 
 class SocketWrapper(object):
     def __init__(self, sock):

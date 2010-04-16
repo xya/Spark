@@ -22,7 +22,7 @@ import os
 import socket
 from spark.core import *
 
-__all__ = ["TcpSocket"]
+__all__ = ["TcpSocket", "TcpReceiver"]
 
 class TcpSocket(ProcessBase):
     """ Base class for processes that can communicate using sockets. """
@@ -69,7 +69,7 @@ class TcpSocket(ProcessBase):
             Command("accept", int),
             Command("disconnect"),
             # internal messages
-            Event("connected", None, None, bool),
+            Event("child-connected", None, None, bool),
             Event("child-exited", int))
     
     def cleanup(self, state):
@@ -79,14 +79,8 @@ class TcpSocket(ProcessBase):
         finally:
             super(TcpSocket, self).cleanup(state)
     
-    def _childWrapper(self, fun):
-        messengerPid = Process.current()
-        def wrapper(*args):
-            try:
-                fun(*args)
-            finally:
-                Process.try_send(messengerPid, Event("child-exited", Process.current()))
-        return wrapper
+    def createReceiver(self, state):
+        return TcpReceiver()
     
     def doListen(self, m, bindAddr, family, senderPid, state):
         if (family != socket.AF_INET) and (family != socket.AF_INET6):
@@ -115,24 +109,10 @@ class TcpSocket(ProcessBase):
         elif state.isConnected or not state.server:
             Process.send(senderPid, Event("accept-error", "invalid-state"))
             return
-        entry = self._childWrapper(self._waitForAccept)
-        args = (state.server, senderPid, Process.current())
-        state.acceptReceiver = Process.spawn_linked(entry, args, "TcpServer")
-
-    def _waitForAccept(self, server, senderPid, messengerPid):
-        log = Process.logger()
-        log.info("Waiting for a connection.")
-        try:
-            conn, remoteAddr = server.accept()
-        except socket.error as e:
-            if e.errno == os.errno.EINVAL:
-                # shutdown
-                return
-            else:
-                log.error("Error while accepting: %s.", str(e))
-                Process.send(senderPid, Event("accept-error", e))
-        else:
-            self.childConfirmConnection(conn, remoteAddr, False, senderPid, messengerPid)
+        state.acceptReceiver = self.createReceiver(state)
+        state.acceptReceiver.start_linked()
+        Process.send(state.acceptReceiver,
+            Command("accept", state.server, senderPid, Process.current()))
 
     def doConnect(self, m, remoteAddr, family, senderPid, state):
         if (family != socket.AF_INET) and (family != socket.AF_INET6):
@@ -141,34 +121,19 @@ class TcpSocket(ProcessBase):
         elif state.isConnected or state.connectReceiver:
             Process.send(senderPid, Event("connection-error", "invalid-state"))
             return
-        entry = self._childWrapper(self._waitForConnect)
-        args = (remoteAddr, family, senderPid, Process.current())
-        state.connectReceiver = Process.spawn_linked(entry, args, "TcpClient")
-    
-    def _waitForConnect(self, remoteAddr, family, senderPid, messengerPid):
-        log = Process.logger()
-        conn = socket.socket(family, socket.SOCK_STREAM, socket.IPPROTO_TCP)
-        if family == socket.AF_INET6:
-            conn.bind(("::0", 0))
-        else:
-            conn.bind(("0.0.0.0", 0))
-        log.info("Connecting to %s.", repr(remoteAddr))
-        try:
-            conn.connect(remoteAddr)
-        except socket.error as e:
-            log.error("Error while connecting: %s.", str(e))
-            Process.send(senderPid, Event("connection-error", e))
-        else:
-            self.childConfirmConnection(conn, remoteAddr, True, senderPid, messengerPid)
+        state.connectReceiver = self.createReceiver(state)
+        state.connectReceiver.start_linked()
+        Process.send(state.connectReceiver,
+            Command("connect", remoteAddr, family, senderPid, Process.current()))
 
-    def onConnected(self, m, conn, remoteAddr, initiating, state):
+    def onChildConnected(self, m, conn, remoteAddr, initiating, state):
         if initiating:
             receiver = state.connectReceiver
         else:
             receiver = state.acceptReceiver
         if state.receiver:
             state.logger.info("Dropping redundant connection to %s.", repr(remoteAddr))
-            Process.send(receiver, Command("close"))
+            Process.send(receiver, Command("drop-connection"))
         else:
             # we're connected, update the process' state
             state.logger.info("Connected to %s.", repr(remoteAddr))
@@ -176,34 +141,18 @@ class TcpSocket(ProcessBase):
             state.conn = conn
             state.remoteAddr = remoteAddr
             state.receiver = receiver
-            Process.send(receiver, Command("connect"))
+            Process.send(receiver, Event("connected"))
             self.connected(remoteAddr)
-    
-    def childConfirmConnection(self, conn, remoteAddr, initiating, senderPid, messengerPid):
-        log = Process.logger()
-        # notify the messenger process that we have established a connection
-        Process.send(messengerPid, Event("connected", conn, remoteAddr, initiating))
-        # the connection might have to be dropped (if we're already connected)
-        resp = Process.receive()
-        if not match(Command("connect"), resp):
-            try:
-                conn.close()
-            except Exception:
-                log.exception("socket.close() failed")
-            return
-        else:
-            # we can use this connection
-            self.onChildConnected(conn, remoteAddr, initiating, senderPid, messengerPid)
-    
-    def onChildConnected(self, conn, remoteAddr, initiating, senderPid, messengerPid):
-        pass
 
     def onChildExited(self, m, childPid, state):
-        if state.connectReceiver == childPid:
+        connectPid = state.connectReceiver and state.connectReceiver.pid
+        acceptPid = state.acceptReceiver and state.acceptReceiver.pid
+        receivePid = state.receiver and state.receiver.pid
+        if connectPid == childPid:
             state.connectReceiver = None
-        if state.acceptReceiver == childPid:
+        if acceptPid == childPid:
             state.acceptReceiver = None
-        if state.receiver == childPid:
+        if receivePid == childPid:
             self._closeConnection(state)
             state.receiver = None
     
@@ -213,19 +162,7 @@ class TcpSocket(ProcessBase):
     def _closeConnection(self, state):
         if state.conn:
             state.receiver = None
-            # force threads blocked on recv (and send?) to return
-            try:
-                state.conn.shutdown(socket.SHUT_RDWR)
-            except socket.error as e:
-                if e.errno != os.errno.ENOTCONN:
-                    raise
-            except Exception:
-                state.logger.exception("conn.shutdown() failed")
-            # close the connection
-            try:
-                state.conn.close()
-            except Exception:
-                state.logger.exception("conn.close() failed")
+            TcpSocket.closeSocket(state.conn, state.logger)
             state.conn = None
             remoteAddr, state.remoteAddr = state.remoteAddr, None
             wasConnected, state.isConnected = state.isConnected, False
@@ -237,13 +174,105 @@ class TcpSocket(ProcessBase):
     
     def _closeServer(self, state):
         if state.server:
-            # force threads blocked on accept() to return
-            try:
-                state.server.shutdown(socket.SHUT_RDWR)
-            except Exception:
-                state.logger.exception("server.shutdown() failed")
-            try:
-                state.server.close()
-            except Exception:
-                state.logger.exception("server.close() failed")
+            TcpSocket.closeSocket(state.server, state.logger)
             state.server = None
+    
+    @classmethod
+    def closeSocket(cls, sock, logger):
+        # force threads blocked on recv/send/accept to return
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except socket.error as e:
+            if e.errno != os.errno.ENOTCONN:
+                raise
+        except Exception:
+            logger.exception("Shutting down the socket failed.")
+        # close the connection
+        try:
+            sock.close()
+        except Exception:
+            logger.exception("Closing the socket failed.")
+
+class TcpReceiver(ProcessBase):
+    def __init__(self, name=None):
+        super(TcpReceiver, self).__init__(name)
+    
+    def initState(self, state):
+        super(TcpReceiver, self).initState(state)
+        state.initiating = None
+        state.conn = None
+        state.remoteAddr = None
+        state.messengerPid = None
+        state.senderPid = None
+    
+    def initPatterns(self, loop, state):
+        super(TcpReceiver, self).initPatterns(loop, state)
+        loop.addHandlers(self,
+            Command("accept", None, int, int),
+            Command("connect", None, int, int, int),
+            Command("drop-connection"),
+            Event("connected"))
+    
+    def cleanup(self, state):
+        try:
+            if state.messengerPid:
+                Process.try_send(state.messengerPid, Event("child-exited", self.pid))
+        finally:
+            super(TcpReceiver, self).cleanup(state)
+
+    def doConnect(self, m, remoteAddr, family, senderPid, messengerPid, state):
+        if state.conn:
+            Process.send(messengerPid, Event("connection-error", "already-connected"))
+            return
+        state.initiating = True
+        state.remoteAddr = remoteAddr
+        state.senderPid = senderPid
+        state.messengerPid = messengerPid
+        conn = socket.socket(family, socket.SOCK_STREAM, socket.IPPROTO_TCP)
+        if family == socket.AF_INET6:
+            conn.bind(("::0", 0))
+        else:
+            conn.bind(("0.0.0.0", 0))
+        state.logger.info("Connecting to %s.", repr(remoteAddr))
+        try:
+            conn.connect(remoteAddr)
+        except socket.error as e:
+            state.logger.error("Error while connecting: %s.", str(e))
+            Process.send(senderPid, Event("connection-error", e))
+        else:
+            state.conn = conn
+            self.confirmConnection(state)
+
+    def doAccept(self, m, server, senderPid, messengerPid, state):
+        if state.conn:
+            Process.send(messengerPid, Event("accept-error", "already-connected"))
+            return
+        state.initiating = False
+        state.senderPid = senderPid
+        state.messengerPid = messengerPid
+        state.logger.info("Waiting for a connection.")
+        try:
+            state.conn, state.remoteAddr = server.accept()
+        except socket.error as e:
+            if e.errno == os.errno.EINVAL:
+                # shutdown
+                return
+            else:
+                state.logger.error("Error while accepting: %s.", str(e))
+                Process.send(senderPid, Event("accept-error", e))
+        else:
+            self.confirmConnection(state)
+    
+    def confirmConnection(self, state):
+        """ Notify the messenger process that a connection has been established. """
+        Process.send(state.messengerPid,
+            Event("child-connected", state.conn, state.remoteAddr, state.initiating))
+    
+    def doDropConnection(self, m, state):
+        """ The connection has to be dropped (TcpSocket is connected using another socket). """
+        TcpSocket.closeSocket(state.conn, state.logger)
+        state.conn = None
+        raise ProcessExit()
+    
+    def onConnected(self, m, state):
+        pass
