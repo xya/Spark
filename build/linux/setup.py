@@ -19,11 +19,27 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+import os
 from distutils.core import setup
+from distutils.command.install import install, INSTALL_SCHEMES
+from distutils import file_util, dir_util
 
-setup (
+class CustomInstall(install):
+    def run(self):
+        install.run(self)
+        # create a symbolink link in /usr/bin to run Spark
+        root = os.path.abspath(self.root)
+        if not self.install_purelib.startswith(root):
+            raise Exception("Couldn't remove prefix from path")
+        deploy_purelib = self.install_purelib[len(root):]
+        source = os.path.join(deploy_purelib, "spark", "start_gui.py")
+        symlink = os.path.join(self.install_scripts, "spark")
+        dir_util.mkpath(self.install_scripts)
+        os.symlink(source, symlink)
+
+setup(
     name='Spark',
-    version='0.0.1',
+    version='0.0.2',
     description='Simple file-transfer tool',
     license='GPL',
     author='Pierre-André Saulais',
@@ -36,5 +52,5 @@ setup (
               'spark.messaging',
               'spark.tests'],
     package_dir = {'': 'src'},
-    scripts=['src/Spark.py'],
+    cmdclass={"install": CustomInstall}
 )

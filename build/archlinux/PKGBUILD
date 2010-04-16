@@ -1,6 +1,6 @@
-# Contributor: Pierre-Andre Saulais <pasaulais@free.fr>
-pkgname=spark
-pkgver=0.0.2
+# Maintainer: Pierre-Andre Saulais <pasaulais@free.fr>
+pkgname=spark-git
+pkgver=20100417
 pkgrel=1
 pkgdesc="Simple file-transfer tool"
 arch=(any)
@@ -12,16 +12,23 @@ provides=('spark')
 source=('http://pasaulais.free.fr/spark/icons.tar.gz')
 md5sums=('6f6357c7e0b8f934cc9a8db08690864b')
 
+_gitroot="git://github.com/xya/Spark.git"
+_gitname="spark"
+
 build() {
     cd "$srcdir"
-    if [ ! -d Spark.git ]; then
-        git clone git://github.com/xya/Spark.git Spark.git
-        cd Spark.git
+    msg "Connecting to GIT server...."
+    if [ -d $_gitname ]; then
+        cd $_gitname && git pull origin master
+        msg "The local files are updated."
     else
-        cd Spark.git
-        git pull
+        git clone $_gitroot $_gitname
     fi
-    python setup.py install --root=$pkgdir/ --optimize=1 || return 1
+    
+    msg "GIT checkout done or server timeout"
+    msg "Starting make..."
+    
+    python "$srcdir/$_gitname/build/linux/setup.py" install --root="$pkgdir/" --install-data=/usr/share/spark --optimize=1 || return 1
     install -d -D "$pkgdir/usr/share/spark/icons"
     cd "$srcdir/icons"
     find . -type f | sed 's/.\///' | while read path
