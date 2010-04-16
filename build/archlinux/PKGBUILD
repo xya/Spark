@@ -1,6 +1,6 @@
 # Contributor: Pierre-Andre Saulais <pasaulais@free.fr>
 pkgname=spark
-pkgver=0.0.1
+pkgver=0.0.2
 pkgrel=1
 pkgdesc="Simple file-transfer tool"
 arch=(any)
