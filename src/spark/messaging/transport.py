@@ -20,45 +20,17 @@
 
 import os
 import socket
-import logging
-from collections import Sequence
 from spark.core import *
 from spark.messaging.protocol import *
 from spark.messaging.messages import *
 
 __all__ = ["TcpMessenger", "Service"]
 
-class TcpMessenger(ProcessBase):
-    # The messenger is not connected to any peer.
-    DISCONNECTED = 0
-    # The messenger is connected to a peer.
-    CONNECTED = 1
-    
+class TcpMessenger(TcpSocket):
     def __init__(self):
         super(TcpMessenger, self).__init__()
-        self.listening = EventSender("listening", None)
-        self.connected = EventSender("connected", None)
         self.protocolNegociated = EventSender("protocol-negociated", basestring)
-        self.disconnected = EventSender("disconnected")
     
-    def connect(self, addr, senderPid=None):
-        if not senderPid:
-            senderPid = Process.current()
-        Process.send(self.pid, Command("connect", addr, senderPid))
-    
-    def listen(self, addr, senderPid=None):
-        if not senderPid:
-            senderPid = Process.current()
-        Process.send(self.pid, Command("listen", addr, senderPid))
-    
-    def accept(self, senderPid=None):
-        if not senderPid:
-            senderPid = Process.current()
-        Process.send(self.pid, Command("accept", senderPid))
-    
-    def disconnect(self):
-        Process.send(self.pid, Command("disconnect"))
-
     def send(self, message, senderPid=None):
         if not senderPid:
             senderPid = Process.current()
@@ -66,152 +38,30 @@ class TcpMessenger(ProcessBase):
 
     def initState(self, state):
         super(TcpMessenger, self).initState(state)
-        state.connState = TcpMessenger.DISCONNECTED
-        state.server = None
-        state.conn = None
-        state.remoteAddr = None
-        state.recipient = None
         state.protocol = None
-        state.stream = None
         state.writer = None
-        state.receiver = None
-        state.acceptReceiver = None
-        state.connectReceiver = None
     
     def initPatterns(self, loop, state):
         super(TcpMessenger, self).initPatterns(loop, state)
         loop.addHandlers(self,
-            # public messages
-            Command("connect", None, int),
-            Command("listen", None, int),
-            Command("accept", int),
-            Command("disconnect"),
             Command("send", None, int),
-            # internal messages
-            Event("connected", None, None, bool),
-            Event("child-exited", int))
+            Event("protocol-negociated", basestring))
     
-    def cleanup(self, state):
-        try:
-            self._closeConnection(state)
-            self._closeServer(state)
-        finally:
-            super(TcpMessenger, self).cleanup(state)
+    def onProtocolNegociated(self, m, protocol, state):
+        stream = SocketWrapper(state.conn)
+        state.protocol = protocol
+        state.writer = messageWriter(stream, protocol)
+        self.protocolNegociated(protocol)
     
-    def _childWrapper(self, fun):
-        messengerPid = Process.current()
-        def wrapper(*args):
-            try:
-                fun(*args)
-            finally:
-                Process.try_send(messengerPid, Event("child-exited", Process.current()))
-        return wrapper
-    
-    def doListen(self, m, bindAddr, senderPid, state):
-        if state.server:
-            Process.send(senderPid, Event("listen-error", "invalid-state"))
-            return
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
-        try:
-            state.logger.info("Listening to incoming connections on %s.", repr(m[2]))
-            server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            server.bind(bindAddr)
-            server.listen(1)
-            self.listening(bindAddr)
-        except socket.error as e:
-            state.logger.error("Error while listening: %s.", str(e))
-            Process.send(senderPid, Event("listen-error", e))
-        else:
-            state.server = server
-    
-    def doAccept(self, m, senderPid, state):
-        if state.acceptReceiver:
-            # we are already waiting for an incoming connection
-            return
-        elif (state.connState != TcpMessenger.DISCONNECTED) or not state.server:
-            Process.send(senderPid, Event("accept-error", "invalid-state"))
-            return
-        entry = self._childWrapper(self._waitForAccept)
-        args = (state.server, senderPid, Process.current())
-        state.acceptReceiver = Process.spawn_linked(entry, args, "TcpServer")
-
-    def _waitForAccept(self, server, senderPid, messengerPid):
+    def onChildConnected(self, conn, remoteAddr, initiating, senderPid, messengerPid):
         log = Process.logger()
-        log.info("Waiting for a connection.")
-        try:
-            conn, remoteAddr = server.accept()
-        except socket.error as e:
-            if e.errno == os.errno.EINVAL:
-                # shutdown
-                return
-            else:
-                log.error("Error while accepting: %s.", str(e))
-                Process.send(senderPid, Event("accept-error", e))
-        else:
-            self._startSession(conn, remoteAddr, False, senderPid, messengerPid)
-
-    def doConnect(self, m, remoteAddr, senderPid, state):
-        if (state.connState != TcpMessenger.DISCONNECTED) or state.connectReceiver:
-            Process.send(senderPid, Event("connection-error", "invalid-state"))
-            return
-        entry = self._childWrapper(self._waitForConnect)
-        args = (remoteAddr, senderPid, Process.current())
-        state.connectReceiver = Process.spawn_linked(entry, args, "TcpClient")
-    
-    def _waitForConnect(self, remoteAddr, senderPid, messengerPid):
-        log = Process.logger()
-        conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
-        conn.bind(("0.0.0.0", 0))
-        log.info("Connecting to %s.", repr(remoteAddr))
-        try:
-            conn.connect(remoteAddr)
-        except socket.error as e:
-            log.error("Error while connecting: %s.", str(e))
-            Process.send(senderPid, Event("connection-error", e))
-        else:
-            self._startSession(conn, remoteAddr, True, senderPid, messengerPid)
-
-    def onConnected(self, m, conn, remoteAddr, initiating, state):
-        if initiating:
-            receiver = state.connectReceiver
-        else:
-            receiver = state.acceptReceiver
-        if state.receiver:
-            state.logger.info("Dropping redundant connection to %s.", repr(remoteAddr))
-            Process.send(receiver, Command("close"))
-        else:
-            # we're connected, update the process' state
-            state.logger.info("Connected to %s.", repr(remoteAddr))
-            state.connState = TcpMessenger.CONNECTED
-            state.conn = conn
-            state.remoteAddr = remoteAddr
-            state.receiver = receiver
-            stream = SocketWrapper(state.conn)
-            self.connected(remoteAddr)
-            # negociate the protocol to use for formatting messages
-            name = negociateProtocol(stream, initiating)
-            state.logger.info("Negociated protocol '%s'.", name)
-            state.stream = stream
-            state.protocol = name
-            state.writer = messageWriter(stream, name)
-            self.protocolNegociated(name)
-            # start receiving messages
-            Process.send(receiver, Command("receive", stream, name))
-    
-    def _startSession(self, conn, remoteAddr, initiating, senderPid, messengerPid):
-        log = Process.logger()
-        # notify the messenger process that we have established a connection
-        Process.send(messengerPid, Event("connected", conn, remoteAddr, initiating))
-        # the connection might have to be dropped (if we're already connected)
-        resp = Process.receive()
-        if not match(Command("receive", None, basestring), resp):
-            try:
-                conn.close()
-            except Exception:
-                log.exception("socket.close() failed")
-            return
-        # we can use this connection. start receiving messages
-        reader = messageReader(resp[2], resp[3])
+        # negociate the protocol to use for formatting messages
+        stream = SocketWrapper(conn)
+        name = negociateProtocol(stream, initiating)
+        log.info("Negociated protocol '%s'.", name)
+        Process.send(messengerPid, Event("protocol-negociated", name))
+        # start receiving messages
+        reader = messageReader(stream, name)
         try:
             while True:
                 m = reader.read()
@@ -225,9 +75,9 @@ class TcpMessenger(ProcessBase):
                 raise ProcessExit("connection-reset")
             else:
                 raise
-
+    
     def doSend(self, m, data, senderPid, state):
-        if (state.connState != TcpMessenger.CONNECTED) or state.protocol is None:
+        if (state.connState != TcpSocket.CONNECTED) or state.protocol is None:
             Process.send(senderPid, Event("send-error", "invalid-state", data))
             return
         try:
@@ -239,61 +89,13 @@ class TcpMessenger(ProcessBase):
                 raise ProcessExit("connection-reset")
             else:
                 raise
-    
-    def onChildExited(self, m, childPid, state):
-        if state.connectReceiver == childPid:
-            state.connectReceiver = None
-        if state.acceptReceiver == childPid:
-            state.acceptReceiver = None
-        if state.receiver == childPid:
-            self._closeConnection(state)
-            state.receiver = None
-    
-    def doDisconnect(self, m, state):
-        self._closeConnection(state)
 
     def _closeConnection(self, state):
-        if state.conn:
-            remoteAddr = state.remoteAddr
-            state.stream = None
+        try:
             state.protocol = None
             state.writer = None
-            state.receiver = None
-            # force threads blocked on recv (and send?) to return
-            try:
-                state.conn.shutdown(socket.SHUT_RDWR)
-            except socket.error as e:
-                if e.errno != os.errno.ENOTCONN:
-                    raise
-            except Exception:
-                state.logger.exception("conn.shutdown() failed")
-            # close the connection
-            try:
-                state.conn.close()
-            except Exception:
-                state.logger.exception("conn.close() failed")
-            state.conn = None
-            state.remoteAddr = None
-            wasDisconnected = (state.connState == TcpMessenger.CONNECTED)
-            state.connState = TcpMessenger.DISCONNECTED
-        else:
-            wasDisconnected = False
-        if wasDisconnected:
-            state.logger.info("Disconnected from %s." % repr(remoteAddr))
-            self.disconnected()
-    
-    def _closeServer(self, state):
-        if state.server:
-            # force threads blocked on accept() to return
-            try:
-                state.server.shutdown(socket.SHUT_RDWR)
-            except Exception:
-                state.logger.exception("server.shutdown() failed")
-            try:
-                state.server.close()
-            except Exception:
-                state.logger.exception("server.close() failed")
-            state.server = None
+        finally:
+            super(TcpMessenger, self)._closeConnection(state)
 
 class SocketWrapper(object):
     def __init__(self, sock):
