@@ -122,7 +122,7 @@ class Transfer(ProcessBase):
     def _closeTransfer(self, state):
         state.logger.info("Closing transfer.")
         self._closeFile(state)
-        raise ProcessExit()
+        Process.exit()
 
 class Upload(Transfer):
     direction = UPLOAD

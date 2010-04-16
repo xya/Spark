@@ -232,6 +232,7 @@ class FileInfoWidget(QWidget):
     def setTransferProgress(self, progress):
         if progress is not None:
             self.transferProgress.setValue(progress * 100.0)
+            #FIXME: UI thread getting stuck here
             self.transferProgress.show()
         else:
             self.transferProgress.hide()

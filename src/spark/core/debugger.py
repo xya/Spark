@@ -35,7 +35,7 @@ Process = None
 def enabled():
     return _enabled
 
-def start_watcher(pipe_name="watcher"):
+def start_watcher(pipe_name):
     global _thread, _enabled, Process
     if _thread is None:
         from spark.core.process import Process as _Process
@@ -45,7 +45,11 @@ def start_watcher(pipe_name="watcher"):
         _thread.daemon = True
         _thread.start()
 
-def launch_remote_debugger(*args):
+def launch_local(*args):
+    import pdb
+    pdb.set_trace()
+
+def launch_remote(*args):
     import rpdb2
     rpdb2.start_embedded_debugger("watcher")
 
@@ -71,21 +75,20 @@ def _entry(pipe_name):
 
 def _handle_command(line, log):
     from spark.core.process import Command
-    if line == "dump-threads":
+    if line == "threads":
         _dump_threads(log)
     elif line == "pdb":
-        import pdb
-        pdb.set_trace()
+        launch_local()
     elif line == "rpdb":
-        launch_remote_debugger()
+        launch_remote()
     elif line == "term":
         os.kill(os.getpid(), signal.SIGTERM)
     elif line == "kill":
         os.kill(os.getpid(), signal.SIGKILL)
-    elif re.match("^send-process \d+ .+$", line):
-        chunks = line.split(" ", 2)
+    elif re.match("^stop-process \d+$", line):
+        chunks = line.split(" ")
         pid = int(chunks[1])
-        Process.send(pid, eval(chunks[2]))
+        Process.send(pid, Command("stop"))
     elif re.match("^debug-process \d+$", line):
         chunks = line.split(" ")
         pid = int(chunks[1])
@@ -94,6 +97,8 @@ def _handle_command(line, log):
         chunks = line.split(" ")
         pid = int(chunks[1])
         Process.kill(pid)
+    else:
+        log.error("Unknown command %s", repr(line))
 
 def _dump_threads(log):
     currentID = threading.current_thread().ident

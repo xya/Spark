@@ -74,6 +74,7 @@ class FileSharingSession(Service):
             Notification("file-added", None),
             Notification("file-removed", basestring),
             Notification("transfer-state-changed", int, basestring))
+        loop.addPattern(Block, self._blockReceived)
     
     def cleanup(self, state):
         try:
@@ -202,6 +203,11 @@ class FileSharingSession(Service):
         transfer = state.transferTable.find(transferID, UPLOAD)
         if transfer:
             Process.send(transfer.pid, Command("start-upload", state.messenger.pid))
+    
+    def _blockReceived(self, b, state):
+         transfer = state.transferTable.find(b.transferID, DOWNLOAD)
+         if transfer:
+            Process.send(transfer.pid, b)
     
     def doStopTransfer(self, m, fileID, state):
         """ Stop receiving the remote file with the given ID. """

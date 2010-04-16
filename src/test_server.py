@@ -59,7 +59,7 @@ class MainProcess(ProcessBase):
         state.app.addFile("/home/xya/I'm a lagger.mp3")
     
     def _disconnected(self, state):
-        raise ProcessExit()
+        Process.exit()
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

@@ -63,7 +63,7 @@ class MainProcess(ProcessBase):
         pass
     
     def _connectionError(self, state, e):
-        raise ProcessExit(("connection-error", e))
+        Process.exit(("connection-error", e))
     
     def _fileListUpdated(self, state):
         if not state.startedTransfer:
@@ -77,7 +77,7 @@ class MainProcess(ProcessBase):
             state.app.disconnect()
 
     def _disconnected(self, state):
-        raise ProcessExit()
+        Process.exit()
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

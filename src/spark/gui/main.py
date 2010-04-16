@@ -115,10 +115,10 @@ class MainWindow(QMainWindow):
         self.myIP = QLabel(self.statusBar())
         self.transferCount = QLabel(self.statusBar())
         self.uploadSpeedIcon = QLabel(self.statusBar())
-        self.uploadSpeedIcon.setPixmap(QPixmap(iconPath("actions/up", 24)))
+        self.uploadSpeedIcon.setPixmap(QPixmap(iconPath("actions/go-up", 24)))
         self.uploadSpeedText = QLabel(self.statusBar())
         self.downloadSpeedIcon = QLabel(self.statusBar())
-        self.downloadSpeedIcon.setPixmap(QPixmap(iconPath("actions/down", 24)))
+        self.downloadSpeedIcon.setPixmap(QPixmap(iconPath("actions/go-down", 24)))
         self.downloadSpeedText = QLabel(self.statusBar())
         self.statusBar().addWidget(self.connStatus)
         self.statusBar().addWidget(self.myIP, 2)
@@ -210,7 +210,7 @@ class MainWindow(QMainWindow):
                 transferTime = "%s in %s (%s)" % (state,
                     formatDuration(file.transfer.totalSeconds), averageSpeed)
             else:
-                transferSize = "%s %s out of %s (%.1f%%)" % (state,
+                transferSize = "%s / %s (%.1f%%)" % (
                     formatSize(file.transfer.completedSize),
                     formatSize(file.transfer.originalSize),
                     file.transfer.progress * 100.0)

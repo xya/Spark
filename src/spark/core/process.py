@@ -252,6 +252,13 @@ class Process(object):
         return True
     
     @classmethod
+    def exit(cls, reason=None):
+        """ Stop the current process. This raises the ProcessExit exception.
+        If reason is None the exit is graceful.
+        To indicate an error pass a reason other than None."""
+        raise ProcessExit(reason)
+    
+    @classmethod
     def _to_pid(cls, pid):
         if hasattr(pid, "pid"):
             return pid.pid
@@ -555,7 +562,8 @@ class ProcessBase(object):
         """ Initialize the patterns used by the message loop. """
         loop.addPattern(Command("stop"), result=False)
         if debugger.enabled():
-            loop.addPattern(Command("rpdb"), debugger.launch_remote_debugger)
+            loop.addPattern(Command("rpdb"), debugger.launch_remote)
+            loop.addPattern(Command("pdb"), debugger.launch_local)
     
     def onStart(self, state):
         """ Called just before the process enters its message loop. """
@@ -564,7 +572,7 @@ class ProcessBase(object):
     def handleMessage(self, message, state):
         """ Handle a message that was sent to the process. """
         if not state.matcher.match(message, state):
-            raise ProcessExit()
+            Process.exit()
     
     def run(self):
         """ Run the process. This method blocks until the process has finished executing. """

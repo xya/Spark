@@ -239,6 +239,7 @@ class TcpReceiver(ProcessBase):
         except socket.error as e:
             state.logger.error("Error while connecting: %s.", str(e))
             Process.send(senderPid, Event("connection-error", e))
+            Process.exit()
         else:
             state.conn = conn
             self.confirmConnection(state)
@@ -254,12 +255,11 @@ class TcpReceiver(ProcessBase):
         try:
             state.conn, state.remoteAddr = server.accept()
         except socket.error as e:
-            if e.errno == os.errno.EINVAL:
-                # shutdown
-                return
-            else:
+            # EINVAL error happens when shutdown() is called while waiting on accept()
+            if e.errno != os.errno.EINVAL:
                 state.logger.error("Error while accepting: %s.", str(e))
                 Process.send(senderPid, Event("accept-error", e))
+            Process.exit()
         else:
             self.confirmConnection(state)
     
@@ -272,7 +272,7 @@ class TcpReceiver(ProcessBase):
         """ The connection has to be dropped (TcpSocket is connected using another socket). """
         TcpSocket.closeSocket(state.conn, state.logger)
         state.conn = None
-        raise ProcessExit()
+        Process.exit()
     
     def onConnected(self, m, state):
         pass

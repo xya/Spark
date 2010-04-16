@@ -77,7 +77,7 @@ class TcpMessenger(TcpSocket):
             state.logger.error("Error while sending: %s.", str(e))
             if e.errno == os.errno.EPIPE:
                 # the remote peer reset the connection
-                raise ProcessExit("connection-reset")
+               Process.exit("connection-reset")
             else:
                 raise
 
@@ -118,7 +118,7 @@ class TcpMessageReceiver(TcpReceiver):
             while True:
                 rm = state.reader.read()
                 if rm is None:
-                    raise ProcessExit()
+                    Process.exit()
                 self.deliverRemoteMessage(rm, state)
                 # check if the process has received any message while receiving from the socket
                 ok, lm = Process.try_receive()
@@ -127,7 +127,7 @@ class TcpMessageReceiver(TcpReceiver):
         except socket.error as e:
             state.logger.error("Error while receiving: %s.", str(e))
             if e.errno == os.errno.ECONNRESET:
-                raise ProcessExit("connection-reset")
+                Process.exit("connection-reset")
             else:
                 raise
     

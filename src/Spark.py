@@ -86,7 +86,7 @@ if __name__ == "__main__":
         bindAddr = ("0.0.0.0", 4550)
     qtapp = QApplication(sys.argv)
     logging.basicConfig(level=logging.DEBUG)
-    watch_pipe_name = "watcher_%s_%d" % bindAddr
+    watch_pipe_name = "/tmp/spark_watcher_%s_%d" % bindAddr
     debugger.start_watcher(watch_pipe_name)
     with GuiProcess() as pid:
         with SparkApplication() as app:
