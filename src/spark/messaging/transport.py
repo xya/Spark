@@ -27,6 +27,7 @@ from spark.messaging.messages import *
 __all__ = ["TcpMessenger", "Service"]
 
 class TcpMessenger(TcpSocket):
+    """ Process that can send and receive messages using a socket. """
     def __init__(self):
         super(TcpMessenger, self).__init__()
         self.protocolNegociated = EventSender("protocol-negociated", basestring)
@@ -77,7 +78,7 @@ class TcpMessenger(TcpSocket):
                 raise
     
     def doSend(self, m, data, senderPid, state):
-        if (state.connState != TcpSocket.CONNECTED) or state.protocol is None:
+        if not state.isConnected or state.writer is None:
             Process.send(senderPid, Event("send-error", "invalid-state", data))
             return
         try:
@@ -174,12 +175,12 @@ class Service(ProcessBase):
             state.messenger.accept()
     
     def doConnect(self, m, remoteAddr, state):
-        state.messenger.connect(remoteAddr)
+        state.messenger.connect(remoteAddr, socket.AF_INET)
     
     def doBind(self, m, bindAddr, state):
         if not state.bindAddr:
             state.bindAddr = bindAddr
-            state.messenger.listen(state.bindAddr)
+            state.messenger.listen(state.bindAddr, socket.AF_INET)
     
     def doDisconnect(self, m, state):
         state.messenger.disconnect()

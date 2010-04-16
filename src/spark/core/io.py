@@ -25,26 +25,22 @@ from spark.core import *
 __all__ = ["TcpSocket"]
 
 class TcpSocket(ProcessBase):
-    # The messenger is not connected to any peer.
-    DISCONNECTED = 0
-    # The messenger is connected to a peer.
-    CONNECTED = 1
-    
+    """ Base class for processes that can communicate using sockets. """
     def __init__(self):
         super(TcpSocket, self).__init__()
         self.listening = EventSender("listening", None)
         self.connected = EventSender("connected", None)
         self.disconnected = EventSender("disconnected")
     
-    def connect(self, addr, senderPid=None):
+    def connect(self, addr, family=socket.AF_INET, senderPid=None):
         if not senderPid:
             senderPid = Process.current()
-        Process.send(self.pid, Command("connect", addr, senderPid))
+        Process.send(self.pid, Command("connect", addr, family, senderPid))
     
-    def listen(self, addr, senderPid=None):
+    def listen(self, addr, family=socket.AF_INET, senderPid=None):
         if not senderPid:
             senderPid = Process.current()
-        Process.send(self.pid, Command("listen", addr, senderPid))
+        Process.send(self.pid, Command("listen", addr, family, senderPid))
     
     def accept(self, senderPid=None):
         if not senderPid:
@@ -56,7 +52,7 @@ class TcpSocket(ProcessBase):
 
     def initState(self, state):
         super(TcpSocket, self).initState(state)
-        state.connState = TcpSocket.DISCONNECTED
+        state.isConnected = False
         state.server = None
         state.conn = None
         state.remoteAddr = None
@@ -68,8 +64,8 @@ class TcpSocket(ProcessBase):
         super(TcpSocket, self).initPatterns(loop, state)
         loop.addHandlers(self,
             # public messages
-            Command("connect", None, int),
-            Command("listen", None, int),
+            Command("connect", None, int, int),
+            Command("listen", None, int, int),
             Command("accept", int),
             Command("disconnect"),
             # internal messages
@@ -92,11 +88,14 @@ class TcpSocket(ProcessBase):
                 Process.try_send(messengerPid, Event("child-exited", Process.current()))
         return wrapper
     
-    def doListen(self, m, bindAddr, senderPid, state):
-        if state.server:
+    def doListen(self, m, bindAddr, family, senderPid, state):
+        if (family != socket.AF_INET) and (family != socket.AF_INET6):
+            Process.send(senderPid, Event("listen-error", "invalid-family"))
+            return
+        elif state.server:
             Process.send(senderPid, Event("listen-error", "invalid-state"))
             return
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
+        server = socket.socket(family, socket.SOCK_STREAM, socket.IPPROTO_TCP)
         try:
             state.logger.info("Listening to incoming connections on %s.", repr(m[2]))
             server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -113,7 +112,7 @@ class TcpSocket(ProcessBase):
         if state.acceptReceiver:
             # we are already waiting for an incoming connection
             return
-        elif (state.connState != TcpSocket.DISCONNECTED) or not state.server:
+        elif state.isConnected or not state.server:
             Process.send(senderPid, Event("accept-error", "invalid-state"))
             return
         entry = self._childWrapper(self._waitForAccept)
@@ -135,18 +134,24 @@ class TcpSocket(ProcessBase):
         else:
             self.childConfirmConnection(conn, remoteAddr, False, senderPid, messengerPid)
 
-    def doConnect(self, m, remoteAddr, senderPid, state):
-        if (state.connState != TcpSocket.DISCONNECTED) or state.connectReceiver:
+    def doConnect(self, m, remoteAddr, family, senderPid, state):
+        if (family != socket.AF_INET) and (family != socket.AF_INET6):
+            Process.send(senderPid, Event("connection-error", "invalid-family"))
+            return
+        elif state.isConnected or state.connectReceiver:
             Process.send(senderPid, Event("connection-error", "invalid-state"))
             return
         entry = self._childWrapper(self._waitForConnect)
-        args = (remoteAddr, senderPid, Process.current())
+        args = (remoteAddr, family, senderPid, Process.current())
         state.connectReceiver = Process.spawn_linked(entry, args, "TcpClient")
     
-    def _waitForConnect(self, remoteAddr, senderPid, messengerPid):
+    def _waitForConnect(self, remoteAddr, family, senderPid, messengerPid):
         log = Process.logger()
-        conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
-        conn.bind(("0.0.0.0", 0))
+        conn = socket.socket(family, socket.SOCK_STREAM, socket.IPPROTO_TCP)
+        if family == socket.AF_INET6:
+            conn.bind(("::0", 0))
+        else:
+            conn.bind(("0.0.0.0", 0))
         log.info("Connecting to %s.", repr(remoteAddr))
         try:
             conn.connect(remoteAddr)
@@ -167,7 +172,7 @@ class TcpSocket(ProcessBase):
         else:
             # we're connected, update the process' state
             state.logger.info("Connected to %s.", repr(remoteAddr))
-            state.connState = TcpSocket.CONNECTED
+            state.isConnected = True
             state.conn = conn
             state.remoteAddr = remoteAddr
             state.receiver = receiver
@@ -207,7 +212,6 @@ class TcpSocket(ProcessBase):
 
     def _closeConnection(self, state):
         if state.conn:
-            remoteAddr = state.remoteAddr
             state.receiver = None
             # force threads blocked on recv (and send?) to return
             try:
@@ -223,12 +227,11 @@ class TcpSocket(ProcessBase):
             except Exception:
                 state.logger.exception("conn.close() failed")
             state.conn = None
-            state.remoteAddr = None
-            wasDisconnected = (state.connState == TcpSocket.CONNECTED)
-            state.connState = TcpSocket.DISCONNECTED
+            remoteAddr, state.remoteAddr = state.remoteAddr, None
+            wasConnected, state.isConnected = state.isConnected, False
         else:
-            wasDisconnected = False
-        if wasDisconnected:
+            wasConnected = False
+        if wasConnected:
             state.logger.info("Disconnected from %s." % repr(remoteAddr))
             self.disconnected()
     
