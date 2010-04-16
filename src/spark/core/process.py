@@ -24,6 +24,7 @@ from collections import Sequence, Mapping
 import threading
 import logging
 from spark.core.queue import BlockingQueue, QueueClosedError
+from spark.core import debugger
 
 __all__ = ["Process", "ProcessState", "ProcessBase", "ProcessExit", "ProcessExited", "ProcessKilled",
            "ProcessNotifier", "Command", "Event", "EventSender", "match", "PatternMatcher"]
@@ -483,13 +484,6 @@ class PatternMatcher(object):
         else:
             raise TypeError("pattern should be a message (sequence starting with two strings)")
     
-    def addForwarding(self, pattern, pid, result=True):
-        """ Add a pattern to match messages. When a message matches the pattern,
-        it is forwarded to the specified process. """
-        def forward(m, args):
-            Process.send(pid, m)
-        self.addPattern(pattern, forward, result)
-    
     def suscribeTo(self, sender, callable=None, result=True):
         """ Suscribe to an event after adding its pattern to the list. """
         self.addPattern(sender.pattern, callable, result)
@@ -560,6 +554,8 @@ class ProcessBase(object):
     def initPatterns(self, loop, state):
         """ Initialize the patterns used by the message loop. """
         loop.addPattern(Command("stop"), result=False)
+        if debugger.enabled():
+            loop.addPattern(Command("rpdb"), debugger.launch_remote_debugger)
     
     def onStart(self, state):
         """ Called just before the process enters its message loop. """

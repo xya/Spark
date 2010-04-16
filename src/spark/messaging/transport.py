@@ -46,6 +46,7 @@ class TcpMessenger(TcpSocket):
         super(TcpMessenger, self).initPatterns(loop, state)
         loop.addHandlers(self,
             Command("send", None, int),
+            Command("add-recipient", None, int),
             Event("protocol-negociated", basestring))
     
     def createReceiver(self, state):
@@ -56,6 +57,15 @@ class TcpMessenger(TcpSocket):
         state.protocol = protocol
         state.writer = messageWriter(stream, protocol)
         self.protocolNegociated(protocol)
+    
+    def addRecipient(self, pattern, pid):
+        """ Add a recipient to the message delivery table.
+        All messages matching the pattern will be sent to the process 'pid'. """
+        Process.send(self.pid, Command("add-recipient", pattern, pid))
+    
+    def doAddRecipient(self, m, pattern, pid, state):
+        if state.receiver:
+            Process.send(state.receiver.pid, m)
     
     def doSend(self, m, data, senderPid, state):
         if not state.isConnected or state.writer is None:
@@ -85,17 +95,35 @@ class TcpMessageReceiver(TcpReceiver):
     def initState(self, state):
         super(TcpMessageReceiver, self).initState(state)
         state.reader = None
-        
+        state.routes = None
+    
+    def initPatterns(self, loop, state):
+        super(TcpMessageReceiver, self).initPatterns(loop, state)
+        loop.addHandlers(self,
+            Command("add-recipient", None, int))    
+    
     def onConnected(self, m, state):
         # negociate the protocol to use for formatting messages
         stream = SocketWrapper(state.conn)
         name = negociateProtocol(stream, state.initiating)
         state.logger.info("Negociated protocol '%s'.", name)
         Process.send(state.messengerPid, Event("protocol-negociated", name))
-        # start receiving messages
         state.reader = messageReader(stream, name)
+        # start receiving messages
+        self.receiveMessages(state)
+    
+    def receiveMessages(self, state):
+        state.routes = []
         try:
-            self.receiveMessages(state)
+            while True:
+                rm = state.reader.read()
+                if rm is None:
+                    raise ProcessExit()
+                self.deliverRemoteMessage(rm, state)
+                # check if the process has received any message while receiving from the socket
+                ok, lm = Process.try_receive()
+                if ok:
+                    self.handleMessage(lm, state)
         except socket.error as e:
             state.logger.error("Error while receiving: %s.", str(e))
             if e.errno == os.errno.ECONNRESET:
@@ -103,13 +131,20 @@ class TcpMessageReceiver(TcpReceiver):
             else:
                 raise
     
-    def receiveMessages(self, state):
-        while True:
-            m = state.reader.read()
-            if m is None:
-                raise ProcessExit()
-            else:
-                Process.send(state.senderPid, m)
+    def deliverRemoteMessage(self, m, state):
+        """ Deliver the message we received from the socket to the right recipient. """
+        recipient = state.senderPid
+        if state.routes:
+            for pattern, pid in state.routes:
+                 if match(pattern, m):
+                    recipient = pid
+                    break
+        Process.send(recipient, m)
+    
+    def doAddRecipient(self, m, pattern, pid, state):
+        """ Add a recipient to the message delivery table.
+        All messages matching the pattern will be sent to the process 'pid'. """
+        state.routes.insert(0, (pattern, pid))
 
 class SocketWrapper(object):
     def __init__(self, sock):

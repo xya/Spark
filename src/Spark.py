@@ -27,7 +27,7 @@ from PyQt4.QtGui import QApplication
 from spark.gui.main import MainWindow
 from spark.fileshare import SparkApplication
 from spark.core import Process, PatternMatcher
-from spark import watcher
+from spark.core import debugger
 
 class GuiProcess(QObject):
     def __init__(self, logMessages=False):
@@ -83,10 +83,11 @@ if __name__ == "__main__":
         chunks = sys.argv[1].split(":")
         bindAddr = (chunks[0], int(chunks[1]))
     else:
-        bindAddr = None
+        bindAddr = ("0.0.0.0", 4550)
     qtapp = QApplication(sys.argv)
     logging.basicConfig(level=logging.DEBUG)
-    watcher.start_watcher()
+    watch_pipe_name = "watcher_%s_%d" % bindAddr
+    debugger.start_watcher(watch_pipe_name)
     with GuiProcess() as pid:
         with SparkApplication() as app:
             app.start()

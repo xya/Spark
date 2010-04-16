@@ -192,8 +192,8 @@ class Download(Transfer):
         """ Initialize the patterns used by the message loop. """
         super(Download, self).initPatterns(loop, state)
         loop.addHandlers(self,
-            Event("remote-state-changed", basestring),
-            Event("block-received", Block))
+            Event("remote-state-changed", basestring))
+        loop.addPattern(Block, self._blockReceived)
     
     def doInitTransfer(self, m, transferID, direction, file, sessionPid, state):
         state.logger.info("Initializing download of file %s.", repr((file.ID, direction)))
@@ -213,7 +213,7 @@ class Download(Transfer):
         elif transferState == "closed":
             self._closeTransfer(state)
     
-    def onBlockReceived(self, m, b, state):
+    def _blockReceived(self, b, state):
         blockID = b.blockID
         if (not state.blockTable[blockID]) and (blockID < state.totalBlocks):
             fileOffset = blockID * state.blockSize
