@@ -1,40 +1,19 @@
-# Maintainer: Pierre-Andre Saulais <pasaulais@free.fr>
-pkgname=spark-git
-pkgver=20100417
+# Maintainer: Pierre-André Saulais <pasaulais@free.fr>
+pkgname=spark
+pkgver=0.0.2
 pkgrel=1
 pkgdesc="Simple file-transfer tool"
 arch=(any)
 url="http://pasaulais.free.fr/spark"
 license=('GPL')
 depends=('python>=2.6' 'pyqt>=4')
-makedepends=()
+makedepends=('python>=2.6')
 provides=('spark')
 conflicts=('spark')
-source=('http://pasaulais.free.fr/spark/icons.tar.gz')
-md5sums=('6f6357c7e0b8f934cc9a8db08690864b')
-
-_gitroot="git://github.com/xya/Spark.git"
-_gitname="spark"
+source=("http://pasaulais.free.fr/spark/src/Spark-$pkgver.tar.gz")
+md5sums=('d74ba83f25b9739655f92a07c91a8c91')
 
 build() {
-    cd "$srcdir"
-    msg "Connecting to GIT server...."
-    if [ -d $_gitname ]; then
-        cd $_gitname && git pull origin master
-        msg "The local files are updated."
-    else
-        git clone $_gitroot $_gitname
-        cd $_gitname
-    fi
-    
-    msg "GIT checkout done or server timeout"
-    msg "Starting make..."
-    
-    if [ ! -x "$srcdir/spark/icons" ]; then
-        ln -s "$srcdir/icons" "$srcdir/spark/icons"
-    fi
-    
-    python "$srcdir/$_gitname/build/linux/setup.py" install     \
-        --root="$pkgdir/" --install-data=/usr/share/spark       \
-        --optimize=1 || return 1
+    cd "$srcdir/Spark-$pkgver"
+    python setup.py install --root="$pkgdir/" --install-data=/usr/share/spark --optimize=1 || return 1
 }
