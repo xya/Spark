@@ -37,6 +37,9 @@ class CustomInstall(install):
         dir_util.mkpath(self.install_scripts)
         if not os.path.islink(symlink):
             os.symlink(source, symlink)
+        # make it executable
+        actual = os.path.join(self.install_purelib, "spark", "start_gui.py")
+        os.chmod(actual, 0o755)
 
 def dir_to_data_files(path):
     """ Enumerate a directory's files and return the list in 'data_files' format. """
@@ -48,8 +51,7 @@ data_files = []
 for dir in data_dirs:
     data_files.extend(dir_to_data_files(dir))
 
-setup(
-    name='Spark',
+setup(name='Spark',
     version='0.0.2',
     description='Simple file-transfer tool',
     license='GPL',
@@ -64,5 +66,5 @@ setup(
               'spark.tests'],
     data_files=data_files,
     package_dir = {'': 'src'},
-    cmdclass={"install": CustomInstall}
-)
+    cmdclass={"install": CustomInstall},
+    script_name=__file__)

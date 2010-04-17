@@ -9,6 +9,7 @@ license=('GPL')
 depends=('python>=2.6' 'pyqt>=4')
 makedepends=()
 provides=('spark')
+conflicts=('spark')
 source=('http://pasaulais.free.fr/spark/icons.tar.gz')
 md5sums=('6f6357c7e0b8f934cc9a8db08690864b')
 
