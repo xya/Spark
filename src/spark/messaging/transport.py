@@ -126,7 +126,7 @@ class TcpMessageReceiver(TcpReceiver):
                 if ok:
                     self.handleMessage(lm, state)
         except socket.error as e:
-             if e.errno == 10058:
+            if e.errno == 10058:
                 # shutdown() was called while waiting on recv()
                 Process.exit()
             else:
