@@ -35,7 +35,18 @@ class CustomInstall(install):
         source = os.path.join(deploy_purelib, "spark", "start_gui.py")
         symlink = os.path.join(self.install_scripts, "spark")
         dir_util.mkpath(self.install_scripts)
-        os.symlink(source, symlink)
+        if not os.path.islink(symlink):
+            os.symlink(source, symlink)
+
+def dir_to_data_files(path):
+    """ Enumerate a directory's files and return the list in 'data_files' format. """
+    return [(root, [os.path.join(root, file) for file in files])
+             for root, dirs, files in os.walk(path) if not dirs and files]
+
+data_dirs = ["icons"]
+data_files = []
+for dir in data_dirs:
+    data_files.extend(dir_to_data_files(dir))
 
 setup(
     name='Spark',
@@ -51,6 +62,7 @@ setup(
               'spark.gui',
               'spark.messaging',
               'spark.tests'],
+    data_files=data_files,
     package_dir = {'': 'src'},
     cmdclass={"install": CustomInstall}
 )

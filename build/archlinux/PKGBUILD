@@ -23,16 +23,17 @@ build() {
         msg "The local files are updated."
     else
         git clone $_gitroot $_gitname
+        cd $_gitname
     fi
     
     msg "GIT checkout done or server timeout"
     msg "Starting make..."
     
-    python "$srcdir/$_gitname/build/linux/setup.py" install --root="$pkgdir/" --install-data=/usr/share/spark --optimize=1 || return 1
-    install -d -D "$pkgdir/usr/share/spark/icons"
-    cd "$srcdir/icons"
-    find . -type f | sed 's/.\///' | while read path
-    do
-        install -D -m644 "$srcdir/icons/$path" "$pkgdir/usr/share/spark/icons/$path"
-    done
+    if [ ! -x "$srcdir/spark/icons" ]; then
+        ln -s "$srcdir/icons" "$srcdir/spark/icons"
+    fi
+    
+    python "$srcdir/$_gitname/build/linux/setup.py" install     \
+        --root="$pkgdir/" --install-data=/usr/share/spark       \
+        --optimize=1 || return 1
 }
