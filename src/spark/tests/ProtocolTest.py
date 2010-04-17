@@ -19,6 +19,7 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+from __future__ import absolute_import
 import unittest
 import copy
 import sys
@@ -26,7 +27,10 @@ import os
 from spark.core import Future, TaskFailedError, Process
 from spark.messaging import *
 from spark.tests.common import run_tests, processTimeout, assertMatch
-from StringIO import StringIO
+try:
+	from io import BytesIO
+except ImportError:
+    from StringIO import StringIO as BytesIO
 
 TestFile = os.path.join(os.path.dirname(__file__), 'ProtocolTest.log')
 TestText = """0025 > list-files 0 [{"register": true}]
@@ -89,13 +93,13 @@ class ProtocolTest(unittest.TestCase):
     
     def testParseTextString(self):
         """ Ensure that messageReader() can read messages from a text string """
-        p = messageReader(StringIO(TestText))
+        p = messageReader(BytesIO(TestText))
         actualItems = self.readAllMessages(p)
         self.assertSeqsEqual(TestItems, actualItems)
     
     def testParseTextFile(self):
         """ Ensure that messageReader() can read messages from a text file """
-        with open(TestFile, "r") as f:
+        with open(TestFile, "rb") as f:
             p = messageReader(f)
             actualItems = self.readAllMessages(p)
             self.assertSeqsEqual(TestItems, actualItems)
@@ -104,14 +108,14 @@ class ProtocolTest(unittest.TestCase):
         """ Ensure that messages written by messageWriter() can be read by messageReader() """
         # first individual messages
         for item in TestItems:
-            f = StringIO()
+            f = BytesIO()
             messageWriter(f).write(item)
             f.seek(0)
             actual = messageReader(f).read()
             self.assertMessagesEqual(item, actual)
         
         # then a stream of messages
-        f =  StringIO()
+        f =  BytesIO()
         writer = messageWriter(f)
         for item in TestItems:
             writer.write(item)

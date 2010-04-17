@@ -63,7 +63,7 @@ class MessageReader(object):
                 return self.parse(data.lstrip())
     
     def parse(self, data):
-        if unicode(data[0]) == u'\x00':
+        if data[0] == '\x00':
             return self.parseBlob(data)
         else:
             return self.parseTextMessage(data.rstrip())
@@ -74,7 +74,7 @@ class MessageReader(object):
             raise ValueError("Invalid number of elements (expected 4, got %i)" % len(elems))
         else:
             type, tag, transID, params = elems
-        if not self.textTypes.has_key(type):
+        if not type in self.textTypes:
             raise ValueError("Unknown type '%s'" % type)
         jsonParams, endIndex = self.jsonDecoder.raw_decode(params)
         intTransID = int(transID)

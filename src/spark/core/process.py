@@ -41,6 +41,7 @@ class Process(object):
         self.name = name
         self.queue = BlockingQueue(64)
         self.thread = None
+        self.state = None
         self.logger = None
         self.linked = set()
     
@@ -282,6 +283,10 @@ class Process(object):
     @classmethod
     def _set_current_process(cls, pid):
         cls._current.p = cls._processes[pid]
+    
+    @classmethod
+    def _set_state(cls, state):
+        cls._current.p.state = state
     
     @classmethod
     def _remove_current_process(cls, current_pid):
@@ -577,6 +582,8 @@ class ProcessBase(object):
     def run(self):
         """ Run the process. This method blocks until the process has finished executing. """
         state = ProcessState()
+        #HACK: make this better at some point
+        Process._set_state(state)
         self.initState(state)
         try:
             state.matcher = PatternMatcher()

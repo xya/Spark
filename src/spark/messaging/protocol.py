@@ -46,7 +46,7 @@ def negociateProtocol(f, initiating):
     """
     return Negociator(f).negociate(initiating)
 
-class NegociationError(StandardError):
+class NegociationError(Exception):
     """ Exception raised when protocol negociation fails. """
     pass
 

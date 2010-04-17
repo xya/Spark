@@ -49,7 +49,9 @@ SecInMinute = 60.0
 SecInHour = 60.0 * 60.0
 SecInDay = 60.0 * 60.0 * 24.0
 def formatDuration(seconds):
-    if seconds < 1.0:
+    if seconds is None:
+        return "n/a"
+    elif seconds < 1.0:
         return "<1 second"
     elif seconds < SecInMinute:
         return "%d seconds" % int(seconds)
@@ -152,7 +154,7 @@ class SharedFile(object):
     def completion(self, origin):
         """ Indicate how complete a copy is compared to the original. """
         if self.size > 0:
-            return self.completedSize(origin) / self.size
+            return float(self.completedSize(origin)) / float(self.size)
         else:
             return 1.0
 

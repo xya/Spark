@@ -75,7 +75,8 @@ class TcpMessenger(TcpSocket):
             state.writer.write(data)
         except socket.error as e:
             state.logger.error("Error while sending: %s.", str(e))
-            if e.errno == os.errno.EPIPE:
+            #TODO: constants for Winsock errors
+            if (e.errno == os.errno.EPIPE) or (e.errno == 10053):
                 # the remote peer reset the connection
                Process.exit("connection-reset")
             else:

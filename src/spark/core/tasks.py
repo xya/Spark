@@ -18,13 +18,17 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+from __future__ import absolute_import
 import types
 import threading
 
 # Support for poor man's exception chaining with Python 2.x
 import sys
 import traceback
-from cStringIO import StringIO
+try:
+	from io import StringIO
+except ImportError:
+    from StringIO import StringIO
 
 __all__ = ["Future", "FutureFrozenError", "TaskError", "TaskFailedError", "TaskCanceledError",
            "WaitTimeoutError", "Delegate", "threadedMethod", "coroutine"]
@@ -131,7 +135,7 @@ class Future(object):
             elif isinstance(result, BaseException):
                 raise result
             else:
-                raise StandardError("The task failed for an unknown reason")
+                raise Exception("The task failed for an unknown reason")
     
     @property
     def result(self):
@@ -254,15 +258,15 @@ class Future(object):
             # the task succeeded, send the result to the coroutine
             self._coroutine_send(coroutine, result)
 
-class FutureFrozenError(StandardError):
+class FutureFrozenError(Exception):
     """ Exception raised when one tries to call completed() or failed() twice on a future. """
     pass
 
-class WaitTimeoutError(StandardError):
+class WaitTimeoutError(Exception):
     """ Exception raised when the timeout for wait() elapsed and the task isn't finished. """
     pass
 
-class TaskError(StandardError):
+class TaskError(Exception):
     """ Base class for errors related to Future tasks. """
     pass
 
@@ -336,7 +340,7 @@ class Delegate(object):
         return self
     
     def __isub__(self, callback):
-        if callable(callback):
+        if hasattr(callback, "__call__"):
             with self.__lock:
                 for i in range(len(self.__delegates) - 1, -1, -1):
                     if self.__delegates[i] == callback:
