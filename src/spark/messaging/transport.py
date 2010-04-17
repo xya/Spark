@@ -126,11 +126,15 @@ class TcpMessageReceiver(TcpReceiver):
                 if ok:
                     self.handleMessage(lm, state)
         except socket.error as e:
-            state.logger.error("Error while receiving: %s.", str(e))
-            if e.errno == os.errno.ECONNRESET:
-                Process.exit("connection-reset")
+             if e.errno == 10058:
+                # shutdown() was called while waiting on recv()
+                Process.exit()
             else:
-                raise
+                state.logger.error("Error while receiving: %s.", str(e))
+                if e.errno == os.errno.ECONNRESET:
+                     Process.exit("connection-reset")
+                else:
+                     raise
     
     def deliverRemoteMessage(self, m, state):
         """ Deliver the message we received from the socket to the right recipient. """
