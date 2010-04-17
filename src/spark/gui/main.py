@@ -262,7 +262,7 @@ class MainWindow(QMainWindow):
         files = QFileDialog.getOpenFileNames(self, "Choose a file to open", dir, "All files (*.*)")
         if files.count() > 0:
             for file in files:
-                self.app.addFile(str(file))
+                self.app.addFile(unicode(file))
     
     def action_remove(self):
         if self.selectedID is not None:
