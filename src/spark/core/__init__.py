@@ -21,9 +21,10 @@
 # TODO: refactor this
 from spark.core.tasks import *
 from spark.core.queue import *
+from spark.core.debugger import *
 from spark.core.process import *
 from spark.core.io import *
 
 __all__ = []
-for module in (tasks, queue, process, io):
+for module in (tasks, queue, debugger, process, io):
     __all__.extend(module.__all__)

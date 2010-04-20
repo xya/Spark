@@ -28,6 +28,8 @@ import threading
 import sys
 import traceback
 
+__all__ = ['enabled', 'start_watcher', 'launch_local', 'launch_remote']
+
 _enabled = False
 _thread = None
 Process = None
