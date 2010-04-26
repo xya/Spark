@@ -1730,6 +1730,72 @@ end{verbatim}
 \end_layout
 
 \begin_layout Section
+Threading and execution flow
+\end_layout
+
+\begin_layout Standard
+Approaches used to solve the design problem:
+\end_layout
+
+\begin_layout Enumerate
+threads + blocking queues
+\end_layout
+
+\begin_layout Enumerate
+futures + reactors + fake coroutines (using generators)
+\end_layout
+
+\begin_layout Enumerate
+proper coroutines (using Stackless Python)
+\end_layout
+
+\begin_layout Enumerate
+API to abstract the execution flow of I/O operations (Erlang-like model)
+\end_layout
+
+\begin_deeper
+\begin_layout Enumerate
+an implementation with threads and blocking queues
+\end_layout
+
+\begin_layout Enumerate
+another implementation using Stackless Python, tasklets and channels
+\end_layout
+
+\end_deeper
+\begin_layout Standard
+Problems with using futures for all asynchronous ops:
+\end_layout
+
+\begin_layout Itemize
+no 
+\begin_inset Quotes eld
+\end_inset
+
+continuity
+\begin_inset Quotes erd
+\end_inset
+
+ of code because of callbacks
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Quotes eld
+\end_inset
+
+fake coroutines
+\begin_inset Quotes erd
+\end_inset
+
+ using generators don't scale (dividing coroutines into sub-routines is
+ a pain)
+\end_layout
+
+\begin_layout Itemize
+operations are nested, so exception tracebacks become unbearably large
+\end_layout
+
+\begin_layout Section
 GUI prototype
 \end_layout
 
