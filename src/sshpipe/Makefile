@@ -4,10 +4,10 @@ OBJECTS = common.o client.o server.o
 all: $(TARGET)
 	
 $(TARGET): $(OBJECTS)
-	gcc -o $@ -l ssh $(OBJECTS)
+	gcc -o $@ -l ssh -ggdb $(OBJECTS)
 
 %.o: %.c
-	gcc -c -o $@ $<
+	gcc -c  -ggdb -o $@ $<
 
 clean:
 	rm -f $(TARGET) $(OBJECTS)

@@ -30,14 +30,12 @@
 // When the connection is established, read data from stdin and send it to the server.
 void client_pipe(char *host, int port)
 {
-    SSH_OPTIONS *opt = ssh_options_new();
-    ssh_options_set_host(opt, host);
-    ssh_options_set_port(opt, port);
-    ssh_options_set_username(opt, "xya");
-    
-    SSH_SESSION *s = ssh_new();
-    ssh_set_options(s, opt);
-    if(ssh_connect(s) < 0)
+    ssh_session s = ssh_new();
+    ssh_options_set(s, SSH_OPTIONS_HOST, host);
+    ssh_options_set(s, SSH_OPTIONS_PORT, &port);
+    ssh_options_set(s, SSH_OPTIONS_USER, "xya");
+    ssh_options_set(s, SSH_OPTIONS_LOG_VERBOSITY_STR, "5");
+    if(ssh_connect(s) != SSH_OK)
         return session_error(s, "connect");
     
     char *hash = pubkey_hash(ssh_get_pubkey(s));

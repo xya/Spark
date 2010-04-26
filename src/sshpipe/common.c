@@ -23,6 +23,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <openssl/md5.h>
 
 #include "common.h"
 #include "client.h"
@@ -54,14 +55,28 @@ void session_error(void *session, const char *tag)
     exit(1);
 }
 
-char *pubkey_hash(ssh_string key)
+char *pubkey_hash(ssh_string pubkey)
 {
-    unsigned char *hash = NULL;
-    if(ssh_hash_string_md5(key, &hash) < 0)
-        return NULL;
+    unsigned char *h = NULL;
     
-    char *hashstr = ssh_get_hexa(hash, MD5_DIGEST_LEN);
-    free(hash);
+    h = malloc(sizeof(unsigned char) * MD5_DIGEST_LEN);
+    if(h == NULL)
+    {
+        return NULL;
+    }
+    
+    MD5_CTX *ctx = malloc(sizeof(*ctx));
+    if(ctx == NULL)
+    {
+        free(h);
+        return NULL;
+    }
+    MD5_Init(ctx);
+    MD5_Update(ctx, string_data(pubkey), string_len(pubkey));
+    MD5_Final(h, ctx);
+    free(ctx);
+    char *hashstr = ssh_get_hexa(h, MD5_DIGEST_LEN);
+    free(h);
     return hashstr;
 }
 

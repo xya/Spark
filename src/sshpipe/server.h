@@ -29,5 +29,5 @@
 #define SERVER_CHANNEL_OPENED   3
 
 void server_pipe(char *host, int port);
-void server_handle_message(SSH_SESSION *s, SSH_MESSAGE *m, int type, int subtype, int *state);
+void server_handle_message(ssh_session s, ssh_message m, int type, int subtype, int *state);
 #endif

@@ -30,18 +30,15 @@
 // When a connection is established, write all data received to stdout.
 void server_pipe(char *host, int port)
 {
-    SSH_OPTIONS *opt = ssh_options_new();
-    ssh_options_set_host(opt, host);
-    ssh_options_set_port(opt, port);
-    ssh_options_set_rsa_server_key(opt, "test-server-key");
-    
-    SSH_BIND *b = ssh_bind_new();
-    ssh_bind_set_options(b, opt);
+    ssh_bind b = ssh_bind_new();
+    ssh_session s = ssh_new();
+    ssh_bind_options_set(b, SSH_BIND_OPTIONS_BINDADDR, host);
+    ssh_bind_options_set(b, SSH_BIND_OPTIONS_BINDPORT, &port);
+    ssh_bind_options_set(b, SSH_BIND_OPTIONS_RSAKEY, "test-server-key");
+    ssh_bind_options_set(b, SSH_BIND_OPTIONS_LOG_VERBOSITY_STR, "5");
     if(ssh_bind_listen(b) < 0)
         session_error(b, "listen");
-    
-    SSH_SESSION *s = ssh_bind_accept(b);
-    if(!s)
+    if(ssh_bind_accept(b, s) != SSH_OK)
         session_error(b, "accept");
     if(ssh_accept(s) < 0)
         session_error(s, "handshake");
@@ -49,7 +46,7 @@ void server_pipe(char *host, int port)
     int state = SERVER_CONNECTED;
     while(1)
     {
-        SSH_MESSAGE *m = ssh_message_get(s);
+        ssh_message m = ssh_message_get(s);
         if(m)
         {
             int type = ssh_message_type(m);
@@ -72,7 +69,7 @@ void server_pipe(char *host, int port)
     }
 }
 
-void server_handle_message(SSH_SESSION *s, SSH_MESSAGE *m, int type, int subtype, int *state)
+void server_handle_message(ssh_session s, ssh_message m, int type, int subtype, int *state)
 {
     int handled = 0;
     if((*state == SERVER_CONNECTED) && (type == SSH_REQUEST_AUTH) && (subtype == SSH_AUTH_METHOD_PUBLICKEY))
@@ -80,8 +77,8 @@ void server_handle_message(SSH_SESSION *s, SSH_MESSAGE *m, int type, int subtype
         ssh_public_key key = ssh_message_auth_publickey(m);
         ssh_string keystr = publickey_to_string(key);
         char *keyhash = pubkey_hash(keystr);
-        int has_sig = ssh_message_auth_sig_state(m);
-        if(has_sig == 0)
+        int has_sig = ssh_message_auth_publickey_state(m);
+        if(has_sig == SSH_PUBLICKEY_STATE_NONE)
         {
             if(authenticate(keyhash, 1))
             {
@@ -92,7 +89,7 @@ void server_handle_message(SSH_SESSION *s, SSH_MESSAGE *m, int type, int subtype
                 string_free(algostr);
             }
         }
-        else if(has_sig == 1)
+        else if(has_sig == SSH_PUBLICKEY_STATE_VALID)
         {
             if(authenticate(keyhash, 0))
             {
