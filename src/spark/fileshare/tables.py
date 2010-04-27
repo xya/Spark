@@ -103,8 +103,9 @@ class SharedFile(object):
 
     def generateID(self):
         """ Generate an unique ID for the file. """
-        self.ID = hashlib.md5("%s%d" % (self.name, self.size)).hexdigest()
-    
+        tag = u"%s%d" % (self.name, self.size)
+        self.ID = hashlib.md5(tag.encode("utf8")).hexdigest()
+
     @classmethod
     def fromFile(cls, path):
         """ Create a shared file from a file path. """

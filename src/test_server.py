@@ -22,7 +22,10 @@
 import signal
 import os
 import time
-import thread
+try:
+    import thread
+except ImportError:
+    import _thread as thread
 import logging
 from functools import partial
 from spark.core import *
