@@ -20,7 +20,7 @@
 
 import logging
 from spark.messaging.parser import MessageReader
-from spark.messaging.messages import MessageWriter
+from spark.messaging.messages import MessageWriter, formatMessage
 
 __all__ = ["messageReader", "messageWriter", "negociateProtocol", "Supported", "NegociationError"]
 
@@ -113,20 +113,16 @@ class Negociator(object):
         sizeText = self.file.read(4)
         if len(sizeText) == 0:
             raise EOFError()
-        size = int(sizeText, 16)
+        size = int(sizeText.decode("utf8"), 16)
         data = self.file.read(size)
         if len(data) == 0:
             raise EOFError()
-        return data.strip()
+        return data.decode("utf8").strip()
     
     def writeSupportedProtocols(self):
-        data = self.formatMessage("supports %s" % " ".join(Supported))
+        data = formatMessage("supports %s" % " ".join(Supported))
         self.file.write(data)
     
     def writeProtocol(self, name):
-        data = self.formatMessage("protocol %s" % name)
+        data = formatMessage("protocol %s" % name)
         self.file.write(data)
-    
-    def formatMessage(self, m):
-        data = " %s\r\n" % str(m)
-        return "%04x%s" % (len(data), data)

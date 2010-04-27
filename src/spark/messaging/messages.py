@@ -22,20 +22,11 @@ from collections import Sequence
 import json
 from struct import Struct
 
-__all__ = ["Message", "TextMessage", "Request", "Response", "Notification", "Blob", "Block"]
+__all__ = ["Message", "TextMessage", "Request", "Response", "Notification", "Blob", "Block", "formatMessage"]
 
 class Message(object):
-    def __str__(self):
-        text = self.canonical()
-        return isinstance(text, unicode) and text.encode('utf-8') or text
-    
-    def __unicode__(self):
-        text = self.canonical()
-        return isinstance(text, str) and text.decode('utf-8') or text
-    
-    def canonical(self):
-        ''' Returns the canonical text representation of the message.
-        The return value can be a str or unicode object. '''
+    def to_bytes(self):
+        """ Returns the canonical representation of the message, as bytes. """
         raise NotImplementedError()
 
 class TextMessage(Message, Sequence):
@@ -49,9 +40,9 @@ class TextMessage(Message, Sequence):
         self.transID = transID
         self.params = params
     
-    def canonical(self):
-        return " ".join([self.type, self.tag, str(self.transID),
-            json.dumps(self.params, sort_keys=True, default=_serializable)])
+    def to_bytes(self):
+        return u" ".join([self.type, self.tag, str(self.transID),
+            json.dumps(self.params, sort_keys=True, default=_serializable)]).encode("utf8")
     
     def withID(self, transID):
         """ Set the message's transaction ID. """
@@ -104,10 +95,10 @@ class Blob(Message, Sequence):
     def data(self):
         raise NotImplementedError()
     
-    def canonical(self):
+    def to_bytes(self):
         data = self.data
         cls = self.__class__
-        return "".join([cls.Type.pack(0, cls.ID), data])
+        return bytes().join([cls.Type.pack(0, cls.ID), data])
     
     def __len__(self):
         return 1 + len(self.params)
@@ -155,14 +146,24 @@ def _serializable(obj):
     else:
         return obj.__dict__
 
+def formatMessage(o, encoding=u"utf8"):
+    """ Format an object to be sent as a message. """
+    if isinstance(o, bytes):
+        data = o
+    elif isinstance(o, unicode):
+        data = o.encode(encoding)
+    elif hasattr(o, u"to_bytes"):
+        data = o.to_bytes()
+    else:
+        raise TypeError("The object should be convertible to bytes.")
+    payload = u" ".encode("utf8") + data + u"\n".encode("utf8")
+    prefix = u"%04x" % len(payload)
+    return prefix.encode(encoding) + payload
+
 class MessageWriter(object):
     def __init__(self, file):
         self.file = file
-        
-    def format(self, m):
-        data = " %s\r\n" % str(m)
-        return "%04x%s" % (len(data), data)
     
     def write(self, m):
         """ Write a message to the file. """
-        return self.file.write(self.format(m))
+        return self.file.write(formatMessage(m))

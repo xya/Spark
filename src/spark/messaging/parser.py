@@ -47,7 +47,7 @@ class MessageReader(object):
                 break
             left -= len(data)
             chunks.append(data)
-        return "".join(chunks)
+        return bytes().join(chunks)
     
     def read(self):
         """ Read a message from the file. """
@@ -55,18 +55,19 @@ class MessageReader(object):
         if len(sizeText) == 0:
             return None
         else:
-            size = int(sizeText, 16)
+            size = int(sizeText.decode("utf8"), 16)
             data = self._readData(size)
             if len(data) == 0:
                 raise EOFError()
             else:
-                return self.parse(data.lstrip())
+                return self.parse(data)
     
     def parse(self, data):
-        if data[0] == '\x00':
-            return self.parseBlob(data)
+        if ord(data[1:2]) == 0:
+            return self.parseBlob(data[1:])
         else:
-            return self.parseTextMessage(data.rstrip())
+            message = data.decode("utf8").strip()
+            return self.parseTextMessage(message)
     
     def parseTextMessage(self, data):
         elems = data.split(" ", 3)
@@ -81,7 +82,7 @@ class MessageReader(object):
         return self.textTypes[type](tag, *jsonParams).withID(intTransID)
     
     def parseBlob(self, data):
-        typeID = ord(data[1])
+        typeID = ord(data[1:2])
         try:
             parseFun = self.blobParsers[typeID]
         except KeyError:

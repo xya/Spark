@@ -242,9 +242,9 @@ class Future(object):
             result = prev.result
         except:
             # the task failed, propagate the exception to the coroutine
-            type, val = sys.exc_info()[0:2]
+            e = sys.exc_info()[1]
             try:
-                result = coroutine.throw(type, val)
+                 result = coroutine.throw(e)
             except StopIteration:
                 # the coroutine handled the exception and exited
                 self.completed()

@@ -37,7 +37,7 @@ TestText = """0025 > list-files 0 [{"register": true}]
 007f < list-files 0 [{"<guid>": {"id": "<guid>", "last-modified": "20090619T173529.000Z", "name": "Report.pdf", "size": 3145728}}]
 007e ! file-added 55 [{"id": "<guid>", "last-modified": "20090619T173529.000Z", "name": "SeisRoX-2.0.9660.exe", "size": 3145728}]
 0068 > create-transfer 26 [{"blocksize": 1024, "file-id": "<guid>", "ranges": [{"end": 3071, "start": 0}]}]
-0038 < create-transfer 26 [{"id": 2, "state": "inactive"}]
+0037 < create-transfer 26 [{"id": 2, "state": "inactive"}]
 0021 > start-transfer 27 [{"id": 2}]
 0036 < start-transfer 27 [{"id": 2, "state": "starting"}]
 003c ! transfer-state-changed 56 [{"id": 2, "state": "active"}]
@@ -56,9 +56,9 @@ TestItems = [
     Request("start-transfer", {"id": 2}).withID(27),
     Response("start-transfer", {"id": 2, "state": "starting"}).withID(27),
     Notification("transfer-state-changed", {"id": 2, "state": "active"}).withID(56),
-    Block(2, 0, "Hello, world"),
-    Block(2, 1, "Spaces      "),
-    Block(2, 3071, "!" * 1024),
+    Block(2, 0, u"Hello, world".encode("utf8")),
+    Block(2, 1, u"Spaces      ".encode("utf8")),
+    Block(2, 3071, (u"!" * 1024).encode("utf8")),
     Request("close-transfer", {"id": 2}).withID(28),
     Response("close-transfer", {"id": 2}).withID(28),
 ]
@@ -123,10 +123,6 @@ class ProtocolTest(unittest.TestCase):
         actualItems = self.readAllMessages(messageReader(f))
         self.assertSeqsEqual(TestItems, actualItems)
 
-def formatMessage(m):
-    data = " %s\r\n" % str(m)
-    return "%04x%s" % (len(data), data)
-
 class Pipe(object):
     def __init__(self, readFD, writeFD):
         self.readFD = readFD
@@ -146,8 +142,8 @@ class Pipe(object):
 
 class MockFile(object):
     def __init__(self):
-        self.readBuffer = ""
-        self.writeBuffer = ""
+        self.readBuffer = bytes()
+        self.writeBuffer = bytes()
     
     def read(self, count):
         if (count is None) or (count <= 0):
@@ -191,7 +187,7 @@ class ClientSocket(MockFile):
     
     def onMessageWritten(self, message):
         if self.state == 0:
-            w = message.split(" ")
+            w = message.decode("utf8").split(" ")
             if (w[0] != "protocol") or (len(w) != 2) or (w[1] not in self.supported):
                 self.innerWrite(formatMessage("not-supported"))
             else:
@@ -207,7 +203,7 @@ class ServerSocket(MockFile):
     
     def onMessageWritten(self, message):
         if self.state == 0:
-            w = message.split(" ")
+            w = message.decode("utf8").split(" ")
             matches = [name for name in w[1:] if name in self.supported]
             if (w[0] != "supports") or (len(w) < 2) or (len(matches) == 0):
                 self.innerWrite(formatMessage("not-supported"))
@@ -216,7 +212,7 @@ class ServerSocket(MockFile):
                 self.innerWrite(formatMessage("protocol %s" % self.choice))
                 self.state += 1
         elif self.state == 1:
-            w = message.split(" ")
+            w = message.decode("utf8").split(" ")
             if (w[0] != "protocol") or (len(w) != 2) or (w[1] != self.choice):
                 self.innerWrite(formatMessage("not-supported"))
             else:
