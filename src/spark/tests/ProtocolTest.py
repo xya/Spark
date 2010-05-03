@@ -27,13 +27,10 @@ import os
 from spark.core import Future, TaskFailedError, Process
 from spark.messaging import *
 from spark.tests.common import run_tests, processTimeout, assertMatch
-try:
-	from io import BytesIO
-except ImportError:
-    from StringIO import StringIO as BytesIO
+from io import BytesIO
 
 TestFile = os.path.join(os.path.dirname(__file__), 'ProtocolTest.log')
-TestText = """0025 > list-files 0 [{"register": true}]
+TestText = b"""0025 > list-files 0 [{"register": true}]
 007f < list-files 0 [{"<guid>": {"id": "<guid>", "last-modified": "20090619T173529.000Z", "name": "Report.pdf", "size": 3145728}}]
 007e ! file-added 55 [{"id": "<guid>", "last-modified": "20090619T173529.000Z", "name": "SeisRoX-2.0.9660.exe", "size": 3145728}]
 0068 > create-transfer 26 [{"blocksize": 1024, "file-id": "<guid>", "ranges": [{"end": 3071, "start": 0}]}]
@@ -43,7 +40,7 @@ TestText = """0025 > list-files 0 [{"register": true}]
 003c ! transfer-state-changed 56 [{"id": 2, "state": "active"}]
 0018 \x00\x01\x00\x02\x00\x00\x00\x00\x00\x0cHello, world
 0018 \x00\x01\x00\x02\x00\x00\x00\x01\x00\x0cSpaces      
-040c \x00\x01\x00\x02\x00\x00\x0b\xff\x04\x00""" + ("!" * 1024) + """
+040c \x00\x01\x00\x02\x00\x00\x0b\xff\x04\x00""" + (b"!" * 1024) + b"""
 0021 > close-transfer 28 [{"id": 2}]
 0020 < close-transfer 28 [{"id": 2}]"""
 

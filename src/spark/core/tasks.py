@@ -25,10 +25,7 @@ import threading
 # Support for poor man's exception chaining with Python 2.x
 import sys
 import traceback
-try:
-	from io import StringIO
-except ImportError:
-    from StringIO import StringIO
+from io import StringIO
 
 __all__ = ["Future", "FutureFrozenError", "TaskError", "TaskFailedError", "TaskCanceledError",
            "WaitTimeoutError", "Delegate", "threadedMethod", "coroutine"]
