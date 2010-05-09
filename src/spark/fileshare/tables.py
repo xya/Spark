@@ -193,8 +193,9 @@ class FileTable(object):
     def files(self):
         return self.entries
     
-    def addFile(self, path):
+    def addFile(self, path, mimeType=None):
         file = SharedFile.fromFile(path)
+        file.mimeType = mimeType
         file.localCopySize = file.size
         self.updateFile(file, LOCAL)
     

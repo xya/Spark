@@ -23,6 +23,7 @@ import os
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from spark.gui.filelist import FileList, FileInfoWidget, iconPath
+from spark.gui import filetypes
 from spark.fileshare import UPLOAD, DOWNLOAD, LOCAL, REMOTE
 from spark.fileshare import SharedFile, TransferInfo, formatSize, formatDuration
 
@@ -167,7 +168,11 @@ class MainWindow(QMainWindow):
     def updateFileWidget(self, widget, file):
         widget.setName(file.name)
         if file.mimeType:
-            widget.setTypeIcon("mimetypes/%s" % file.mimeType)
+            icon = filetypes.from_mime_type(file.mimeType).icon(48)
+            if icon and not icon.isNull():
+                widget.setTypeIcon(icon)
+            else:
+                widget.setTypeIcon("mimetypes/gtk-file")
         else:
             widget.setTypeIcon("mimetypes/gtk-file")
         if file.hasCopy(LOCAL):
@@ -262,7 +267,9 @@ class MainWindow(QMainWindow):
         files = QFileDialog.getOpenFileNames(self, "Choose a file to open", dir, "All files (*.*)")
         if files.count() > 0:
             for file in files:
-                self.app.addFile(unicode(file))
+                path = unicode(file)
+                type = filetypes.from_file(path)
+                self.app.addFile(path, type.mimeType)
     
     def action_remove(self):
         if self.selectedID is not None:

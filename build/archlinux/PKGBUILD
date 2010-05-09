@@ -7,6 +7,8 @@ arch=(any)
 url="http://pasaulais.free.fr/spark"
 license=('GPL')
 depends=('python>=2.6' 'pyqt>=4')
+optdepends=('pygobject: file handling for Gnome'
+            'kdebindings-python: file handling for KDE')
 makedepends=('python>=2.6')
 provides=('spark')
 conflicts=('spark')

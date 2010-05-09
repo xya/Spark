@@ -57,7 +57,7 @@ class FileSharingSession(Service):
             Command("update-session-state"),
             Command("update-transfer-info"),
             Command("list-files", bool, int),
-            Command("add-file", basestring, int),
+            Command("add-file", basestring, basestring, int),
             Command("remove-file", basestring, int),
             Command("start-transfer", basestring, int),
             Command("stop-transfer", basestring, int),
@@ -125,9 +125,9 @@ class FileSharingSession(Service):
     def cacheFileUpdated(self, state, fileID, origin):
         self.fileUpdated(state.fileTable[fileID].copy())
     
-    def doAddFile(self, m, path, senderPid, state):
+    def doAddFile(self, m, path, mimeType, senderPid, state):
         """ Add the local file with the given path to the list. """
-        state.fileTable.addFile(path)
+        state.fileTable.addFile(path, mimeType)
     
     def cacheFileAdded(self, state, fileID, origin):
         state.logger.info("Added file %s.", repr((fileID, origin)))

@@ -215,8 +215,11 @@ class FileInfoWidget(QWidget):
         self.transferTime.setText(time)
     
     def setTypeIcon(self, icon):
-        self.typeIconSet = QIcon(iconPath(icon))
-        self.typeIcon.setPixmap(self.typeIconSet.pixmap(48, 48))
+        if isinstance(icon, basestring):
+            self.typeIconSet = QIcon(iconPath(icon))
+            self.typeIcon.setPixmap(self.typeIconSet.pixmap(48, 48))
+        else:
+            self.typeIcon.setPixmap(icon)
     
     def setStatusIcon(self, icon, index):
         statusIcon = self.statusIcons[index]

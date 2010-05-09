@@ -77,11 +77,11 @@ class SparkApplication(object):
             senderPid = Process.current()
         Process.try_send(self.session.pid, Command("list-files", excludeRemoved, senderPid))
     
-    def addFile(self, path, senderPid=None):
+    def addFile(self, path, mimeType=None, senderPid=None):
         """ Add the local file with the given path to the list. """
         if not senderPid:
             senderPid = Process.current()
-        Process.try_send(self.session.pid, Command("add-file", path, senderPid))
+        Process.try_send(self.session.pid, Command("add-file", path, mimeType, senderPid))
     
     def removeFile(self, fileID, senderPid=None):
         """ Remove the file (local or remote) with the given ID from the list. """
