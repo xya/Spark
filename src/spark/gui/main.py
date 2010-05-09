@@ -274,7 +274,17 @@ class MainWindow(QMainWindow):
     
     def action_start(self):
         if self.selectedID is not None:
-            self.app.startTransfer(self.selectedID)
+            file = self.app.files[self.selectedID]
+            if file.mimeType:
+                description = filetypes.from_mime_type(file.mimeType).description
+            else:
+                description = "All files"
+            root, ext = os.path.splitext(file.name)
+            type = "*" + ext
+            dest = QFileDialog.getSaveFileName(self, "Choose where to receive the file",
+                file.name, "%s (%s)" % (description, type))
+            if dest:
+                self.app.startTransfer(self.selectedID, unicode(dest))
     
     def action_open(self):
         if self.selectedID is not None:

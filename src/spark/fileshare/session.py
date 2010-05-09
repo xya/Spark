@@ -47,7 +47,8 @@ class FileSharingSession(Service):
         state.fileTable.fileUpdated += partial(self.cacheFileUpdated, state)
         state.fileTable.fileRemoved += partial(self.cacheFileRemoved, state)
         state.transferTable = TransferTable()
-        state.pendingTransferReqs = {}
+        state.pendingDownloads = {}
+        state.pendingUploads = {}
         state.activeTransfers = 0
     
     def initPatterns(self, loop, state):
@@ -59,7 +60,7 @@ class FileSharingSession(Service):
             Command("list-files", bool, int),
             Command("add-file", basestring, basestring, int),
             Command("remove-file", basestring, int),
-            Command("start-transfer", basestring, int),
+            Command("start-transfer", basestring, basestring, int),
             Command("stop-transfer", basestring, int),
             Event("transfer-created", int, int),
             Event("transfer-state-changed", int, int, basestring),
@@ -154,10 +155,12 @@ class FileSharingSession(Service):
         """ The remote peer sent a 'file-removed' notification. """
         state.fileTable.removeFile(fileID, REMOTE)
     
-    def doStartTransfer(self, m, fileID, senderPid, state):
+    def doStartTransfer(self, m, fileID, path, senderPid, state):
         """ Start receiving the remote file with the given ID. """
         file = state.fileTable[fileID]
-        if file.transfer is None:
+        if (file and (file.origin == REMOTE) and (file.transfer is None) and
+            (not fileID in state.pendingDownloads)):
+            state.pendingDownloads[fileID] = path
             self.sendRequest(state, "create-transfer", fileID)
     
     def requestCreateTransfer(self, m, transID, fileID, state):
@@ -165,13 +168,15 @@ class FileSharingSession(Service):
         file = state.fileTable[fileID]
         if file and (file.origin == LOCAL):
             transferID = self._createTransferProcess(None, Upload, file, state)
-            state.pendingTransferReqs[transferID] = (transID, fileID)
+            state.pendingUploads[transferID] = (transID, fileID)
         else:
             state.messenger.send(Response("create-transfer-error", fileID).withID(transID))
     
     def responseCreateTransfer(self, m, transID, fileID, transferID, state):
-        file = state.fileTable[fileID]
-        if file and (file.origin == REMOTE):
+        if fileID in state.pendingDownloads:
+            file = state.fileTable[fileID]
+            file.path = state.pendingDownloads[fileID]
+            del state.pendingDownloads[fileID]
             self._createTransferProcess(transferID, Download, file, state)
     
     def _createTransferProcess(self, transferID, factory, file, state):
@@ -191,8 +196,8 @@ class FileSharingSession(Service):
     
     def onTransferCreated(self, m, transferID, direction, state):
         if direction == UPLOAD:
-            reqID, fileID = state.pendingTransferReqs[transferID]
-            del state.pendingTransferReqs[transferID]
+            reqID, fileID = state.pendingUploads[transferID]
+            del state.pendingUploads[transferID]
             resp = Response("create-transfer", fileID, transferID).withID(reqID)
             state.messenger.send(resp)
         elif direction == DOWNLOAD:

@@ -199,8 +199,7 @@ class Download(Transfer):
         state.logger.info("Initializing download of file %s.", repr((file.ID, direction)))
         state.blockTable = defaultdict(bool)
         state.offset = 0
-        receiveDir = os.path.join(os.path.expanduser("~"), "Desktop")
-        state.path = os.path.join(receiveDir, file.name)
+        state.path = file.path
         state.stream = open(state.path, "wb")
         state.logger.info("Opened file '%s' for writing.", state.path)
         super(Download, self).doInitTransfer(m, transferID, direction, file, sessionPid, state)

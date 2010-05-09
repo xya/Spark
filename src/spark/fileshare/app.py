@@ -89,11 +89,11 @@ class SparkApplication(object):
             senderPid = Process.current()
         Process.try_send(self.session.pid, Command("remove-file", fileID, senderPid))
     
-    def startTransfer(self, fileID, senderPid=None):
+    def startTransfer(self, fileID, path, senderPid=None):
         """ Start receiving the remote file with the given ID. """
         if not senderPid:
             senderPid = Process.current()
-        Process.try_send(self.session.pid, Command("start-transfer", fileID, senderPid))
+        Process.try_send(self.session.pid, Command("start-transfer", fileID, path, senderPid))
     
     def stopTransfer(self, fileID, senderPid=None):
         """ Stop receiving the remote file with the given ID. """
