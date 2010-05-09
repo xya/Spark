@@ -90,11 +90,8 @@ class MainWindow(QMainWindow):
             else:
                 self.toolbar.addSeparator()
         self.toolbar.setMovable(False)
-        QObject.connect(self.actions["connect"], SIGNAL("triggered()"), self.action_connect)
-        QObject.connect(self.actions["disconnect"], SIGNAL("triggered()"), self.action_disconnect)
-        QObject.connect(self.actions["add"], SIGNAL("triggered()"), self.action_add)
-        QObject.connect(self.actions["remove"], SIGNAL("triggered()"), self.action_remove)
-        QObject.connect(self.actions["start"], SIGNAL("triggered()"), self.action_start)
+        for name in ("connect", "disconnect", "add", "remove", "start", "open"):
+            QObject.connect(self.actions[name], SIGNAL("triggered()"), getattr(self, "action_%s" % name))
     
     def updateToolBar(self):
         # connection-dependent actions
@@ -278,6 +275,11 @@ class MainWindow(QMainWindow):
     def action_start(self):
         if self.selectedID is not None:
             self.app.startTransfer(self.selectedID)
+    
+    def action_open(self):
+        if self.selectedID is not None:
+            file = self.app.files[self.selectedID]
+            filetypes.open_file(file.path)
     
     def initTimer(self):
         self.updateTimer = QTimer(self)

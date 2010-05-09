@@ -20,49 +20,37 @@
 
 import os
 import subprocess
-import gio
-import gtk
-from PyQt4.QtGui import QPixmap
+from PyKDE4.kdecore import KMimeType, KUrl
+from PyKDE4.kdeui import KIconLoader
 
 __all__ = ["from_file", "from_mime_type", "open_file"]
 
-class GnomeType(object):
+class KDEType(object):
     def __init__(self, type):
         self._type = type
-        self.mimeType = gio.content_type_get_mime_type(type)
-        self.description = gio.content_type_get_description(type)
+        self.mimeType = unicode(type.name())
+        self.description = unicode(type.comment())
     
     def icon(self, size):
-        iconName = gio.content_type_get_icon(self._type)
-        theme = gtk.icon_theme_get_default()
-        icon = theme.choose_icon(iconName.get_names(), size, 0)
-        if icon:
-            return QPixmap(icon.get_filename())
-        else:
-            return QPixmap()
+        l = KIconLoader()
+        return l.loadMimeTypeIcon(self._type.iconName(), KIconLoader.NoGroup, size) 
 
 def from_file(path):
     """ Try to guess the type of a file. """
-    try:
-        with open(path, "rb") as f:
-            header = f.read(256)
-            size = len(header)
-    except IOError:
-        header = None
-        size = 0
-    type, confidence = gio.content_type_guess(path, header, size)
-    return GnomeType(type)
+    type, confidence = KMimeType.findByPath(path)
+    return KDEType(type)
 
 def from_mime_type(mimeType):
     """ Return a file type object matching the given MIME type. """
-    type = gio.content_type_from_mime_type(mimeType)
-    return GnomeType(type)
+    type = KMimeType.mimeType(mimeType)
+    return KDEType(type)
 
 def open_file(path):
     """ Open the specified file, executing the default application. """
     if not path:
         raise ValueError("The path should be specified")
-    elif os.path.exists("/usr/bin/gnome-open"):
-        subprocess.Popen(["/usr/bin/gnome-open", path])
+    elif os.path.exists("/usr/bin/kfmclient"):
+        url = KUrl(path)
+        subprocess.Popen(["/usr/bin/kfmclient", "exec", unicode(url.url())])
     elif os.path.exists("/usr/bin/xdg-open"):
         subprocess.Popen(["/usr/bin/xdg-open", path])
