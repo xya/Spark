@@ -57,7 +57,14 @@ class SHGFI(object):
     SHIL_SYSSMALL = 0x3
     SHIL_JUMBO = 0x4
 
+COINIT_APARTMENTTHREADED = 0x2
+COINIT_MULTITHREADED = 0x0
+COINIT_DISABLE_OLE1DDE = 0x4
+COINIT_SPEED_OVER_MEMORY = 0x8 
+
 FILE_ATTRIBUTE_NORMAL = 0x0080
+
+SW_SHOWNORMAL = 1
 
 IID_IImageList = "46EB5926-582E-4017-9FDF-E8998DAA0950"
 
@@ -76,6 +83,14 @@ ImageList_GetIcon.restype = c_void_p
 DestroyIcon = windll.user32.DestroyIcon
 DestroyIcon.argtypes = [c_void_p]
 DestroyIcon.restype = c_int32
+
+CoInitializeEx = windll.ole32.CoInitializeEx
+CoInitializeEx.argtypes = [c_void_p, c_uint32]
+CoInitializeEx.restype = c_uint32
+
+ShellExecute = windll.shell32.ShellExecuteW
+ShellExecute.argtypes = [c_void_p, c_wchar_p, c_wchar_p, c_wchar_p, c_wchar_p, c_int32]
+ShellExecute.restype = c_void_p
 
 def GetFileInfo(path, flags):
     info = SHFILEINFO()
@@ -118,4 +133,5 @@ def open_file(path):
     """ Open the specified file, executing the default application. """
     if not path:
         raise ValueError("The path should be specified")
-    raise NotImplementedError()
+    CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE)
+    ShellExecute(None, None, path, None, None, SW_SHOWNORMAL)
