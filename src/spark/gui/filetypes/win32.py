@@ -21,7 +21,8 @@
 import mimetypes
 import os
 from ctypes import windll, WinError, Structure, byref, sizeof, POINTER
-from ctypes import c_void_p, c_uint32, c_int32, c_wchar, c_wchar_p
+from ctypes import c_void_p, c_uint32, c_int32, c_uint16, c_ubyte
+from ctypes import c_wchar, c_wchar_p, c_char_p
 from PyQt4.QtGui import QPixmap
 
 __all__ = ["from_file", "from_mime_type", "open_file"]
@@ -32,6 +33,23 @@ class SHFILEINFO(Structure):
                 ("dwAttributes", c_uint32),
                 ("szDisplayName", c_wchar * 260),
                 ("szTypeName", c_wchar * 80)]
+
+class GUID(Structure):
+    _fields_ = [("Data1", c_uint32),
+                ("Data2", c_uint16),
+                ("Data3", c_uint16),
+                ("Data4", c_ubyte * 8)]
+    @classmethod
+    def fromCLSID(cls, clsid):
+        fields = clsid.split("-")
+        data1 = c_uint32(int(fields[0], 16))
+        data2 = c_uint16(int(fields[1], 16))
+        data3 = c_uint16(int(fields[2], 16))
+        field4 = "".join(fields[3:])
+        data4 = (c_ubyte * 8)()
+        for i in xrange(0, 8):
+            data4[i] = int(field4[i*2:2+i*2], 16)
+        return GUID(data1, data2, data3, data4)
 
 class SHGFI(object):
     SHGFI_ICON = 0x100
@@ -64,6 +82,8 @@ COINIT_SPEED_OVER_MEMORY = 0x8
 
 FILE_ATTRIBUTE_NORMAL = 0x0080
 
+ILD_TRANSPARENT = 1
+
 SW_SHOWNORMAL = 1
 
 IID_IImageList = "46EB5926-582E-4017-9FDF-E8998DAA0950"
@@ -73,7 +93,7 @@ SHGetFileInfo.argtypes = [c_wchar_p, c_uint32, POINTER(SHFILEINFO), c_uint32, c_
 SHGetFileInfo.restype = c_int32
 
 SHGetImageList = windll.shell32.SHGetImageList
-SHGetImageList.argtypes = [c_int32, c_void_p, POINTER(c_void_p)]
+SHGetImageList.argtypes = [c_int32, POINTER(GUID), POINTER(c_void_p)]
 SHGetImageList.restype = c_uint32
 
 ImageList_GetIcon = windll.comctl32.ImageList_GetIcon
@@ -99,6 +119,15 @@ def GetFileInfo(path, flags):
     else:
         return info
 
+def GetImageList(type):
+    iid = GUID.fromCLSID(IID_IImageList)
+    handle = c_void_p()
+    hr = SHGetImageList(type, byref(iid), byref(handle))
+    if 0 == hr:
+        return handle
+    else:
+        raise Exception("HRESULT: 0x%s" % hex(hr))
+
 class Win32Type(object):
     def __init__(self, extension, mimeType, description):
         self._extension = extension
@@ -106,14 +135,22 @@ class Win32Type(object):
         self.description = description
     
     def icon(self, size):
-        flags = SHGFI.SHGFI_USEFILEATTRIBUTES | SHGFI.SHGFI_ICON
-        if size < 32:
-            flags = flags | SHGFI.SHGFI_SMALLICON
+        flags = SHGFI.SHGFI_USEFILEATTRIBUTES
+        if size > 32:
+            flags = flags | SHGFI.SHGFI_SYSICONINDEX
+            h = GetImageList(SHGFI.SHIL_EXTRALARGE)
+            info = GetFileInfo(self._extension,flags)
+            hIcon = ImageList_GetIcon(h, info.iIcon, ILD_TRANSPARENT)
         else:
-            flags = flags | SHGFI.SHGFI_LARGEICON
-        info = GetFileInfo(self._extension, flags)
-        px = QPixmap.fromWinHICON(info.hIcon)
-        DestroyIcon(info.hIcon)
+            flags = flags | SHGFI.SHGFI_ICON
+            if size < 32:
+                flags = flags | SHGFI.SHGFI_SMALLICON
+            else:
+                flags = flags | SHGFI.SHGFI_LARGEICON
+            info = GetFileInfo(self._extension, flags)
+            hIcon = info.hIcon
+        px = QPixmap.fromWinHICON(hIcon)
+        DestroyIcon(hIcon)
         return px
 
 def from_file(path):
@@ -123,9 +160,14 @@ def from_file(path):
     mimeType, encoding = mimetypes.guess_type(path)
     return Win32Type(extension, mimeType, info.szTypeName)
 
-def from_mime_type(mimeType):
-    """ Return a file type object matching the given MIME type. """
-    extension = mimetypes.guess_extension(mimeType)
+def from_mime_type_or_extension(mimeType, extension):
+    """ Return a file type object matching the given MIME type and/or extension. """
+    if not mimeType and not extension:
+        raise ValueError("At least the MIME type or extension should be specified")
+    elif not mimeType:
+        mimeType, encoding = mimetypes.guess_type("foo" + extension)
+    else:
+        extension = mimetypes.guess_extension(mimeType)
     info = GetFileInfo(extension, SHGFI.SHGFI_TYPENAME | SHGFI.SHGFI_USEFILEATTRIBUTES)
     return Win32Type(extension, mimeType, info.szTypeName)
 

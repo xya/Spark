@@ -21,7 +21,7 @@
 import sys
 from PyQt4.QtGui import QPixmap
 
-__all__ = ["from_file", "from_mime_type", "open_file"]
+__all__ = ["from_file", "from_mime_type_or_extension", "open_file"]
 
 _modules = []
 try:
@@ -64,7 +64,7 @@ else:
     def from_file(path):
         return DummyType()
     
-    def from_mime_type(mimeType):
+    def from_mime_type_or_extension(mimeType, extension):
         return DummyType(mimeType)
     
     def open_file(path):

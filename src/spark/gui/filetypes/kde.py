@@ -23,7 +23,7 @@ import subprocess
 from PyKDE4.kdecore import KMimeType, KUrl
 from PyKDE4.kdeui import KIconLoader
 
-__all__ = ["from_file", "from_mime_type", "open_file"]
+__all__ = ["from_file", "from_mime_type_or_extension", "open_file"]
 
 class KDEType(object):
     def __init__(self, type):
@@ -40,10 +40,16 @@ def from_file(path):
     type, confidence = KMimeType.findByPath(path)
     return KDEType(type)
 
-def from_mime_type(mimeType):
-    """ Return a file type object matching the given MIME type. """
-    type = KMimeType.mimeType(mimeType)
-    return KDEType(type)
+def from_mime_type_or_extension(mimeType, extension):
+    """ Return a file type object matching the given MIME type and/or extension. """
+    if not mimeType and not extension:
+        raise ValueError("At least the MIME type or extension should be specified")
+    elif not mimeType:
+        type, confidence = KMimeType.findByPath("foo" + extension, 0, True)
+        return KDEType(type)
+    else:
+        type = KMimeType.mimeType(mimeType)
+        return KDEType(type)
 
 def open_file(path):
     """ Open the specified file, executing the default application. """

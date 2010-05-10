@@ -24,7 +24,7 @@ import gio
 import gtk
 from PyQt4.QtGui import QPixmap
 
-__all__ = ["from_file", "from_mime_type", "open_file"]
+__all__ = ["from_file", "from_mime_type_or_extension", "open_file"]
 
 class GnomeType(object):
     def __init__(self, type):
@@ -53,10 +53,16 @@ def from_file(path):
     type, confidence = gio.content_type_guess(path, header, size)
     return GnomeType(type)
 
-def from_mime_type(mimeType):
-    """ Return a file type object matching the given MIME type. """
-    type = gio.content_type_from_mime_type(mimeType)
-    return GnomeType(type)
+def from_mime_type_or_extension(mimeType, extension):
+    """ Return a file type object matching the given MIME type and/or extension. """
+    if not mimeType and not extension:
+        raise ValueError("At least the MIME type or extension should be specified")
+    elif not mimeType:
+        type, confidence = gio.content_type_guess("foo" + extension, None, 0)
+        return GnomeType(type)
+    else:
+        type = gio.content_type_from_mime_type(mimeType)
+        return GnomeType(type)
 
 def open_file(path):
     """ Open the specified file, executing the default application. """

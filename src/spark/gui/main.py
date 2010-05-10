@@ -164,12 +164,10 @@ class MainWindow(QMainWindow):
     
     def updateFileWidget(self, widget, file):
         widget.setName(file.name)
-        if file.mimeType:
-            icon = filetypes.from_mime_type(file.mimeType).icon(48)
-            if icon and not icon.isNull():
-                widget.setTypeIcon(icon)
-            else:
-                widget.setTypeIcon("mimetypes/gtk-file")
+        root, ext = os.path.splitext(file.name)
+        icon = filetypes.from_mime_type_or_extension(file.mimeType, ext).icon(48)
+        if icon and not icon.isNull():
+            widget.setTypeIcon(icon)
         else:
             widget.setTypeIcon("mimetypes/gtk-file")
         if file.hasCopy(LOCAL):
@@ -275,11 +273,11 @@ class MainWindow(QMainWindow):
     def action_start(self):
         if self.selectedID is not None:
             file = self.app.files[self.selectedID]
+            root, ext = os.path.splitext(file.name)
             if file.mimeType:
-                description = filetypes.from_mime_type(file.mimeType).description
+                description = filetypes.from_mime_type(file.mimeType, ext).description
             else:
                 description = "All files"
-            root, ext = os.path.splitext(file.name)
             type = "*" + ext
             dest = QFileDialog.getSaveFileName(self, "Choose where to receive the file",
                 file.name, "%s (%s)" % (description, type))
