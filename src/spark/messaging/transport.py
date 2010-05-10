@@ -106,7 +106,13 @@ class TcpMessageReceiver(TcpReceiver):
     def onConnected(self, m, state):
         # negociate the protocol to use for formatting messages
         stream = SocketWrapper(state.conn)
-        name = negociateProtocol(stream, state.initiating)
+        try:
+            name = negociateProtocol(stream, state.initiating)
+        except socket.error as e:
+            if (e.errno == os.errno.ECONNRESET) or (e.errno == 10054):
+                Process.exit("connection-reset")
+            else:
+                raise
         state.logger.info("Negociated protocol '%s'.", name)
         Process.send(state.messengerPid, Event("protocol-negociated", name))
         state.reader = messageReader(stream, name)

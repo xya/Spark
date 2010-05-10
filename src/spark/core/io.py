@@ -18,6 +18,7 @@
 # along with Spark; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+import sys
 import os
 import socket
 from spark.core import *
@@ -174,7 +175,17 @@ class TcpSocket(ProcessBase):
     
     def _closeServer(self, state):
         if state.server:
-            TcpSocket.closeSocket(state.server, state.logger)
+            if sys.platform.lower().startswith("win"):
+                # on Windows, calling shutdown() on a listening socket returns an error
+                if hasattr(state.server, "_sock"):
+                    # HACK: Python 2.x doesn't call the underlying close() function
+                    state.server._sock.close()
+                else:
+                    state.server.close()
+            else:
+                # on Unix, calling shutdown() wakes threads blocked on accept()
+                state.server.shutdown(socket.SHUT_RDWR)
+                state.server.close()
             state.server = None
     
     @classmethod
@@ -256,7 +267,7 @@ class TcpReceiver(ProcessBase):
             state.conn, state.remoteAddr = server.accept()
         except socket.error as e:
             # EINVAL error happens when shutdown() is called while waiting on accept()
-            if e.errno != os.errno.EINVAL:
+            if (e.errno != os.errno.EINVAL) and (e.errno != 10004):
                 state.logger.error("Error while accepting: %s.", str(e))
                 Process.send(senderPid, Event("accept-error", e))
             Process.exit()
