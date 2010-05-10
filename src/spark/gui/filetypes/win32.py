@@ -114,6 +114,7 @@ ShellExecute.restype = c_void_p
 
 def GetFileInfo(path, flags):
     info = SHFILEINFO()
+    InitializeCom()
     if 0 == SHGetFileInfo(path, FILE_ATTRIBUTE_NORMAL, byref(info), sizeof(info), flags):
         raise WinError()
     else:
@@ -122,11 +123,20 @@ def GetFileInfo(path, flags):
 def GetImageList(type):
     iid = GUID.fromCLSID(IID_IImageList)
     handle = c_void_p()
+    InitializeCom()
     hr = SHGetImageList(type, byref(iid), byref(handle))
     if 0 == hr:
         return handle
     else:
         raise Exception("HRESULT: 0x%s" % hex(hr))
+
+_ComInitialized = False
+
+def InitializeCom():
+    global _ComInitialized
+    if not _ComInitialized:
+        CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE)
+        _ComInitialized = True
 
 class Win32Type(object):
     def __init__(self, extension, mimeType, description):
@@ -175,5 +185,5 @@ def open_file(path):
     """ Open the specified file, executing the default application. """
     if not path:
         raise ValueError("The path should be specified")
-    CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE)
+    InitializeCom()
     ShellExecute(None, None, path, None, None, SW_SHOWNORMAL)

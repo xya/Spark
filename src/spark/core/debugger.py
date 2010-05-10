@@ -39,7 +39,7 @@ def enabled():
 
 def start_watcher(pipe_name):
     global _thread, _enabled, Process
-    if _thread is None:
+    if _thread is None and hasattr(os, "mkfifo"):
         from spark.core.process import Process as _Process
         Process = _Process
         _enabled = True
