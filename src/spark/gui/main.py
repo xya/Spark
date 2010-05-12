@@ -22,7 +22,8 @@ import sys
 import os
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
-from spark.gui.filelist import FileList, FileInfoWidget, iconPath
+from spark.gui.resource import iconPath
+from spark.gui.filelist import FileList, FileInfoWidget
 from spark.gui import filetypes
 from spark.fileshare import UPLOAD, DOWNLOAD, LOCAL, REMOTE
 from spark.fileshare import SharedFile, TransferInfo, formatSize, formatDuration

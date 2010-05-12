@@ -20,15 +20,9 @@
 
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
+from spark.gui.resource import iconPath
 
-__all__ = ["FileList", "FileInfoWidget", "iconPath"]
-
-def iconPath(name, size=None):
-    """ Return the path of the specified GNOME icon. """
-    if size:
-        return "/usr/share/spark/icons/%ix%i/%s.png" % (size, size, name)
-    else:
-        return "/usr/share/spark/icons/scalable/%s.svg" % name
+__all__ = ["FileList", "FileInfoWidget"]
 
 class CustomList(QWidget):
     def __init__(self, parent=None):
