@@ -276,7 +276,7 @@ class MainWindow(QMainWindow):
             file = self.app.files[self.selectedID]
             root, ext = os.path.splitext(file.name)
             if file.mimeType:
-                description = filetypes.from_mime_type(file.mimeType, ext).description
+                description = filetypes.from_mime_type_or_extension(file.mimeType, ext).description
             else:
                 description = "All files"
             type = "*" + ext

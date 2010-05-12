@@ -25,7 +25,7 @@ from ctypes import c_void_p, c_uint32, c_int32, c_uint16, c_ubyte
 from ctypes import c_wchar, c_wchar_p, c_char_p
 from PyQt4.QtGui import QPixmap
 
-__all__ = ["from_file", "from_mime_type", "open_file"]
+__all__ = ["from_file", "from_mime_type_or_extension", "open_file"]
 
 class SHFILEINFO(Structure):
     _fields_ = [("hIcon", c_void_p),
