@@ -1,0 +1,8 @@
+Version 0.0.3 (2010-05-13)
+==========================
+Ask the user where to save the file before starting a transfer
+Show file type icons in the transfer list, instead of a generic icon
+Implemented the 'Open received file' feature
+Fixed the bug which prevented to start transfers if the default encoding was not UTF8
+Icons are now properly looked up (Windows)
+Fixed the bug where TcpReceiver prevented the process to exit (Windows)

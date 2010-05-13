@@ -1,6 +1,6 @@
 # Maintainer: Pierre-André Saulais <pasaulais@free.fr>
 pkgname=spark
-pkgver=0.0.2
+pkgver=0.0.3
 pkgrel=1
 pkgdesc="Simple file-transfer tool"
 arch=(any)
@@ -13,7 +13,7 @@ makedepends=('python>=2.6')
 provides=('spark')
 conflicts=('spark')
 source=("http://pasaulais.free.fr/spark/src/Spark-$pkgver.tar.gz")
-md5sums=('d74ba83f25b9739655f92a07c91a8c91')
+md5sums=('0c65998d4ad07a89880c4a999b26a68e')
 
 build() {
     cd "$srcdir/Spark-$pkgver"

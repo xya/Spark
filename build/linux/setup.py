@@ -52,7 +52,7 @@ for dir in data_dirs:
     data_files.extend(dir_to_data_files(dir))
 
 setup(name='Spark',
-    version='0.0.2',
+    version='0.0.3',
     description='Simple file-transfer tool',
     license='GPL',
     author='Pierre-André Saulais',
@@ -62,6 +62,7 @@ setup(name='Spark',
               'spark.core',
               'spark.fileshare',
               'spark.gui',
+              'spark.gui.filetypes',
               'spark.messaging',
               'spark.tests'],
     data_files=data_files,
