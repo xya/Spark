@@ -75,17 +75,25 @@ class CustomList(QWidget):
         item.setForegroundRole(fgColor)
         item.setBackgroundRole(bgColor)
     
-    def mousePressEvent(self, e):
+    def findWidgetIndex(self, e):
         # the user might have clicked on a child's child widget
         # find the direct child widget
         widget = self.childAt(e.x(), e.y())
         while widget and not (widget.parentWidget() is self):
             widget = widget.parentWidget()
         if (widget is None) or not (widget in self.items):
-            selected = -1
+            return -1
         else:
-            selected = self.items.index(widget)
+            return self.items.index(widget)
+    
+    def mousePressEvent(self, e):
+        selected = self.findWidgetIndex(e)
         self.updateSelectedIndex(selected)
+    
+    def mouseDoubleClickEvent(self, e):
+        item = self.findWidgetIndex(e)
+        if item >= 0:
+            self.emit(SIGNAL("itemActivated"), item)
     
     def keyPressEvent(self, e):
         if e.key() == Qt.Key_Up:
@@ -113,6 +121,7 @@ class FileList(QWidget):
         self.setFocusPolicy(Qt.StrongFocus)
         self.list = CustomList(self)
         self.connect(self.list, SIGNAL("selectionChanged"), self.updateSelectedItem)
+        self.connect(self.list, SIGNAL("itemActivated"), self, SIGNAL("itemActivated"))
         self.scrollArea = QScrollArea(self)
         self.scrollArea.setFrameStyle(QFrame.NoFrame)
         self.scrollArea.setWidgetResizable(True)

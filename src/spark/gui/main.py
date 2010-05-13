@@ -20,6 +20,7 @@
 
 import sys
 import os
+import functools
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from spark.gui.resource import iconPath
@@ -92,7 +93,8 @@ class MainWindow(QMainWindow):
                 self.toolbar.addSeparator()
         self.toolbar.setMovable(False)
         for name in ("connect", "disconnect", "add", "remove", "start", "open"):
-            QObject.connect(self.actions[name], SIGNAL("triggered()"), getattr(self, "action_%s" % name))
+            handler = functools.partial(self.performAction, name)
+            QObject.connect(self.actions[name], SIGNAL("triggered()"), handler)
     
     def updateToolBar(self):
         # connection-dependent actions
@@ -149,6 +151,7 @@ class MainWindow(QMainWindow):
     def initTransferList(self):
         self.transferList = FileList()
         self.connect(self.transferList, SIGNAL("selectionChanged"), self.updateSelectedTransfer)
+        self.connect(self.transferList, SIGNAL("itemActivated"), self.performDefaultAction)
         self.setCentralWidget(self.transferList)
         self.transferList.setFocus()
     
@@ -251,14 +254,27 @@ class MainWindow(QMainWindow):
         else:
             return False
     
-    def action_connect(self):
+    def performAction(self, name, fileID=None):
+        handler = getattr(self, "action_%s" % name)
+        if not fileID or (not fileID in self.sharedFiles):
+            fileID = self.selectedID
+        handler(fileID)
+    
+    def performDefaultAction(self, index):
+        fileID = self.fileIDs[index]
+        if self.isActionAvailable("open", fileID):
+            self.performAction("open", fileID)
+        elif self.isActionAvailable("start", fileID):
+            self.performAction("start", fileID)
+    
+    def action_connect(self, fileID):
         d = ConnectionDialog(self.app, self)
         d.exec_()
     
-    def action_disconnect(self):
+    def action_disconnect(self, fileID):
         self.app.disconnect()
     
-    def action_add(self):
+    def action_add(self, fileID):
         dir = os.path.expanduser("~")
         files = QFileDialog.getOpenFileNames(self, "Choose a file to open", dir, "All files (*.*)")
         if files.count() > 0:
@@ -267,13 +283,13 @@ class MainWindow(QMainWindow):
                 type = filetypes.from_file(path)
                 self.app.addFile(path, type.mimeType)
     
-    def action_remove(self):
-        if self.selectedID is not None:
-            self.app.removeFile(self.selectedID)
+    def action_remove(self, fileID):
+        if fileID is not None:
+            self.app.removeFile(fileID)
     
-    def action_start(self):
-        if self.selectedID is not None:
-            file = self.app.files[self.selectedID]
+    def action_start(self, fileID):
+        if fileID is not None:
+            file = self.app.files[fileID]
             root, ext = os.path.splitext(file.name)
             if file.mimeType:
                 description = filetypes.from_mime_type_or_extension(file.mimeType, ext).description
@@ -285,9 +301,9 @@ class MainWindow(QMainWindow):
             if dest:
                 self.app.startTransfer(self.selectedID, unicode(dest))
     
-    def action_open(self):
-        if self.selectedID is not None:
-            file = self.app.files[self.selectedID]
+    def action_open(self, fileID):
+        if fileID is not None:
+            file = self.app.files[fileID]
             filetypes.open_file(file.path)
     
     def initTimer(self):
