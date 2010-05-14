@@ -1,0 +1,10 @@
+#!/usr/bin/make -f
+%:
+	dh $@
+
+override_dh_auto_install:
+	dh_auto_install
+	unlink debian/spark/usr/bin/spark
+	ln -s /usr/share/pyshared/spark/start_gui.py debian/spark/usr/bin/spark
+
+.PHONY: override_dh_auto_install

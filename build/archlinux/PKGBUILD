@@ -17,5 +17,5 @@ md5sums=('0c65998d4ad07a89880c4a999b26a68e')
 
 build() {
     cd "$srcdir/Spark-$pkgver"
-    python setup.py install --root="$pkgdir/" --install-data=/usr/share/spark --optimize=1 || return 1
+    python setup.py install --root="$pkgdir/" --optimize=1 || return 1
 }

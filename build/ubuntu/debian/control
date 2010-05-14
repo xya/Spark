@@ -1,0 +1,21 @@
+Source: spark
+Section: net
+Priority: optional
+Maintainer: Pierre-André Saulais <pasaulais@free.fr>
+Build-Depends: debhelper (>= 7), python-support, python (>=2.4)
+Standards-Version: 3.8.3
+Homepage: http://pasaulais.free.fr/spark/
+
+Package: spark
+Architecture: all
+Depends: ${misc:Depends}, ${python:Depends}, python-qt4
+Recommends: python-gobject, python-kde4
+Description: simple, multi-platform file-transfer tool
+ Spark is a multi-platform file-transfer tool written in Python. It is intended 
+ to be a simple way for people to share files without the drawbacks of email 
+ (file size limit), IM software (no resume support) and file servers 
+ (configuration, always-running daemon). 
+ .
+ More advanced features are planned, like using SSH for secure transfers or a 
+ minimalistic, ephemeral web server for sending files to people who don't have 
+ Spark.
