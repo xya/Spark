@@ -9,7 +9,6 @@ Homepage: http://pasaulais.free.fr/spark/
 Package: spark
 Architecture: all
 Depends: ${misc:Depends}, ${python:Depends}, python-qt4
-Recommends: python-gobject, python-kde4
 Description: simple, multi-platform file-transfer tool
  Spark is a multi-platform file-transfer tool written in Python. It is intended 
  to be a simple way for people to share files without the drawbacks of email 

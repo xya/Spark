@@ -1,3 +1,9 @@
+spark (0.0.3-0ubuntu2) karmic; urgency=low
+
+  * Removed python-gobject and python-kde4 from recommended packages 
+
+ -- Pierre-André Saulais <pasaulais@free.fr>  Fri, 14 May 2010 21:15:42 +0100
+
 spark (0.0.3-0ubuntu1) karmic; urgency=low
 
   * Initial release
