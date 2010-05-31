@@ -1,7 +1,7 @@
 # Maintainer: Pierre-André Saulais <pasaulais@free.fr>
 pkgname=spark
-pkgver=0.0.3
-pkgrel=2
+pkgver=0.0.4
+pkgrel=1
 pkgdesc="Simple file-transfer tool"
 arch=(any)
 url="http://pasaulais.free.fr/spark"
@@ -12,10 +12,19 @@ optdepends=('pygobject: file handling for Gnome'
 makedepends=('python>=2.6')
 provides=('spark')
 conflicts=('spark')
+install=spark.install
 source=("http://pasaulais.free.fr/spark/src/Spark-$pkgver.tar.gz")
-md5sums=('85dfe227df3b7925a043f73bb58c2599')
+md5sums=('fe0e4ffebc4ce3116ee876629120ae1f')
 
 build() {
     cd "$srcdir/Spark-$pkgver"
     python setup.py install --root="$pkgdir/" --optimize=1 || return 1
+    
+    # install application shortcut and icon (atm copied from GNOME icons)
+    install -D -m 644 "$srcdir/Spark-$pkgver/spark.desktop" \
+            "$pkgdir/usr/share/applications/spark.desktop"
+    for size in 16x16 24x24 32x32 48x48; do
+        install -D -m 644 "$srcdir/Spark-$pkgver/icons/$size/emblems/emblem-new.png" \
+            "$pkgdir/usr/share/icons/hicolor/$size/apps/spark.png"
+    done
 }

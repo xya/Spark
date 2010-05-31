@@ -1,0 +1,9 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Type=Application
+Name=Spark
+GenericName=File-transfer application
+Comment=Transfer files between two computers on the Internet
+Icon=spark
+Exec=spark
+Categories=Network;FileTransfer;P2P;QT;
