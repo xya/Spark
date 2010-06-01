@@ -1,0 +1,5 @@
+#!/bin/sh
+set -e
+gtk-update-icon-cache -f -t -q /usr/share/icons/hicolor
+update-desktop-database -q
+#DEBHELPER#

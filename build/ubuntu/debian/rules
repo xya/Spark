@@ -6,5 +6,10 @@ override_dh_auto_install:
 	dh_auto_install
 	unlink debian/spark/usr/bin/spark
 	ln -s /usr/share/pyshared/spark/start_gui.py debian/spark/usr/bin/spark
+	install -D -m644 spark.desktop debian/spark/usr/share/applications/spark.desktop
+	for size in 16x16 24x24 32x32 48x48; do \
+	    install -D -m644 "icons/$$size/emblems/emblem-new.png" \
+	        "debian/spark/usr/share/icons/hicolor/$$size/apps/spark.png"; \
+	done
 
 .PHONY: override_dh_auto_install
