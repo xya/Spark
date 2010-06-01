@@ -152,6 +152,7 @@ class MainWindow(QMainWindow):
         self.transferList = FileList()
         self.connect(self.transferList, SIGNAL("selectionChanged"), self.updateSelectedTransfer)
         self.connect(self.transferList, SIGNAL("itemActivated"), self.performDefaultAction)
+        self.connect(self.transferList, SIGNAL("fileDropped"), self.addFileToList)
         self.setCentralWidget(self.transferList)
         self.transferList.setFocus()
     
@@ -280,8 +281,11 @@ class MainWindow(QMainWindow):
         if files.count() > 0:
             for file in files:
                 path = unicode(file)
-                type = filetypes.from_file(path)
-                self.app.addFile(path, type.mimeType)
+                self.addFileToList(path)
+    
+    def addFileToList(self, path):
+        type = filetypes.from_file(path)
+        self.app.addFile(path, type.mimeType)
     
     def action_remove(self, fileID):
         if fileID is not None:

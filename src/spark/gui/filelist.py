@@ -120,6 +120,7 @@ class FileList(QWidget):
         super(FileList, self).__init__(parent)
         self.setFocusPolicy(Qt.StrongFocus)
         self.list = CustomList(self)
+        self.setAcceptDrops(True)
         self.connect(self.list, SIGNAL("selectionChanged"), self.updateSelectedItem)
         self.connect(self.list, SIGNAL("itemActivated"), self, SIGNAL("itemActivated"))
         self.scrollArea = QScrollArea(self)
@@ -146,6 +147,17 @@ class FileList(QWidget):
     def resizeEvent(self, e):
         self.scrollArea.resize(e.size())
         self.ensureItemVisible(self.list.selectedIndex)
+    
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+    
+    def dropEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+            for url in e.mimeData().urls():
+                if url.scheme() == "file":
+                    self.emit(SIGNAL("fileDropped"), unicode(url.toLocalFile()))
     
     def updateSelectedItem(self, index):
         self.ensureItemVisible(index)
