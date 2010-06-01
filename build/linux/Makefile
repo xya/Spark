@@ -3,14 +3,12 @@ TARBALL = dist/Spark-$(VERSION).tar.gz
 
 all: tarball
 	
-setup.py: Makefile
-	sed -i "s/version='.*'/version='$(VERSION)'/" setup.py
-	
-$(TARBALL): setup.py
+$(TARBALL): Makefile setup.py
 	[ -L src ] || ln -s ../../src src
 	[ -L icons ] || ln -s ../../icons icons
 	[ -f COPYING ] || cp ../../COPYING .
 	[ -f NEWS ] || cp ../../NEWS .
+	sed -i "s/version='.*'/version='$(VERSION)'/" setup.py
 	python setup.py sdist
 
 tarball: $(TARBALL)
