@@ -304,7 +304,7 @@ class MainWindow(QMainWindow):
     def action_open(self, fileID):
         if fileID is not None:
             file = self.app.files[fileID]
-            filetypes.open_file(file.path)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(file.path))
     
     def initTimer(self):
         self.updateTimer = QTimer(self)

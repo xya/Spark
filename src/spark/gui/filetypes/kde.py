@@ -23,7 +23,7 @@ import subprocess
 from PyKDE4.kdecore import KMimeType, KUrl
 from PyKDE4.kdeui import KIconLoader
 
-__all__ = ["from_file", "from_mime_type_or_extension", "open_file"]
+__all__ = ["from_file", "from_mime_type_or_extension"]
 
 class KDEType(object):
     def __init__(self, type):
@@ -50,13 +50,3 @@ def from_mime_type_or_extension(mimeType, extension):
     else:
         type = KMimeType.mimeType(mimeType)
         return KDEType(type)
-
-def open_file(path):
-    """ Open the specified file, executing the default application. """
-    if not path:
-        raise ValueError("The path should be specified")
-    elif os.path.exists("/usr/bin/kfmclient"):
-        url = KUrl(path)
-        subprocess.Popen(["/usr/bin/kfmclient", "exec", unicode(url.url())])
-    elif os.path.exists("/usr/bin/xdg-open"):
-        subprocess.Popen(["/usr/bin/xdg-open", path])

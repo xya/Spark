@@ -24,7 +24,7 @@ import gio
 import gtk
 from PyQt4.QtGui import QPixmap
 
-__all__ = ["from_file", "from_mime_type_or_extension", "open_file"]
+__all__ = ["from_file", "from_mime_type_or_extension"]
 
 class GnomeType(object):
     def __init__(self, type):
@@ -63,12 +63,3 @@ def from_mime_type_or_extension(mimeType, extension):
     else:
         type = gio.content_type_from_mime_type(mimeType)
         return GnomeType(type)
-
-def open_file(path):
-    """ Open the specified file, executing the default application. """
-    if not path:
-        raise ValueError("The path should be specified")
-    elif os.path.exists("/usr/bin/gnome-open"):
-        subprocess.Popen(["/usr/bin/gnome-open", path])
-    elif os.path.exists("/usr/bin/xdg-open"):
-        subprocess.Popen(["/usr/bin/xdg-open", path])

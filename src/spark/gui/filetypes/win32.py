@@ -25,7 +25,7 @@ from ctypes import c_void_p, c_uint32, c_int32, c_uint16, c_ubyte
 from ctypes import c_wchar, c_wchar_p, c_char_p
 from PyQt4.QtGui import QPixmap
 
-__all__ = ["from_file", "from_mime_type_or_extension", "open_file"]
+__all__ = ["from_file", "from_mime_type_or_extension"]
 
 class SHFILEINFO(Structure):
     _fields_ = [("hIcon", c_void_p),
@@ -84,8 +84,6 @@ FILE_ATTRIBUTE_NORMAL = 0x0080
 
 ILD_TRANSPARENT = 1
 
-SW_SHOWNORMAL = 1
-
 IID_IImageList = "46EB5926-582E-4017-9FDF-E8998DAA0950"
 
 SHGetFileInfo = windll.shell32.SHGetFileInfoW
@@ -107,10 +105,6 @@ DestroyIcon.restype = c_int32
 CoInitializeEx = windll.ole32.CoInitializeEx
 CoInitializeEx.argtypes = [c_void_p, c_uint32]
 CoInitializeEx.restype = c_uint32
-
-ShellExecute = windll.shell32.ShellExecuteW
-ShellExecute.argtypes = [c_void_p, c_wchar_p, c_wchar_p, c_wchar_p, c_wchar_p, c_int32]
-ShellExecute.restype = c_void_p
 
 def GetFileInfo(path, flags):
     info = SHFILEINFO()
@@ -180,10 +174,3 @@ def from_mime_type_or_extension(mimeType, extension):
         extension = mimetypes.guess_extension(mimeType)
     info = GetFileInfo(extension, SHGFI.SHGFI_TYPENAME | SHGFI.SHGFI_USEFILEATTRIBUTES)
     return Win32Type(extension, mimeType, info.szTypeName)
-
-def open_file(path):
-    """ Open the specified file, executing the default application. """
-    if not path:
-        raise ValueError("The path should be specified")
-    InitializeCom()
-    ShellExecute(None, None, path, None, None, SW_SHOWNORMAL)
