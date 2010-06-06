@@ -1,8 +1,6 @@
 0.1 working transfers
 0.2 shared file list persistence (SQLite)
 0.3 resuming transfers, fine grained hashing
-0.? packaging Linux
-0.? packaging Windows
 0.? custom transport using pipes. As a filter (e.g. gzip) or as an endpoint (e.g. nc or ssh)
     would need to update the protocol negociation phase
 0.7 SSH transport layer

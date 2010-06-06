@@ -60,6 +60,7 @@ class SparkApplication(object):
         self.session.start()
     
     def start_linked(self):
+        Process.trap_exit()
         self.session.start_linked()
     
     def connect(self, address):
@@ -162,7 +163,8 @@ class SparkApplication(object):
             self.session.fileListUpdated.suscribe(pid),
             self.session.fileUpdated.suscribe(pid),
             self.session.ended.suscribe(pid),
-            Event("list-files", None))
+            Event("list-files", None),
+            Event("exit", int, None))
     
     def onListening(self, m, bindAddr, *args):
         self._bindAddr = bindAddr
@@ -200,6 +202,13 @@ class SparkApplication(object):
             self.transferFinished(transfer.transferID, transfer.direction, file.ID)
     
     def onEnded(self, m, *args):
+        self.sessionEnded()
+    
+    def onExit(self, m, pid, reason, *args):
+        if pid == self.session.pid:
+            self.sessionEnded()
+    
+    def sessionEnded(self):
         self._bindAddr = None
         if self._connAddr:
             self._connAddr = None

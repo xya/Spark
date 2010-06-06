@@ -90,7 +90,7 @@ if __name__ == "__main__":
     debugger.start_watcher(watch_pipe_name)
     with GuiProcess() as pid:
         with SparkApplication() as app:
-            app.start()
+            app.start_linked()
             app.installHandlers(pid.messages)
             view = MainWindow(app)
             if bindAddr:

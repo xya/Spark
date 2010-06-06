@@ -44,6 +44,7 @@ class Process(object):
         self.state = None
         self.logger = None
         self.linked = set()
+        self.trapExit = False
     
     def displayName(self):
         if self.name:
@@ -119,6 +120,16 @@ class Process(object):
         return cls._spawn(fun, args, name, currentPid)
     
     @classmethod
+    def trap_exit(cls):
+        """ Change the current process to trap exits. If any process in its
+        link set dies, this process will be sent an Exit message instead of being killed. """
+        currentPid = cls.current()
+        if not currentPid:
+            raise Exception("The current thread has no PID")
+        with cls._lock:
+            cls._processes[currentPid].trapExit = True
+    
+    @classmethod
     def _spawn(cls, fun, args=(), name=None, linkedPid=None):
         with cls._lock:
             pid = cls._new_id()
@@ -142,31 +153,39 @@ class Process(object):
         try:
             fun(*args)
             gracefulExit = True
+            exitReason = None
         except ProcessExit as e:
-            if e.reason is None:
+            exitReason = e.reason
+            if exitReason is None:
                 gracefulExit = True
             else:
                 log.error("Process exited with reason %s." % repr(e.reason))
                 gracefulExit = False
         except ProcessKilled:
             gracefulExit = False
+            exitReason = "killed"
         except NoMatchException as nme:
             log.error(str(nme))
             gracefulExit = False
+            exitReason = "no-match"
         except Exception:
             log.exception("An exception was raised by the process")
             gracefulExit = False
+            exitReason = "exception"
         finally:
             with cls._lock:
-                cls._remove_current_process(pid)
                 if not gracefulExit:
                     log.error("Process died.")
-                    # kill any linked process
-                    for linkedPid in p.linked:
-                        if cls._processes[linkedPid].queue.close():
-                            log.error("Killing linked process %d.", linkedPid)
                 else:
                     log.info("Process stopped.")
+                # notify/kill linked processes
+                for linkedPid in p.linked:
+                    linkedProcess = cls._processes[linkedPid]
+                    if linkedProcess.trapExit:
+                        Process.try_send(linkedPid, Event("exit", pid, exitReason))
+                    elif not gracefulExit and linkedProcess.queue.close():
+                        log.error("Killing linked process %d.", linkedPid)
+                cls._remove_current_process(pid)
     
     @classmethod
     def _getQueue(cls, pid):
