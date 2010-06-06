@@ -49,7 +49,7 @@ class Transfer(ProcessBase):
         """ Initialize the patterns used by the message loop. """
         super(Transfer, self).initPatterns(loop, state)
         loop.addHandlers(self,
-            Command("init-transfer", int, int, None, int),
+            Command("init-transfer", int, int, None, int, int),
             Command("close-transfer"),
             Command("transfer-info"))
     
@@ -74,12 +74,12 @@ class Transfer(ProcessBase):
             self.stateChanged(state.transferID, state.direction, transferState)
             self._sendTransferInfo(state)
     
-    def doInitTransfer(self, m, transferID, direction, file, sessionPid, state):
+    def doInitTransfer(self, m, transferID, direction, file, blockSize, sessionPid, state):
         state.transferID = transferID
         state.direction = direction
         state.file = file
         state.sessionPid = sessionPid
-        state.blockSize = 1024
+        state.blockSize = blockSize
         state.receivedBlocks = 0
         state.completedSize = 0
         state.totalBlocks = int(math.ceil(float(file.size) / state.blockSize))
@@ -140,14 +140,14 @@ class Upload(Transfer):
         loop.addHandlers(self,
             Command("start-upload", int))
     
-    def doInitTransfer(self, m, transferID, direction, file, sessionPid, state):
+    def doInitTransfer(self, m, transferID, direction, file, blockSize, sessionPid, state):
         state.logger.info("Initializing upload of file %s.", repr((file.ID, direction)))
         state.nextBlock = 0
         state.offset = 0
         state.path = file.path
         state.stream = open(state.path, "rb")
         state.logger.info("Opened file '%s' for reading.", state.path)
-        super(Upload, self).doInitTransfer(m, transferID, direction, file, sessionPid, state)
+        super(Upload, self).doInitTransfer(m, transferID, direction, file, blockSize, sessionPid, state)
     
     def doStartUpload(self, m, messengerPid, state):
         state.messengerPid = messengerPid
@@ -195,14 +195,14 @@ class Download(Transfer):
             Event("remote-state-changed", basestring))
         loop.addPattern(Block, self._blockReceived)
     
-    def doInitTransfer(self, m, transferID, direction, file, sessionPid, state):
+    def doInitTransfer(self, m, transferID, direction, file, blockSize, sessionPid, state):
         state.logger.info("Initializing download of file %s.", repr((file.ID, direction)))
         state.blockTable = defaultdict(bool)
         state.offset = 0
         state.path = file.path
         state.stream = open(state.path, "wb")
         state.logger.info("Opened file '%s' for writing.", state.path)
-        super(Download, self).doInitTransfer(m, transferID, direction, file, sessionPid, state)
+        super(Download, self).doInitTransfer(m, transferID, direction, file, blockSize, sessionPid, state)
     
     def onRemoteStateChanged(self, m, transferState, state):
         self._changeTransferState(state, transferState)

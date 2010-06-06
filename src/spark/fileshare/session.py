@@ -50,6 +50,7 @@ class FileSharingSession(Service):
         state.pendingDownloads = {}
         state.pendingUploads = {}
         state.activeTransfers = 0
+        state.defaultBlockSize = 4096
     
     def initPatterns(self, loop, state):
         super(FileSharingSession, self).initPatterns(loop, state)
@@ -68,8 +69,8 @@ class FileSharingSession(Service):
             # messages from the remote peer
             Request("list-files", bool),
             Response("list-files", None),
-            Request("create-transfer", basestring),
-            Response("create-transfer", basestring, int),
+            Request("create-transfer", basestring, int),
+            Response("create-transfer", basestring, int, int),
             Request("start-transfer", int),
             Request("close-transfer", int),
             Notification("file-added", None),
@@ -161,25 +162,27 @@ class FileSharingSession(Service):
         if (file and (file.origin == REMOTE) and (file.transfer is None) and
             (not fileID in state.pendingDownloads)):
             state.pendingDownloads[fileID] = path
-            self.sendRequest(state, "create-transfer", fileID)
+            self.sendRequest(state, "create-transfer", fileID, state.defaultBlockSize)
     
-    def requestCreateTransfer(self, m, transID, fileID, state):
+    def requestCreateTransfer(self, m, transID, fileID, blockSize, state):
         """ The remote peer sent a 'create-transfer' request. """
         file = state.fileTable[fileID]
+        if blockSize < 1:
+            blockSize = state.defaultBlockSize
         if file and (file.origin == LOCAL):
-            transferID = self._createTransferProcess(None, Upload, file, state)
-            state.pendingUploads[transferID] = (transID, fileID)
+            transferID = self._createTransferProcess(None, Upload, file, blockSize, state)
+            state.pendingUploads[transferID] = (transID, fileID, blockSize)
         else:
             state.messenger.send(Response("create-transfer-error", fileID).withID(transID))
     
-    def responseCreateTransfer(self, m, transID, fileID, transferID, state):
+    def responseCreateTransfer(self, m, transID, fileID, transferID, blockSize, state):
         if fileID in state.pendingDownloads:
             file = state.fileTable[fileID]
             file.path = state.pendingDownloads[fileID]
             del state.pendingDownloads[fileID]
-            self._createTransferProcess(transferID, Download, file, state)
+            self._createTransferProcess(transferID, Download, file, blockSize, state)
     
-    def _createTransferProcess(self, transferID, factory, file, state):
+    def _createTransferProcess(self, transferID, factory, file, blockSize, state):
         direction = factory.direction
         # either create an instance of class Upload or Download
         process = factory()
@@ -189,16 +192,16 @@ class FileSharingSession(Service):
         process.stateChanged.suscribe()
         if direction == DOWNLOAD:
             state.messenger.addRecipient(Block(transferID), process.pid)
-        Process.send(process.pid, Command("init-transfer", transferID, direction, file, self.pid))
+        Process.send(process.pid, Command("init-transfer", transferID, direction, file, blockSize, self.pid))
         transfer = state.transferTable.createTransfer(transferID, direction, file.ID, process.pid)
         file.transfer = transfer
         return transferID
     
     def onTransferCreated(self, m, transferID, direction, state):
         if direction == UPLOAD:
-            reqID, fileID = state.pendingUploads[transferID]
+            reqID, fileID, blockSize = state.pendingUploads[transferID]
             del state.pendingUploads[transferID]
-            resp = Response("create-transfer", fileID, transferID).withID(reqID)
+            resp = Response("create-transfer", fileID, transferID, blockSize).withID(reqID)
             state.messenger.send(resp)
         elif direction == DOWNLOAD:
             self.sendRequest(state, "start-transfer", transferID)
