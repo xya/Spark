@@ -52,6 +52,7 @@ class MainWindow(QMainWindow):
         self.initToolbar()
         self.initTransferList()
         self.initStatusBar()
+        self.initTrayIcon()
         self.initTimer()
         self.sharedFiles = {}
         self.fileIDs = []
@@ -71,6 +72,12 @@ class MainWindow(QMainWindow):
             action.setToolTip(help)
             action.setStatusTip(help)
         return action
+    
+    def changeEvent(self, e):
+        if e.type() == QEvent.WindowStateChange:
+            if self.isMinimized():
+                self.hide()
+                self.trayIcon.setVisible(True)
     
     def initToolbar(self):
         self.actions["connect"] = self.createAction("status/network-transmit-receive", 32, "Connect", "Connect to a peer")
@@ -142,11 +149,30 @@ class MainWindow(QMainWindow):
         else:
             self.setWindowTitle("Spark")
             listenStatus = "Not listening for incoming connections"
+        self.trayIcon.setToolTip(self.windowTitle())
         self.connStatus.setToolTip(connStatus + "\n" + listenStatus)
         self.myIP.setText("My IP: %s" % self.app.myIPaddress)
         self.transferCount.setText("%d transfer(s)" % self.app.activeTransfers)
         self.uploadSpeedText.setText(formatSize(self.app.uploadSpeed, "%s/s"))
         self.downloadSpeedText.setText(formatSize(self.app.downloadSpeed, "%s/s"))
+    
+    def initTrayIcon(self):
+        self.trayIcon = QSystemTrayIcon(self)
+        self.trayIcon.setIcon(QIcon(QPixmap(iconPath("emblems/emblem-new", 24))))
+        self.trayIcon.setToolTip(self.windowTitle())
+        self.trayMenu = QMenu(self)
+        quit = QAction("Quit", self)
+        self.trayMenu.addAction(quit)
+        self.trayIcon.setContextMenu(self.trayMenu)
+        QObject.connect(self.trayIcon,
+            SIGNAL("activated(QSystemTrayIcon::ActivationReason)"), self.trayIconActivated)
+        QObject.connect(quit, SIGNAL("triggered()"), self, SLOT("close()"))
+    
+    def trayIconActivated(self, reason):
+        if (reason == QSystemTrayIcon.DoubleClick) or (reason == QSystemTrayIcon.Trigger):
+            if not self.isVisible():
+                self.showNormal()
+                self.trayIcon.setVisible(False)
     
     def initTransferList(self):
         self.transferList = FileList()
