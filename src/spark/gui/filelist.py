@@ -37,15 +37,13 @@ class CustomList(QWidget):
         layout = QVBoxLayout()
         layout.setMargin(0)
         layout.setSpacing(0)
+        layout.addStretch()
         self.setLayout(layout)
 
     def addItem(self, widget):
-        self.layout().addWidget(widget)
+        self.layout().insertWidget(self.layout().count() - 1, widget)
         self.items.append(widget)
         self.updateItems()
-    
-    def addSpace(self):
-        self.layout().addStretch()
     
     def clear(self):
         """ Remove all the items from the list. """
@@ -57,6 +55,7 @@ class CustomList(QWidget):
             widget = item.widget()
             if widget is not None:
                 widget.setParent(None)
+        self.layout().addStretch()
         self.items = []
         self.selectedIndex = -1
     
@@ -159,6 +158,17 @@ class FileList(QWidget):
                 if url.scheme() == "file":
                     self.emit(SIGNAL("fileDropped"), unicode(url.toLocalFile()))
     
+    def __getitem__(self, index):
+        if index < 0 or index >= len(self.list.items):
+            raise IndexError()
+        return self.list.items[index]
+    
+    def selectedIndex(self):
+        return self.list.selectedIndex
+    
+    def setSelectedIndex(self, index):
+        self.list.updateSelectedIndex(index)
+    
     def updateSelectedItem(self, index):
         self.ensureItemVisible(index)
         self.emit(SIGNAL("selectionChanged"), index)
@@ -170,9 +180,6 @@ class FileList(QWidget):
     
     def addItem(self, widget):
         self.list.addItem(widget)
-    
-    def addSpace(self):
-        self.list.addSpace()
     
     def clear(self):
         self.list.clear()

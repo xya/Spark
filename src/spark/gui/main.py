@@ -102,7 +102,7 @@ class MainWindow(QMainWindow):
         self.actions["connect"].setVisible(not self.app.isConnected)
         
         # selection-dependent actions
-        if self.selectedID is None:
+        if not self.selectedID in self.sharedFiles:
             file = None
         else:
             file = self.sharedFiles[self.selectedID]
@@ -160,12 +160,14 @@ class MainWindow(QMainWindow):
         self.transferList.clear()
         self.sharedFiles = files
         self.fileIDs = files.keys()
-        for file in (self.sharedFiles[ID] for ID in self.fileIDs):
+        newSelection = -1
+        for i, file in enumerate(self.sharedFiles[ID] for ID in self.fileIDs):
             widget = FileInfoWidget(self)
             self.updateFileWidget(widget, file)
             self.transferList.addItem(widget)
-        self.transferList.addSpace()
-        self.updateSelectedTransfer(-1)
+            if file.ID == self.selectedID:
+                newSelection = i
+        self.transferList.setSelectedIndex(newSelection)
     
     def updateFileWidget(self, widget, file):
         widget.setName(file.name)
@@ -331,7 +333,7 @@ class MainWindow(QMainWindow):
         widget = None
         for i, widgetID in enumerate(self.fileIDs):
             if widgetID == fileID:
-                widget = self.transferList.list.items[i]
+                widget = self.transferList[i]
                 break
         if widget:
             file = self.app.files[fileID]
