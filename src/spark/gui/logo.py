@@ -44,26 +44,8 @@ def barycenter(pointA, a, pointB, b):
 def getCircleBounds(center, radius):
     return QRectF(center.x() - radius, center.y() - radius, 2.0 * radius, 2.0 * radius)
 
-def getRectangleCenter(r):
-    return QPointF(r.left() + (r.width() / 2.0), r.top() + (r.height() / 2.0))
-
 def getRadians(degrees):
     return ((degrees * math.pi) / 180.0)
-
-def drawCircle(g, center, radius):
-    circle = getCircleBounds(center, radius)
-    circlePath = QPainterPath()
-    circlePath.addEllipse(circle)
-    g.drawPath(circlePath)
-
-def drawCircleShadow(g, center, radius):
-    circle = getCircleBounds(center, radius)
-    circlePath = QPainterPath()
-    circlePath.addEllipse(circle)
-    gradient = QLinearGradient(circle.topLeft(), circle.bottomRight())
-    gradient.setColorAt(0.0, QColor(0, 0, 0, 80))
-    gradient.setColorAt(1.0, QColor(255, 255, 255, 64))
-    g.fillPath(circlePath, QBrush(gradient))
 
 class SparkLogo(object):
     def __init__(self):
@@ -88,6 +70,16 @@ class SparkLogo(object):
     def borderPen(self):
         return QPen(QBrush(self.borderColor), self.borderThickness / 10.0)
     
+    def drawDot(self, g, center=QPointF()):
+        circle = getCircleBounds(center, self.dotRadius)
+        circlePath = QPainterPath()
+        circlePath.addEllipse(circle)
+        g.drawPath(circlePath)
+        gradient = QLinearGradient(circle.topLeft(), circle.bottomRight())
+        gradient.setColorAt(0.0, QColor(0, 0, 0, 80))
+        gradient.setColorAt(1.0, QColor(255, 255, 255, 64))
+        g.fillPath(circlePath, QBrush(gradient))
+    
     def draw(self, g):
         g.save()
         g.setPen(self.borderPen)
@@ -98,14 +90,11 @@ class SparkLogo(object):
             self.drawStarBranch(g, i)
             outerPoint = self.branchOuterCenter
             secondPoint = barycenter(outerPoint, 2.0, QPointF(), 1.0)
-            #drawCircle(g, outerPoint, star.dotRadius)
-            #drawCircleShadow(g, outerPoint, star.dotRadius)
-            #drawCircle(g, secondPoint, star.dotRadius)
-            #drawCircleShadow(g, secondPoint, star.dotRadius)
+            #self.drawDot(g, outerPoint)
+            #self.drawDot(g, secondPoint)
             g.restore()
         g.setBrush(QBrush(self.centerDotColor))
-        drawCircle(g, QPointF(), self.dotRadius)
-        drawCircleShadow(g, QPointF(), self.dotRadius)
+        self.drawDot(g)
         g.restore()
         
     def drawStarBranch(self, g, i):
@@ -147,13 +136,13 @@ class SparkLogo(object):
         O, A, B, C, E, F = self.computeBranchPoints()
         p.moveTo(O)
         p.lineTo(F)
-        C2 = getCircleBounds(middle(B, F), self.branchWidth / 2.0)
+        #C2 = getCircleBounds(middle(B, F), self.branchWidth / 2.0)
         #p.arcTo(C2, 90.0 - self.angle, -180.0)
         p.lineTo(B)
         #p.quadTo(middle(F, B), B)
         p.lineTo(C)
         p.lineTo(A)
-        C1 = getCircleBounds(middle(A, E), self.branchWidth / 2.0)
+        #C1 = getCircleBounds(middle(A, E), self.branchWidth / 2.0)
         #p.arcTo(C1, 270.0 + self.angle, -180.0)
         p.lineTo(E)
         p.lineTo(O)
