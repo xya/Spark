@@ -21,6 +21,10 @@
 
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
+try:
+    from PyQt4.QtSvg import QSvgGenerator
+except ImportError:
+    QSvgGenerator = None
 import sys
 import logo
 
@@ -47,7 +51,7 @@ class TestLogoWidow(QWidget):
         self.borderThicknessText = QLabel("Border thickness")
         self.borderThickness = QSpinBox()
         self.borderThickness.setMinimum(1)
-        self.borderThickness.setMaximum(20)
+        self.borderThickness.setMaximum(40)
         self.borderThickness.setValue(self.logoWidget.logo.borderThickness)
         self.distanceText = QLabel("Distance from center")
         self.distance = QSpinBox()
@@ -58,6 +62,7 @@ class TestLogoWidow(QWidget):
         self.inverseGradient.setChecked(self.logoWidget.logo.inverseGradient)
         self.showAxes = QCheckBox("Show axes")
         self.showAxes.setChecked(self.logoWidget.showAxes)
+        self.exportToSvg = QPushButton("Export to SVG")
         form = QFormLayout()
         form.addRow(self.branchWidthText, self.branchWidth)
         form.addRow(self.branchHeightText, self.branchHeight)
@@ -66,6 +71,7 @@ class TestLogoWidow(QWidget):
         form.addRow(self.distanceText, self.distance)
         form.addRow(self.inverseGradient)
         form.addRow(self.showAxes)
+        form.addRow(self.exportToSvg)
         vbox = QHBoxLayout(self)
         vbox.addWidget(self.logoWidget, 1)
         vbox.addLayout(form)
@@ -76,6 +82,7 @@ class TestLogoWidow(QWidget):
         QObject.connect(self.distance, SIGNAL('valueChanged(int)'), self.logoWidget.setDistance)
         QObject.connect(self.inverseGradient, SIGNAL('toggled(bool)'), self.logoWidget.setInverseGradient)
         QObject.connect(self.showAxes, SIGNAL('toggled(bool)'), self.logoWidget.setShowAxes)
+        QObject.connect(self.exportToSvg, SIGNAL('clicked()'), self.logoWidget.exportToSvg)
 
 class LogoWidget(QWidget):
     def __init__(self, parent=None):
@@ -115,21 +122,66 @@ class LogoWidget(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         # scale to widget size while preserving the aspect ratio
-        dx, dy = float(p.device().width()), float(p.device().height())
-        minN, maxN = -100.0, 100.0
-        if dx > dy:
-            yMin, yMax, yAmpl = minN, maxN, (maxN - minN)
-            xAmpl = (1.0 + ((dx - dy) / dy)) * yAmpl
-            xMin, xMax = -xAmpl / 2.0, xAmpl / 2.0
+        size = QSizeF(p.device().width(), p.device().height())
+        bounds = self.computeViewport(size, -100.0, 100.0)
+        p.setTransform(self.viewportTransform(size, bounds))
+        self.drawLogo(p, bounds)
+    
+    def exportToSvg(self):
+        size = self.size()
+        bounds = self.computeViewport(QSizeF(size), -100.0, 100.0)
+        transform = self.viewportTransform(QSizeF(size), bounds)
+        fileName = QFileDialog.getSaveFileName(self, "Save logo", "", "SVG files (*.svg)")
+        if not fileName or fileName.isEmpty():
+            return
+        svg = QSvgGenerator()
+        svg.setFileName(fileName)
+        svg.setTitle("Spark Logo")
+        # save settings as description
+        settings = self.settingsMap()
+        settingsText = "{%s}" % ", ".join(["'%s': %s" % (k, repr(v))
+                                           for (k, v) in settings.iteritems()])
+        svg.setDescription("This picture was generated to be a Spark logo.\n"
+            "The settings used were: %s" % settingsText)
+        # TODO: crop
+        svg.setSize(size)
+        svg.setViewBox(transform.mapRect(bounds))
+        p = QPainter()
+        p.begin(svg)
+        p.setTransform(transform)
+        self.drawLogo(p, bounds)
+        p.end()
+    
+    def settingsMap(self):
+        l = self.logo
+        return {"branchWidth": l.branchWidth,
+                "branchHeight": l.branchSize,
+                "dotRadius": l.dotRadius,
+                "borderThickness": l.borderThickness,
+                "distance": l.distance,
+                "inverseGradient": l.inverseGradient}
+    
+    def computeViewport(self, size, minN, maxN):
+        if size.width() > size.height():
+            yMin, yAmpl = minN, (maxN - minN)
+            xAmpl = (1.0 + ((size.width() - size.height()) / size.height())) * yAmpl
+            xMin = -xAmpl / 2.0
         else:
-            xMin, xMax, xAmpl = minN, maxN, (maxN - minN)
-            yAmpl = (1.0 + ((dy - dx) / dx)) * xAmpl
-            yMin, yMax = -yAmpl / 2.0, yAmpl / 2.0
-        p.scale(dx / xAmpl, dy / yAmpl)
-        p.translate(-xMin, -yMin)
+            xMin, xAmpl = minN, (maxN - minN)
+            yAmpl = (1.0 + ((size.height() - size.width()) / size.width())) * xAmpl
+            yMin = -yAmpl / 2.0
+        return QRectF(xMin, yMin, xAmpl, yAmpl)
+    
+    def viewportTransform(self, size, bounds):
+        t = QTransform()
+        t.scale(size.width() / bounds.width(), size.height() / bounds.height())
+        t.translate(-bounds.left(), -bounds.top())
+        return t
+    
+    def drawLogo(self, p, bounds):
         if self.showAxes:
-            p.drawLine(0.0, yMin, 0.0, yMax)
-            p.drawLine(xMin, 0.0, xMax, 0.0)
+            p.drawLine(0.0, bounds.top(), 0.0, bounds.bottom())
+            p.drawLine(bounds.left(), 0.0, bounds.right(), 0.0)
         self.logo.draw(p)
 
 if __name__ == "__main__":
