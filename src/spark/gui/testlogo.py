@@ -39,26 +39,45 @@ class TestLogoWidow(QWidget):
         self.branchHeight.setMinimum(1)
         self.branchHeight.setMaximum(50)
         self.branchHeight.setValue(self.logoWidget.logo.star.branchSize)
-        self.radiusText = QLabel("Radius")
-        self.radius = QSpinBox()
-        self.radius.setMinimum(1)
-        self.radius.setMaximum(200)
-        self.radius.setValue(self.logoWidget.logo.star.radius)
+        self.dotRadiusText = QLabel("Dot radius")
+        self.dotRadius = QSpinBox()
+        self.dotRadius.setMinimum(1)
+        self.dotRadius.setMaximum(20)
+        self.dotRadius.setValue(self.logoWidget.logo.star.dotRadius)
+        self.borderThicknessText = QLabel("Border thickness")
+        self.borderThickness = QSpinBox()
+        self.borderThickness.setMinimum(1)
+        self.borderThickness.setMaximum(20)
+        self.borderThickness.setValue(self.logoWidget.logo.borderThickness)
+        self.distanceText = QLabel("Distance from center")
+        self.distance = QSpinBox()
+        self.distance.setMinimum(0)
+        self.distance.setMaximum(200)
+        self.distance.setValue(self.logoWidget.logo.star.distance)
+        self.showAxes = QCheckBox("Show axes")
+        self.showAxes.setChecked(self.logoWidget.showAxes)
         form = QFormLayout()
         form.addRow(self.branchWidthText, self.branchWidth)
         form.addRow(self.branchHeightText, self.branchHeight)
-        form.addRow(self.radiusText, self.radius)
-        vbox = QVBoxLayout(self)
+        form.addRow(self.dotRadiusText, self.dotRadius)
+        form.addRow(self.borderThicknessText, self.borderThickness)
+        form.addRow(self.distanceText, self.distance)
+        form.addRow(self.showAxes)
+        vbox = QHBoxLayout(self)
         vbox.addWidget(self.logoWidget, 1)
         vbox.addLayout(form)
         QObject.connect(self.branchWidth, SIGNAL('valueChanged(int)'), self.logoWidget.setBranchWidth)
         QObject.connect(self.branchHeight, SIGNAL('valueChanged(int)'), self.logoWidget.setBranchHeight)
-        QObject.connect(self.radius, SIGNAL('valueChanged(int)'), self.logoWidget.setRadius)
+        QObject.connect(self.dotRadius, SIGNAL('valueChanged(int)'), self.logoWidget.setDotRadius)
+        QObject.connect(self.borderThickness, SIGNAL('valueChanged(int)'), self.logoWidget.setBorderThickness)
+        QObject.connect(self.distance, SIGNAL('valueChanged(int)'), self.logoWidget.setDistance)
+        QObject.connect(self.showAxes, SIGNAL('toggled(bool)'), self.logoWidget.setShowAxes)
 
 class LogoWidget(QWidget):
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
         self.logo = logo.SparkLogo()
+        self.showAxes = False
     
     def setBranchWidth(self, v):
         self.logo.star.branchWidth = v
@@ -68,23 +87,42 @@ class LogoWidget(QWidget):
         self.logo.star.branchSize = v
         self.update()
     
-    def setRadius(self, v):
-        self.logo.star.radius = v
+    def setDotRadius(self, v):
+        self.logo.star.dotRadius = v
+        self.update()
+    
+    def setBorderThickness(self, v):
+        self.logo.borderThickness = v
+        self.update()
+    
+    def setDistance(self, v):
+        self.logo.star.distance = v
+        self.update()
+    
+    def setShowAxes(self, v):
+        self.showAxes = v
         self.update()
     
     def paintEvent(self, e):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         # scale to widget size while preserving the aspect ratio
-        dx, dy = p.device().width(), p.device().height()
-        dn = min(dx, dy)
-        offsetX = (dx - dn) / 2.0
-        offsetY = (dy - dn) / 2.0
-        p.translate(offsetX, offsetY)
-        p.scale(dn / 200.0, dn / 200.0)
+        dx, dy = float(p.device().width()), float(p.device().height())
+        minN, maxN = -100.0, 100.0
+        if dx > dy:
+            yMin, yMax, yAmpl = minN, maxN, (maxN - minN)
+            xAmpl = (1.0 + ((dx - dy) / dy)) * yAmpl
+            xMin, xMax = -xAmpl / 2.0, xAmpl / 2.0
+        else:
+            xMin, xMax, xAmpl = minN, maxN, (maxN - minN)
+            yAmpl = (1.0 + ((dy - dx) / dx)) * xAmpl
+            yMin, yMax = -yAmpl / 2.0, yAmpl / 2.0
+        p.scale(dx / xAmpl, dy / yAmpl)
+        p.translate(-xMin, -yMin)
+        if self.showAxes:
+            p.drawLine(0.0, yMin, 0.0, yMax)
+            p.drawLine(xMin, 0.0, xMax, 0.0)
         self.logo.draw(p)
-        #self.logo.star.update()
-        #self.logo.drawStarBranch(p, self.logo.star, self.logo.star.branches[0])
 
 if __name__ == "__main__":
     qApp = QApplication(sys.argv)

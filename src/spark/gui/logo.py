@@ -56,11 +56,10 @@ def drawCircle(g, center, radius):
     circlePath.addEllipse(circle)
     g.drawPath(circlePath)
 
-def drawCircleShadow(g, center, radius, angle, alpha):
+def drawCircleShadow(g, center, radius):
     circle = getCircleBounds(center, radius)
     circlePath = QPainterPath()
     circlePath.addEllipse(circle)
-    # still need to rotate by angle degrees
     gradient = QLinearGradient(circle.topLeft(), circle.bottomRight())
     gradient.setColorAt(0.0, QColor(0, 0, 0, 80))
     gradient.setColorAt(1.0, QColor(255, 255, 255, 64))
@@ -69,13 +68,12 @@ def drawCircleShadow(g, center, radius, angle, alpha):
 class SparkLogo(object):
     def __init__(self):
         self.star = Star()
-        self.star.center = QPointF(100, 100)
-        self.star.radius = 70.0
-        self.star.branchSize = 20.0
+        self.star.distance = 70.0
+        self.star.branchSize = 38.0
         self.star.branchWidth = 10.0
+        self.star.dotRadius = 5.0
         self.star.update()
-        self.size = QSize(200, 200)
-        self.borderThickness = 2.0
+        self.borderThickness = 10.0
         self.alpha = 1.0
         self.borderColor = QColor("black")
         self.dotColor = QColor("silver")
@@ -89,7 +87,7 @@ class SparkLogo(object):
     
     @property
     def borderPen(self):
-        return QPen(QBrush(self.borderColor), self.borderThickness)
+        return QPen(QBrush(self.borderColor), self.borderThickness / 10.0)
     
     def draw(self, painter):
         self.star.update()
@@ -101,49 +99,45 @@ class SparkLogo(object):
         g.setBrush(QBrush(self.dotColor))
         for i, branch in enumerate(star.branches):
             g.save()
-            g.translate(star.center)
             g.rotate(Star.angles[i])
-            #outerCenter = branch.outerCenter
-            outerCenter = QPointF(star.center.x(), star.center.y() + (star.radius - branch.size)) #rotation
             self.drawStarBranch(g, star, branch)
+            outerPoint = branch.outerCenter
+            secondPoint = barycenter(outerPoint, 2.0, QPointF(), 1.0)
+            #drawCircle(g, outerPoint, star.dotRadius)
+            #drawCircleShadow(g, outerPoint, star.dotRadius)
+            #drawCircle(g, secondPoint, star.dotRadius)
+            #drawCircleShadow(g, secondPoint, star.dotRadius)
             g.restore()
-            #secondPoint = barycenter(outerCenter, 2.0, star.center, 1.0)
-            drawCircle(g, outerCenter, branch.width / 2.0)
-            drawCircleShadow(g, outerCenter, branch.width / 2.0, branch.rotation, self.alpha)
-            #drawCircle(g, secondPoint, branch.width / 2.0)
-            #drawCircleShadow(g, secondPoint, branch.width / 2.0, branch.rotation, self.alpha)
         g.setBrush(QBrush(self.centerDotColor))
-        drawCircle(g, star.center, star.branchWidth / 2.0)
-        drawCircleShadow(g, star.center, star.branchWidth / 2.0, 270.0, self.alpha)
+        drawCircle(g, QPointF(), star.dotRadius)
+        drawCircleShadow(g, QPointF(), star.dotRadius)
         g.restore()
         
     def drawStarBranch(self, g, star, branch):
         g.save()
         branchOutline = branch.outline
         branchBounds = branchOutline.boundingRect()
-        g.translate(0.0, star.radius)
-        g.rotate(-180.0)
-        mx = branchBounds.left() + branchBounds.width() / 2.0
-        gradient = QLinearGradient(QPointF(mx, branchBounds.top()), QPointF(mx, branchBounds.bottom()))
-        gradient.setColorAt(0.0, branch.branchColor)
-        gradient.setColorAt(1.0, self.endBranchColor)
+        g.translate(star.distance, 0.0)
+        g.rotate(branch.angle - 180.0)
+        gradient = QLinearGradient(QPointF(0.0, 0.0), branch.outerCenter)
+        gradient.setColorAt(1.0, branch.branchColor)
+        gradient.setColorAt(0.0, self.endBranchColor)
         g.setPen(self.borderPen)
         g.setBrush(QBrush(gradient))
         g.drawPath(branchOutline)
         g.restore()
 
 class Star(object):
-    angles = [180.0, 252.0, -36.0, 36.0, 108.0]
+    angles = [270.0, 342.0, 54.0, 126.0, 198.0]
     def __init__(self):
         self.branches = [StarBranch() for i in range(0, 5)]
-        self.center = QPointF()
-        self.radius = 0.0
+        self.distance = 0.0
         self.branchSize = 0.0
         self.branchWidth = 0.0
     
     def update(self):
         for i, branch in enumerate(self.branches):
-            branch.angle = 36.0
+            branch.angle = 360.0 / (2.0 * len(self.branches))
             branch.width = self.branchWidth
             branch.size = self.branchSize
 
@@ -161,14 +155,12 @@ class StarBranch(object):
     def computePoints(self):
         origin = QPointF()
         alpha = getRadians(self.angle)
-        height = self.size * math.tan(alpha)
-        b = self.width / math.sin(Degrees90 - alpha)
-        c = self.size * ((b + height) / height)
-        E = transform(origin, c, Degrees90 + alpha)
-        F = transform(origin, c, Degrees90 - alpha)
-        B = transform(F, self.width, Degrees180 - alpha)
-        A = transform(E, self.width, alpha)
-        C = transform(origin, c - self.size, Degrees90)
+        c = self.width / math.sin(alpha)
+        E = transform(origin, self.size, 0.0)
+        F = transform(origin, self.size, -(alpha * 2.0))
+        B = transform(F, self.width, Degrees90 -(alpha * 2.0))
+        A = transform(E, self.width, -Degrees90)
+        C = transform(origin, c, -alpha)
         return (origin, A, B, C, E, F)
     
     @property
@@ -178,13 +170,14 @@ class StarBranch(object):
         p.moveTo(O)
         p.lineTo(F)
         C2 = getCircleBounds(middle(B, F), self.width / 2.0)
-        p.arcTo(C2, 90.0 - self.angle, -180.0)
-        #p.lineTo(B)
+        #p.arcTo(C2, 90.0 - self.angle, -180.0)
+        p.lineTo(B)
+        #p.quadTo(middle(F, B), B)
         p.lineTo(C)
         p.lineTo(A)
         C1 = getCircleBounds(middle(A, E), self.width / 2.0)
-        p.arcTo(C1, 270.0 + self.angle, -180.0)
-        #p.lineTo(E)
+        #p.arcTo(C1, 270.0 + self.angle, -180.0)
+        p.lineTo(E)
         p.lineTo(O)
         p.closeSubpath()
         return p
