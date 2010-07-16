@@ -74,6 +74,7 @@ class LogoWidget(QWidget):
     
     def paintEvent(self, e):
         p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
         # scale to widget size while preserving the aspect ratio
         dx, dy = p.device().width(), p.device().height()
         dn = min(dx, dy)
@@ -82,6 +83,8 @@ class LogoWidget(QWidget):
         p.translate(offsetX, offsetY)
         p.scale(dn / 200.0, dn / 200.0)
         self.logo.draw(p)
+        #self.logo.star.update()
+        #self.logo.drawStarBranch(p, self.logo.star, self.logo.star.branches[0])
 
 if __name__ == "__main__":
     qApp = QApplication(sys.argv)
