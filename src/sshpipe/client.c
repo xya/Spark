@@ -34,7 +34,7 @@ void client_pipe(char *host, int port)
     ssh_options_set(s, SSH_OPTIONS_HOST, host);
     ssh_options_set(s, SSH_OPTIONS_PORT, &port);
     ssh_options_set(s, SSH_OPTIONS_USER, "xya");
-    ssh_options_set(s, SSH_OPTIONS_LOG_VERBOSITY_STR, "5");
+    //ssh_options_set(s, SSH_OPTIONS_LOG_VERBOSITY_STR, "5");
     if(ssh_connect(s) != SSH_OK)
         return session_error(s, "connect");
     

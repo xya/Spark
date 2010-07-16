@@ -83,10 +83,10 @@ void server_handle_message(ssh_session s, ssh_message m, int type, int subtype, 
             if(authenticate(keyhash, 1))
             {
                 //FIXME: type detection
-                ssh_string algostr = string_from_char("ssh-rsa");
+                ssh_string algostr = ssh_string_from_char("ssh-rsa");
                 ssh_message_auth_reply_pk_ok(m, algostr, keystr);
                 handled = 1;
-                string_free(algostr);
+                ssh_string_free(algostr);
             }
         }
         else if(has_sig == SSH_PUBLICKEY_STATE_VALID)
@@ -105,7 +105,7 @@ void server_handle_message(ssh_session s, ssh_message m, int type, int subtype, 
                 *state = SERVER_CLOSED;
             }
         }
-        string_free(keystr);
+        ssh_string_free(keystr);
         free(keyhash);
     }
     else if((*state == SERVER_AUTHENTICATED) && (type == SSH_REQUEST_CHANNEL_OPEN) && (subtype == SSH_CHANNEL_SESSION))
@@ -116,7 +116,7 @@ void server_handle_message(ssh_session s, ssh_message m, int type, int subtype, 
         handled = 1;
         session_event(s, "channel-opened", NULL);
         channel_to_file(chan, 1);
-        channel_free(chan);
+        ssh_channel_free(chan);
         *state = SERVER_CLOSED;
     }
     if(!handled)

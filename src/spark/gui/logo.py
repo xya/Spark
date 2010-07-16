@@ -67,41 +67,36 @@ def drawCircleShadow(g, center, radius):
 
 class SparkLogo(object):
     def __init__(self):
-        self.star = Star()
-        self.star.distance = 70.0
-        self.star.branchSize = 38.0
-        self.star.branchWidth = 10.0
-        self.star.dotRadius = 5.0
-        self.star.update()
+        self.distance = 70.0
+        self.branchSize = 38.0
+        self.branchWidth = 10.0
+        self.dotRadius = 5.0
         self.borderThickness = 10.0
-        self.alpha = 1.0
+        self.branches = 5
+        self.branchAngle = 360.0 / (self.branches * 2.0)
+        self.angles = [360.0 / self.branches * (i - 0.25)
+                       for i in range(1, self.branches + 1)]
         self.borderColor = QColor("black")
         self.dotColor = QColor("silver")
         self.centerDotColor = QColor("gold")
-        self.star.branches[0].branchColor = QColor("green")
-        self.star.branches[1].branchColor = QColor("blueviolet")
-        self.star.branches[2].branchColor = QColor("coral")
-        self.star.branches[3].branchColor = QColor("red")
-        self.star.branches[4].branchColor = QColor("blue")
+        self.branchColor = [QColor("coral"), QColor("red"), QColor("blue"),
+                            QColor("green"), QColor("blueviolet")]
         self.endBranchColor = QColor("white")
+        self.inverseGradient = True
     
     @property
     def borderPen(self):
         return QPen(QBrush(self.borderColor), self.borderThickness / 10.0)
     
-    def draw(self, painter):
-        self.star.update()
-        self.drawStar(painter, self.star)
-    
-    def drawStar(self, g, star):
+    def draw(self, g):
         g.save()
         g.setPen(self.borderPen)
         g.setBrush(QBrush(self.dotColor))
-        for i, branch in enumerate(star.branches):
+        for i in range(0, self.branches):
             g.save()
-            g.rotate(Star.angles[i])
-            self.drawStarBranch(g, star, branch)
-            outerPoint = branch.outerCenter
+            g.rotate(self.angles[i])
+            self.drawStarBranch(g, i)
+            outerPoint = self.branchOuterCenter
             secondPoint = barycenter(outerPoint, 2.0, QPointF(), 1.0)
             #drawCircle(g, outerPoint, star.dotRadius)
             #drawCircleShadow(g, outerPoint, star.dotRadius)
@@ -109,73 +104,56 @@ class SparkLogo(object):
             #drawCircleShadow(g, secondPoint, star.dotRadius)
             g.restore()
         g.setBrush(QBrush(self.centerDotColor))
-        drawCircle(g, QPointF(), star.dotRadius)
-        drawCircleShadow(g, QPointF(), star.dotRadius)
+        drawCircle(g, QPointF(), self.dotRadius)
+        drawCircleShadow(g, QPointF(), self.dotRadius)
         g.restore()
         
-    def drawStarBranch(self, g, star, branch):
+    def drawStarBranch(self, g, i):
         g.save()
-        branchOutline = branch.outline
-        branchBounds = branchOutline.boundingRect()
-        g.translate(star.distance, 0.0)
-        g.rotate(branch.angle - 180.0)
-        gradient = QLinearGradient(QPointF(0.0, 0.0), branch.outerCenter)
-        gradient.setColorAt(1.0, branch.branchColor)
-        gradient.setColorAt(0.0, self.endBranchColor)
+        g.translate(self.distance, 0.0)
+        g.rotate(self.branchAngle - 180.0)
+        gradient = QLinearGradient(QPointF(0.0, 0.0), self.branchOuterCenter)
+        start, end = self.branchColor[i], self.endBranchColor
+        if self.inverseGradient:
+            gradient.setColorAt(0.0, end)
+            gradient.setColorAt(1.0, start)
+        else:
+            gradient.setColorAt(0.0, start)
+            gradient.setColorAt(1.0, end)
         g.setPen(self.borderPen)
         g.setBrush(QBrush(gradient))
-        g.drawPath(branchOutline)
+        g.drawPath(self.branchOutline)
         g.restore()
-
-class Star(object):
-    angles = [270.0, 342.0, 54.0, 126.0, 198.0]
-    def __init__(self):
-        self.branches = [StarBranch() for i in range(0, 5)]
-        self.distance = 0.0
-        self.branchSize = 0.0
-        self.branchWidth = 0.0
-    
-    def update(self):
-        for i, branch in enumerate(self.branches):
-            branch.angle = 360.0 / (2.0 * len(self.branches))
-            branch.width = self.branchWidth
-            branch.size = self.branchSize
-
-class StarBranch(object):
-    def __init__(self):
-        self.width = self.size = 0.0
-        self.angle = self.rotation = 0.0
-        self.branchColor = QColor()
     
     @property
-    def outerCenter(self):
-        O, A, B, C, E, F = self.computePoints()
+    def branchOuterCenter(self):
+        O, A, B, C, E, F = self.computeBranchPoints()
         return middle(middle(A, E), middle(B, F))
     
-    def computePoints(self):
+    def computeBranchPoints(self):
         origin = QPointF()
-        alpha = getRadians(self.angle)
-        c = self.width / math.sin(alpha)
-        E = transform(origin, self.size, 0.0)
-        F = transform(origin, self.size, -(alpha * 2.0))
-        B = transform(F, self.width, Degrees90 -(alpha * 2.0))
-        A = transform(E, self.width, -Degrees90)
+        alpha = getRadians(self.branchAngle)
+        c = self.branchWidth / math.sin(alpha)
+        E = transform(origin, self.branchSize, 0.0)
+        F = transform(origin, self.branchSize, -(alpha * 2.0))
+        B = transform(F, self.branchWidth, Degrees90 -(alpha * 2.0))
+        A = transform(E, self.branchWidth, -Degrees90)
         C = transform(origin, c, -alpha)
         return (origin, A, B, C, E, F)
     
     @property
-    def outline(self):
+    def branchOutline(self):
         p = QPainterPath()
-        O, A, B, C, E, F = self.computePoints()
+        O, A, B, C, E, F = self.computeBranchPoints()
         p.moveTo(O)
         p.lineTo(F)
-        C2 = getCircleBounds(middle(B, F), self.width / 2.0)
+        C2 = getCircleBounds(middle(B, F), self.branchWidth / 2.0)
         #p.arcTo(C2, 90.0 - self.angle, -180.0)
         p.lineTo(B)
         #p.quadTo(middle(F, B), B)
         p.lineTo(C)
         p.lineTo(A)
-        C1 = getCircleBounds(middle(A, E), self.width / 2.0)
+        C1 = getCircleBounds(middle(A, E), self.branchWidth / 2.0)
         #p.arcTo(C1, 270.0 + self.angle, -180.0)
         p.lineTo(E)
         p.lineTo(O)

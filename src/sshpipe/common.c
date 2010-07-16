@@ -88,15 +88,14 @@ int authenticate(const char *keyhash, int partial)
 
 void channel_to_file(ssh_channel chan, int fd)
 {
-    ssh_buffer buf = buffer_new();
+    char buf[4096];
     int n;
     do
     {
-        n = channel_read_buffer(chan, buf, 0, 0);
+        n = ssh_channel_read(chan, buf, 4096, 0);
         if(n > 0)
-            write(fd, buffer_get(buf), n);
+            write(fd, buf, n);
     } while(n > 0);
-    buffer_free(buf);
 }
 
 void channel_from_file(ssh_channel chan, int fd)
@@ -107,7 +106,7 @@ void channel_from_file(ssh_channel chan, int fd)
     {
         n = read(fd, buf, 4096);
         if(n > 0)
-            channel_write(chan, buf, n);
+            ssh_channel_write(chan, buf, n);
     } while(n > 0);
-    channel_send_eof(chan);
+    ssh_channel_send_eof(chan);
 }

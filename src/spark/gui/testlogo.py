@@ -33,17 +33,17 @@ class TestLogoWidow(QWidget):
         self.branchWidth = QSpinBox()
         self.branchWidth.setMinimum(1)
         self.branchWidth.setMaximum(50)
-        self.branchWidth.setValue(self.logoWidget.logo.star.branchWidth)
+        self.branchWidth.setValue(self.logoWidget.logo.branchWidth)
         self.branchHeightText = QLabel("Branch height")
         self.branchHeight = QSpinBox()
         self.branchHeight.setMinimum(1)
         self.branchHeight.setMaximum(50)
-        self.branchHeight.setValue(self.logoWidget.logo.star.branchSize)
+        self.branchHeight.setValue(self.logoWidget.logo.branchSize)
         self.dotRadiusText = QLabel("Dot radius")
         self.dotRadius = QSpinBox()
         self.dotRadius.setMinimum(1)
         self.dotRadius.setMaximum(20)
-        self.dotRadius.setValue(self.logoWidget.logo.star.dotRadius)
+        self.dotRadius.setValue(self.logoWidget.logo.dotRadius)
         self.borderThicknessText = QLabel("Border thickness")
         self.borderThickness = QSpinBox()
         self.borderThickness.setMinimum(1)
@@ -53,7 +53,9 @@ class TestLogoWidow(QWidget):
         self.distance = QSpinBox()
         self.distance.setMinimum(0)
         self.distance.setMaximum(200)
-        self.distance.setValue(self.logoWidget.logo.star.distance)
+        self.distance.setValue(self.logoWidget.logo.distance)
+        self.inverseGradient = QCheckBox("Inverse color gradient")
+        self.inverseGradient.setChecked(self.logoWidget.logo.inverseGradient)
         self.showAxes = QCheckBox("Show axes")
         self.showAxes.setChecked(self.logoWidget.showAxes)
         form = QFormLayout()
@@ -62,6 +64,7 @@ class TestLogoWidow(QWidget):
         form.addRow(self.dotRadiusText, self.dotRadius)
         form.addRow(self.borderThicknessText, self.borderThickness)
         form.addRow(self.distanceText, self.distance)
+        form.addRow(self.inverseGradient)
         form.addRow(self.showAxes)
         vbox = QHBoxLayout(self)
         vbox.addWidget(self.logoWidget, 1)
@@ -71,6 +74,7 @@ class TestLogoWidow(QWidget):
         QObject.connect(self.dotRadius, SIGNAL('valueChanged(int)'), self.logoWidget.setDotRadius)
         QObject.connect(self.borderThickness, SIGNAL('valueChanged(int)'), self.logoWidget.setBorderThickness)
         QObject.connect(self.distance, SIGNAL('valueChanged(int)'), self.logoWidget.setDistance)
+        QObject.connect(self.inverseGradient, SIGNAL('toggled(bool)'), self.logoWidget.setInverseGradient)
         QObject.connect(self.showAxes, SIGNAL('toggled(bool)'), self.logoWidget.setShowAxes)
 
 class LogoWidget(QWidget):
@@ -80,15 +84,15 @@ class LogoWidget(QWidget):
         self.showAxes = False
     
     def setBranchWidth(self, v):
-        self.logo.star.branchWidth = v
+        self.logo.branchWidth = v
         self.update()
     
     def setBranchHeight(self, v):
-        self.logo.star.branchSize = v
+        self.logo.branchSize = v
         self.update()
     
     def setDotRadius(self, v):
-        self.logo.star.dotRadius = v
+        self.logo.dotRadius = v
         self.update()
     
     def setBorderThickness(self, v):
@@ -96,7 +100,11 @@ class LogoWidget(QWidget):
         self.update()
     
     def setDistance(self, v):
-        self.logo.star.distance = v
+        self.logo.distance = v
+        self.update()
+    
+    def setInverseGradient(self, v):
+        self.logo.inverseGradient = v
         self.update()
     
     def setShowAxes(self, v):
