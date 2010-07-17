@@ -129,8 +129,8 @@ class LogoWidget(QWidget):
     
     def exportToSvg(self):
         size = self.size()
-        bounds = self.computeViewport(QSizeF(size), -100.0, 100.0)
-        transform = self.viewportTransform(QSizeF(size), bounds)
+        vpBounds = self.computeViewport(QSizeF(size), -100.0, 100.0)
+        transform = self.viewportTransform(QSizeF(size), vpBounds)
         fileName = QFileDialog.getSaveFileName(self, "Save logo", "", "SVG files (*.svg)")
         if not fileName or fileName.isEmpty():
             return
@@ -143,13 +143,14 @@ class LogoWidget(QWidget):
                                            for (k, v) in settings.iteritems()])
         svg.setDescription("This picture was generated to be a Spark logo.\n"
             "The settings used were: %s" % settingsText)
-        # TODO: crop
+        # crop the logo to its bounding box
+        logoBounds = self.logo.boundingPath().boundingRect()
+        svg.setViewBox(transform.mapRect(logoBounds))
         svg.setSize(size)
-        svg.setViewBox(transform.mapRect(bounds))
         p = QPainter()
         p.begin(svg)
         p.setTransform(transform)
-        self.drawLogo(p, bounds)
+        self.drawLogo(p, vpBounds)
         p.end()
     
     def settingsMap(self):

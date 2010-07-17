@@ -70,11 +70,16 @@ class SparkLogo(object):
     def borderPen(self):
         return QPen(QBrush(self.borderColor), self.borderThickness / 10.0)
     
-    def drawDot(self, g, center=QPointF()):
+    def dotPath(self, center):
         circle = getCircleBounds(center, self.dotRadius)
-        circlePath = QPainterPath()
-        circlePath.addEllipse(circle)
+        path = QPainterPath()
+        path.addEllipse(circle)
+        return path
+    
+    def drawDot(self, g, center=QPointF()):
+        circlePath = self.dotPath(center)
         g.drawPath(circlePath)
+        circle = getCircleBounds(center, self.dotRadius)
         gradient = QLinearGradient(circle.topLeft(), circle.bottomRight())
         gradient.setColorAt(0.0, QColor(0, 0, 0, 80))
         gradient.setColorAt(1.0, QColor(255, 255, 255, 64))
@@ -113,6 +118,23 @@ class SparkLogo(object):
         g.setBrush(QBrush(gradient))
         g.drawPath(self.branchOutline)
         g.restore()
+    
+    def boundingPath(self):
+        # create a painting path that the union of all paths in the logo
+        outline = self.branchOutline
+        combine = QPainterPath()
+        for i in range(0, self.branches):
+            t = QTransform()
+            t.rotate(self.angles[i])
+            t.translate(self.distance, 0.0)
+            t.rotate(self.branchAngle - 180.0)
+            path = t.map(outline)
+            combine = combine.united(path)
+        # center dot
+        combine = combine.united(self.dotPath(QPointF(0.0, 0.0)))
+        stroker = QPainterPathStroker()
+        stroker.setWidth(self.borderThickness / 10.0)
+        return stroker.createStroke(combine)
     
     @property
     def branchOuterCenter(self):
