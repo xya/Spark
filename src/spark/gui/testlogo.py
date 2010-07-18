@@ -51,7 +51,7 @@ class TestLogoWidow(QWidget):
         self.borderThicknessText = QLabel("Border thickness")
         self.borderThickness = QSpinBox()
         self.borderThickness.setMinimum(1)
-        self.borderThickness.setMaximum(40)
+        self.borderThickness.setMaximum(100)
         self.borderThickness.setValue(self.logoWidget.logo.borderThickness)
         self.distanceText = QLabel("Distance from center")
         self.distance = QSpinBox()

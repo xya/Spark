@@ -104,7 +104,7 @@ class SparkLogo(object):
         g.save()
         g.rotate(self.branchAngle - 180.0)
         # draw branch with color gradient
-        gradient = QLinearGradient(QPointF(0.0, 0.0), branch.outerCenter)
+        gradient = QLinearGradient(branch.origin, branch.outerPoint)
         start, end = self.branchColor[i], self.endBranchColor
         if self.inverseGradient:
             gradient.setColorAt(0.0, end)
@@ -118,10 +118,8 @@ class SparkLogo(object):
         # draw dots
         g.setPen(self.borderPen)
         g.setBrush(QBrush(self.dotColor))
-        outerPoint = branch.outerCenter
-        secondPoint = barycenter(outerPoint, 2.0, QPointF(), 1.0)
-        #self.drawDot(g, outerPoint)
-        #self.drawDot(g, secondPoint)
+        for dotPoint in branch.dots:
+            self.drawDot(g, dotPoint)
         g.restore()
     
     def boundingPath(self):
@@ -135,8 +133,8 @@ class SparkLogo(object):
             t.rotate(self.branchAngle - 180.0)
             branchPath = t.map(branch.outline)
             combine = combine.united(branchPath)
-            #dotPath = t.map(self.dotPath(branch.outerCenter))
-            #combine = combine.united(dotPath)
+            for dotPoint in branch.dots:
+                combine = combine.united(t.map(self.dotPath(dotPoint)))
         # center dot
         combine = combine.united(self.dotPath(QPointF(0.0, 0.0)))
         stroker = QPainterPathStroker()
@@ -151,25 +149,26 @@ class LogoBranch(object):
         self.sym.scale(1.0, -1.0)
         self.sym.rotate(90.0 - 2.0 * angle)
         alpha = getRadians(angle)
-        self.pointO = QPointF(0.0, 0.0)
-        self.pointE = QPointF(bs, 0.0)
-        self.pointA = QPointF(bs, -bw)
-        self.pointI = middle(self.pointA, self.pointE)
+        self.origin = QPointF(0.0, 0.0)
+        self.pointA = QPointF(bs, 0.0)
+        self.pointB = QPointF(bs, -bw)
+        #self.pointI = middle(self.pointA, self.pointB)
         self.pointC = QPointF(bw / math.tan(alpha), -bw)
-        #self.outerCenter = middle(self.pointI, self.sym.map(self.pointI))
-        self.outerCenter = middle(self.pointA, self.sym.map(self.pointA))
+        #self.outerPoint = middle(self.pointI, self.sym.map(self.pointI))
+        self.outerPoint = middle(self.pointB, self.sym.map(self.pointB))
         self.curveRect = QRectF(bs - bw, -bw, bw, bw)
         self.outline = self._createPath(logo.roundBranches)
+        self.dots = [self.outerPoint]#, barycenter(self.outerPoint, 2.0, self.origin, 1.0)]
     
     def _createPath(self, roundBranches):
         # create the first half of the branch
         p = QPainterPath()
-        p.moveTo(self.pointO)
+        p.moveTo(self.origin)
         if roundBranches:
             p.arcTo(self.curveRect, -90.0, 180.0)
         else:
-            p.lineTo(self.pointE)
             p.lineTo(self.pointA)
+            p.lineTo(self.pointB)
         p.lineTo(self.pointC)
         # create the other half of the branch by symmetry
         p.connectPath(self.sym.map(p.toReversed()))
