@@ -54,6 +54,7 @@ class SparkLogo(object):
         self.branchWidth = 10.0
         self.dotRadius = 5.0
         self.borderThickness = 10.0
+        self.roundBranches = False
         self.branches = 5
         self.branchAngle = 360.0 / (self.branches * 2.0)
         self.angles = [360.0 / self.branches * (i - 0.25)
@@ -158,15 +159,18 @@ class SparkLogo(object):
         O, A, B, C, E, F = self.computeBranchPoints()
         p.moveTo(O)
         p.lineTo(F)
-        #C2 = getCircleBounds(middle(B, F), self.branchWidth / 2.0)
-        #p.arcTo(C2, 90.0 - self.angle, -180.0)
-        p.lineTo(B)
-        #p.quadTo(middle(F, B), B)
+        if self.roundBranches:
+            C2 = getCircleBounds(middle(B, F), self.branchWidth / 2.0)
+            p.arcTo(C2, 180.0 - self.branchAngle, -180.0)
+        else:
+            p.lineTo(B)
         p.lineTo(C)
         p.lineTo(A)
-        #C1 = getCircleBounds(middle(A, E), self.branchWidth / 2.0)
-        #p.arcTo(C1, 270.0 + self.angle, -180.0)
-        p.lineTo(E)
+        if self.roundBranches:
+            C1 = getCircleBounds(middle(A, E), self.branchWidth / 2.0)
+            p.arcTo(C1, 90.0, -180.0)
+        else:
+            p.lineTo(E)
         p.lineTo(O)
         p.closeSubpath()
         return p

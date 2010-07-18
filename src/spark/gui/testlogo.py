@@ -58,6 +58,8 @@ class TestLogoWidow(QWidget):
         self.distance.setMinimum(0)
         self.distance.setMaximum(200)
         self.distance.setValue(self.logoWidget.logo.distance)
+        self.roundBranches = QCheckBox("Round branches")
+        self.roundBranches.setChecked(self.logoWidget.logo.roundBranches)
         self.inverseGradient = QCheckBox("Inverse color gradient")
         self.inverseGradient.setChecked(self.logoWidget.logo.inverseGradient)
         self.showAxes = QCheckBox("Show axes")
@@ -69,6 +71,7 @@ class TestLogoWidow(QWidget):
         form.addRow(self.dotRadiusText, self.dotRadius)
         form.addRow(self.borderThicknessText, self.borderThickness)
         form.addRow(self.distanceText, self.distance)
+        form.addRow(self.roundBranches)
         form.addRow(self.inverseGradient)
         form.addRow(self.showAxes)
         form.addRow(self.exportToSvg)
@@ -80,6 +83,7 @@ class TestLogoWidow(QWidget):
         QObject.connect(self.dotRadius, SIGNAL('valueChanged(int)'), self.logoWidget.setDotRadius)
         QObject.connect(self.borderThickness, SIGNAL('valueChanged(int)'), self.logoWidget.setBorderThickness)
         QObject.connect(self.distance, SIGNAL('valueChanged(int)'), self.logoWidget.setDistance)
+        QObject.connect(self.roundBranches, SIGNAL('toggled(bool)'), self.logoWidget.setRoundBranches)
         QObject.connect(self.inverseGradient, SIGNAL('toggled(bool)'), self.logoWidget.setInverseGradient)
         QObject.connect(self.showAxes, SIGNAL('toggled(bool)'), self.logoWidget.setShowAxes)
         QObject.connect(self.exportToSvg, SIGNAL('clicked()'), self.logoWidget.exportToSvg)
@@ -108,6 +112,10 @@ class LogoWidget(QWidget):
     
     def setDistance(self, v):
         self.logo.distance = v
+        self.update()
+    
+    def setRoundBranches(self, v):
+        self.logo.roundBranches = v
         self.update()
     
     def setInverseGradient(self, v):
