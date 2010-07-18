@@ -46,7 +46,7 @@ class TestLogoWidow(QWidget):
         self.dotRadiusText = QLabel("Dot radius")
         self.dotRadius = QSpinBox()
         self.dotRadius.setMinimum(1)
-        self.dotRadius.setMaximum(20)
+        self.dotRadius.setMaximum(200)
         self.dotRadius.setValue(self.logoWidget.logo.dotRadius)
         self.borderThicknessText = QLabel("Border thickness")
         self.borderThickness = QSpinBox()
@@ -62,8 +62,6 @@ class TestLogoWidow(QWidget):
         self.roundBranches.setChecked(self.logoWidget.logo.roundBranches)
         self.inverseGradient = QCheckBox("Inverse color gradient")
         self.inverseGradient.setChecked(self.logoWidget.logo.inverseGradient)
-        self.showAxes = QCheckBox("Show axes")
-        self.showAxes.setChecked(self.logoWidget.showAxes)
         self.exportToSvg = QPushButton("Export to SVG")
         form = QFormLayout()
         form.addRow(self.branchWidthText, self.branchWidth)
@@ -73,7 +71,6 @@ class TestLogoWidow(QWidget):
         form.addRow(self.distanceText, self.distance)
         form.addRow(self.roundBranches)
         form.addRow(self.inverseGradient)
-        form.addRow(self.showAxes)
         form.addRow(self.exportToSvg)
         vbox = QHBoxLayout(self)
         vbox.addWidget(self.logoWidget, 1)
@@ -85,14 +82,12 @@ class TestLogoWidow(QWidget):
         QObject.connect(self.distance, SIGNAL('valueChanged(int)'), self.logoWidget.setDistance)
         QObject.connect(self.roundBranches, SIGNAL('toggled(bool)'), self.logoWidget.setRoundBranches)
         QObject.connect(self.inverseGradient, SIGNAL('toggled(bool)'), self.logoWidget.setInverseGradient)
-        QObject.connect(self.showAxes, SIGNAL('toggled(bool)'), self.logoWidget.setShowAxes)
         QObject.connect(self.exportToSvg, SIGNAL('clicked()'), self.logoWidget.exportToSvg)
 
 class LogoWidget(QWidget):
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
         self.logo = logo.SparkLogo()
-        self.showAxes = False
     
     def setBranchWidth(self, v):
         self.logo.branchWidth = v
@@ -122,10 +117,6 @@ class LogoWidget(QWidget):
         self.logo.inverseGradient = v
         self.update()
     
-    def setShowAxes(self, v):
-        self.showAxes = v
-        self.update()
-    
     def paintEvent(self, e):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
@@ -133,7 +124,7 @@ class LogoWidget(QWidget):
         size = QSizeF(p.device().width(), p.device().height())
         bounds = self.computeViewport(size, -100.0, 100.0)
         p.setTransform(self.viewportTransform(size, bounds))
-        self.drawLogo(p, bounds)
+        self.logo.draw(p)
     
     def exportToSvg(self):
         size = self.size()
@@ -158,7 +149,7 @@ class LogoWidget(QWidget):
         p = QPainter()
         p.begin(svg)
         p.setTransform(transform)
-        self.drawLogo(p, vpBounds)
+        self.logo.draw(p)
         p.end()
     
     def settingsMap(self):
@@ -186,12 +177,6 @@ class LogoWidget(QWidget):
         t.scale(size.width() / bounds.width(), size.height() / bounds.height())
         t.translate(-bounds.left(), -bounds.top())
         return t
-    
-    def drawLogo(self, p, bounds):
-        if self.showAxes:
-            p.drawLine(0.0, bounds.top(), 0.0, bounds.bottom())
-            p.drawLine(bounds.left(), 0.0, bounds.right(), 0.0)
-        self.logo.draw(p)
 
 if __name__ == "__main__":
     qApp = QApplication(sys.argv)
