@@ -50,26 +50,48 @@ def getRadians(degrees):
 class SparkLogo(object):
     def __init__(self):
         self.distance = 70.0
+        self.rotation = 0.0
         self.branchSize = 38.0
         self.branchWidth = 10.0
         self.dotRadius = 50.0
         self.borderThickness = 10.0
         self.roundBranches = False
-        self.branches = 5
-        self.branchAngle = 360.0 / (self.branches * 2.0)
-        self.angles = [360.0 / self.branches * (i - 0.25)
-                       for i in range(1, self.branches + 1)]
+        self.branches = 4
+        self.showBranchDots = True
         self.borderColor = QColor("black")
         self.dotColor = QColor("silver")
         self.centerDotColor = QColor("gold")
-        self.branchColor = [QColor("coral"), QColor("red"), QColor("blue"),
-                            QColor("green"), QColor("blueviolet")]
+        self.branchColors = [QColor("limegreen"),
+                            QColor("tomato"),
+                            QColor("dodgerblue"),
+                            QColor("darkorange"),
+                            QColor("dodgerblue")]
+        self.branchColors = [QColor("dodgerblue"),
+                            QColor("darkorange"),
+                            QColor("limegreen"),
+                            QColor("tomato")]
+        self.branchColors = [QColor("dodgerblue"),
+                            QColor("limegreen"),
+                            QColor("dodgerblue"),
+                            QColor("darkorange")]
         self.endBranchColor = QColor("white")
         self.inverseGradient = True
     
     @property
+    def branchAngle(self):
+        return 360.0 / (self.branches * 2.0)
+    
+    def branchRotation(self, index):
+        return 360.0 / self.branches * (index - 0.25)
+    
+    def branchColor(self, index):
+        return self.branchColors[index % 4]
+    
+    @property
     def borderPen(self):
-        return QPen(QBrush(self.borderColor), self.borderThickness / 10.0)
+        if self.borderThickness > 0.0:
+            return QPen(QBrush(self.borderColor), self.borderThickness / 10.0)
+        return Qt.NoPen
     
     def dotPath(self, center):
         circle = getCircleBounds(center, self.dotRadius / 10.0)
@@ -89,9 +111,10 @@ class SparkLogo(object):
     def draw(self, g):
         g.save()
         branch = LogoBranch(self)
+        g.rotate(self.rotation)
         for i in range(0, self.branches):
             g.save()
-            g.rotate(self.angles[i])
+            g.rotate(self.branchRotation(i))
             g.translate(self.distance, 0.0)
             self.drawStarBranch(g, i, branch)
             g.restore()
@@ -105,38 +128,46 @@ class SparkLogo(object):
         g.rotate(self.branchAngle - 180.0)
         # draw branch with color gradient
         gradient = QLinearGradient(branch.origin, branch.outerPoint)
-        start, end = self.branchColor[i], self.endBranchColor
+        start, end = self.branchColor(i), self.endBranchColor
         if self.inverseGradient:
             gradient.setColorAt(0.0, end)
+            gradient.setColorAt(0.1, end)
             gradient.setColorAt(1.0, start)
         else:
             gradient.setColorAt(0.0, start)
+            gradient.setColorAt(0.9, end)
             gradient.setColorAt(1.0, end)
         g.setPen(self.borderPen)
         g.setBrush(QBrush(gradient))
         g.drawPath(branch.outline)
         # draw dots
-        g.setPen(self.borderPen)
-        g.setBrush(QBrush(self.dotColor))
-        for dotPoint in branch.dots:
-            self.drawDot(g, dotPoint)
+        if self.showBranchDots:
+            g.setPen(self.borderPen)
+            g.setBrush(QBrush(self.dotColor))
+            for dotPoint in branch.dots:
+                self.drawDot(g, dotPoint)
         g.restore()
     
     def boundingPath(self):
-        # create a painting path that the union of all paths in the logo
+        # create a painting path that is the union of all paths in the logo
         branch = LogoBranch(self)
         combine = QPainterPath()
         for i in range(0, self.branches):
             t = QTransform()
-            t.rotate(self.angles[i])
+            t.rotate(self.branchRotation(i))
             t.translate(self.distance, 0.0)
             t.rotate(self.branchAngle - 180.0)
             branchPath = t.map(branch.outline)
             combine = combine.united(branchPath)
-            for dotPoint in branch.dots:
-                combine = combine.united(t.map(self.dotPath(dotPoint)))
+            if self.showBranchDots:
+                for dotPoint in branch.dots:
+                    combine = combine.united(t.map(self.dotPath(dotPoint)))
         # center dot
         combine = combine.united(self.dotPath(QPointF(0.0, 0.0)))
+        if self.rotation != 0.0:
+            t2 = QTransform()
+            t2.rotate(self.rotation)
+            combine = t2.map(combine)
         stroker = QPainterPathStroker()
         stroker.setWidth(self.borderThickness / 10.0)
         return stroker.createStroke(combine)
@@ -145,17 +176,16 @@ class LogoBranch(object):
     def __init__(self, logo):
         angle, bw, bs = logo.branchAngle, logo.branchWidth, logo.branchSize
         self.sym = QTransform()
-        self.sym.rotate(-90.0 + angle)
-        self.sym.scale(1.0, -1.0)
-        self.sym.rotate(90.0 - 2.0 * angle)
+        self.sym.rotate((90.0 - angle) * 2.0)
+        self.sym.scale(-1.0, 1.0)
         alpha = getRadians(angle)
         self.origin = QPointF(0.0, 0.0)
         self.pointA = QPointF(bs, 0.0)
         self.pointB = QPointF(bs, -bw)
-        #self.pointI = middle(self.pointA, self.pointB)
+        self.pointI = middle(self.pointA, self.pointB)
         self.pointC = QPointF(bw / math.tan(alpha), -bw)
-        #self.outerPoint = middle(self.pointI, self.sym.map(self.pointI))
-        self.outerPoint = middle(self.pointB, self.sym.map(self.pointB))
+        self.outerPoint = middle(self.pointI, self.sym.map(self.pointI))
+        #self.outerPoint = middle(self.pointB, self.sym.map(self.pointB))
         self.curveRect = QRectF(bs - bw, -bw, bw, bw)
         self.outline = self._createPath(logo.roundBranches)
         self.dots = [self.outerPoint]#, barycenter(self.outerPoint, 2.0, self.origin, 1.0)]

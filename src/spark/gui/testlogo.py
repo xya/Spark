@@ -33,89 +33,51 @@ class TestLogoWidow(QWidget):
         QWidget.__init__(self, parent)
         self.setWindowTitle("Spark Logo")
         self.logoWidget = LogoWidget()
-        self.branchWidthText = QLabel("Branch width")
-        self.branchWidth = QSpinBox()
-        self.branchWidth.setMinimum(1)
-        self.branchWidth.setMaximum(50)
-        self.branchWidth.setValue(self.logoWidget.logo.branchWidth)
-        self.branchHeightText = QLabel("Branch height")
-        self.branchHeight = QSpinBox()
-        self.branchHeight.setMinimum(1)
-        self.branchHeight.setMaximum(50)
-        self.branchHeight.setValue(self.logoWidget.logo.branchSize)
-        self.dotRadiusText = QLabel("Dot radius")
-        self.dotRadius = QSpinBox()
-        self.dotRadius.setMinimum(1)
-        self.dotRadius.setMaximum(200)
-        self.dotRadius.setValue(self.logoWidget.logo.dotRadius)
-        self.borderThicknessText = QLabel("Border thickness")
-        self.borderThickness = QSpinBox()
-        self.borderThickness.setMinimum(1)
-        self.borderThickness.setMaximum(100)
-        self.borderThickness.setValue(self.logoWidget.logo.borderThickness)
-        self.distanceText = QLabel("Distance from center")
-        self.distance = QSpinBox()
-        self.distance.setMinimum(0)
-        self.distance.setMaximum(200)
-        self.distance.setValue(self.logoWidget.logo.distance)
-        self.roundBranches = QCheckBox("Round branches")
-        self.roundBranches.setChecked(self.logoWidget.logo.roundBranches)
-        self.inverseGradient = QCheckBox("Inverse color gradient")
-        self.inverseGradient.setChecked(self.logoWidget.logo.inverseGradient)
         self.exportToSvg = QPushButton("Export to SVG")
-        form = QFormLayout()
-        form.addRow(self.branchWidthText, self.branchWidth)
-        form.addRow(self.branchHeightText, self.branchHeight)
-        form.addRow(self.dotRadiusText, self.dotRadius)
-        form.addRow(self.borderThicknessText, self.borderThickness)
-        form.addRow(self.distanceText, self.distance)
-        form.addRow(self.roundBranches)
-        form.addRow(self.inverseGradient)
-        form.addRow(self.exportToSvg)
+        self.form = QFormLayout()
+        self.addRangeOption("Number of branches", "branches", 3, 8)
+        self.addRangeOption("Branch width", "branchWidth", 1, 50)
+        self.addRangeOption("Branch height", "branchSize", 1, 200)
+        self.addRangeOption("Dot radius", "dotRadius", 1, 200)
+        self.addRangeOption("Border thickness", "borderThickness", 0, 100)
+        self.addRangeOption("Distance from center", "distance", -200, 200)
+        self.addRangeOption("Rotation", "rotation", -359, 359)
+        self.addToggleOption("Show branch dots", "showBranchDots")
+        self.addToggleOption("Round branches", "roundBranches")
+        self.addToggleOption("Inverse color gradient", "inverseGradient")
+        self.form.addRow(self.exportToSvg)
         vbox = QHBoxLayout(self)
         vbox.addWidget(self.logoWidget, 1)
-        vbox.addLayout(form)
-        QObject.connect(self.branchWidth, SIGNAL('valueChanged(int)'), self.logoWidget.setBranchWidth)
-        QObject.connect(self.branchHeight, SIGNAL('valueChanged(int)'), self.logoWidget.setBranchHeight)
-        QObject.connect(self.dotRadius, SIGNAL('valueChanged(int)'), self.logoWidget.setDotRadius)
-        QObject.connect(self.borderThickness, SIGNAL('valueChanged(int)'), self.logoWidget.setBorderThickness)
-        QObject.connect(self.distance, SIGNAL('valueChanged(int)'), self.logoWidget.setDistance)
-        QObject.connect(self.roundBranches, SIGNAL('toggled(bool)'), self.logoWidget.setRoundBranches)
-        QObject.connect(self.inverseGradient, SIGNAL('toggled(bool)'), self.logoWidget.setInverseGradient)
+        vbox.addLayout(self.form)
         QObject.connect(self.exportToSvg, SIGNAL('clicked()'), self.logoWidget.exportToSvg)
+    
+    def addRangeOption(self, label, attribute, min, max):
+        widget = QSpinBox()
+        widget.setMinimum(min)
+        widget.setMaximum(max)
+        widget.setValue(self.logoWidget.getAttr(attribute))
+        self.form.addRow(QLabel(label), widget)
+        QObject.connect(widget, SIGNAL('valueChanged(int)'), self.logoWidget.setAttr(attribute))
+    
+    def addToggleOption(self, label, attribute):
+        widget = QCheckBox(label)
+        widget.setChecked(self.logoWidget.getAttr(attribute))
+        self.form.addRow(widget)
+        QObject.connect(widget, SIGNAL('toggled(bool)'), self.logoWidget.setAttr(attribute))
 
 class LogoWidget(QWidget):
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
         self.logo = logo.SparkLogo()
     
-    def setBranchWidth(self, v):
-        self.logo.branchWidth = v
-        self.update()
+    def getAttr(self, attr):
+        return getattr(self.logo, attr)
     
-    def setBranchHeight(self, v):
-        self.logo.branchSize = v
-        self.update()
-    
-    def setDotRadius(self, v):
-        self.logo.dotRadius = v
-        self.update()
-    
-    def setBorderThickness(self, v):
-        self.logo.borderThickness = v
-        self.update()
-    
-    def setDistance(self, v):
-        self.logo.distance = v
-        self.update()
-    
-    def setRoundBranches(self, v):
-        self.logo.roundBranches = v
-        self.update()
-    
-    def setInverseGradient(self, v):
-        self.logo.inverseGradient = v
-        self.update()
+    def setAttr(self, attr):
+        def fun(v):
+            setattr(self.logo, attr, v)
+            self.update()
+        return fun
     
     def paintEvent(self, e):
         p = QPainter(self)
@@ -154,11 +116,13 @@ class LogoWidget(QWidget):
     
     def settingsMap(self):
         l = self.logo
-        return {"branchWidth": l.branchWidth,
+        return {"branches": l.branches,
+                "branchWidth": l.branchWidth,
                 "branchHeight": l.branchSize,
                 "dotRadius": l.dotRadius,
                 "borderThickness": l.borderThickness,
                 "distance": l.distance,
+                "rotation": l.rotation,
                 "inverseGradient": l.inverseGradient}
     
     def computeViewport(self, size, minN, maxN):
