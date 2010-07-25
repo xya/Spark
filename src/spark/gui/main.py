@@ -25,6 +25,7 @@ from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from spark.gui.resource import iconPath
 from spark.gui.filelist import FileList, FileInfoWidget
+from spark.gui.about import AboutWindow
 from spark.gui import filetypes
 from spark.fileshare import UPLOAD, DOWNLOAD, LOCAL, REMOTE
 from spark.fileshare import SharedFile, TransferInfo, formatSize, formatDuration
@@ -47,8 +48,10 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(QIcon(iconPath("emblems/emblem-new", 16)))
         self.setWindowTitle("Spark")
         self.setMinimumSize(530, 360)
+        self.aboutWindow = AboutWindow(self)
         self.app = app
         self.actions = {}
+        self.initMenu()
         self.initToolbar()
         self.initTransferList()
         self.initStatusBar()
@@ -57,6 +60,7 @@ class MainWindow(QMainWindow):
         self.sharedFiles = {}
         self.fileIDs = []
         self.selectedID = None
+        self.lastUsedFolder = os.path.expanduser("~")
         self.app.listening += self.onStateChanged
         self.app.connected += self.onStateChanged
         self.app.disconnected += self.onStateChanged
@@ -67,7 +71,11 @@ class MainWindow(QMainWindow):
         self.updateToolBar()
     
     def createAction(self, icon, size, text, help=None):
-        action = QAction(QIcon(iconPath(icon, size)), text, self)
+        path = iconPath(icon, size)
+        if path:
+            action = QAction(QIcon(path), text, self)
+        else:
+            action = QAction(text, self)
         if help:
             action.setToolTip(help)
             action.setStatusTip(help)
@@ -78,6 +86,20 @@ class MainWindow(QMainWindow):
             if self.isMinimized():
                 self.hide()
                 self.trayIcon.setVisible(True)
+    
+    def initMenu(self):
+        self.actions["quit"] = self.createAction("actions/application-exit", 16, "Quit", "Quit the application")
+        self.actions["about"] = self.createAction("actions/help-about", 16, "About", "About Spark")
+        QWidget.connect(self.actions["quit"], SIGNAL("triggered()"), self, SLOT("close()"))
+        QWidget.connect(self.actions["about"], SIGNAL("triggered()"), self.aboutWindow, SLOT("show()"))
+        self.fileMenu = QMenu()
+        self.fileMenu.setTitle("File")
+        self.fileMenu.addAction(self.actions["quit"])
+        self.helpMenu = QMenu()
+        self.helpMenu.setTitle("Help")
+        self.helpMenu.addAction(self.actions["about"])
+        self.menuBar().addMenu(self.fileMenu)
+        self.menuBar().addMenu(self.helpMenu)
     
     def initToolbar(self):
         self.actions["connect"] = self.createAction("status/network-transmit-receive", 32, "Connect", "Connect to a peer")
@@ -304,12 +326,13 @@ class MainWindow(QMainWindow):
         self.app.disconnect()
     
     def action_add(self, fileID):
-        dir = os.path.expanduser("~")
+        dir = self.lastUsedFolder
         files = QFileDialog.getOpenFileNames(self, "Choose a file to open", dir, "All files (*.*)")
         if files.count() > 0:
             for file in files:
                 path = unicode(file)
                 self.addFileToList(path)
+                self.lastUsedFolder = os.path.dirname(path)
     
     def addFileToList(self, path):
         type = filetypes.from_file(path)
@@ -322,6 +345,7 @@ class MainWindow(QMainWindow):
     def action_start(self, fileID):
         if fileID is not None:
             file = self.app.files[fileID]
+            defaultPath = os.path.join(self.lastUsedFolder, file.name)
             root, ext = os.path.splitext(file.name)
             if file.mimeType:
                 description = filetypes.from_mime_type_or_extension(file.mimeType, ext).description
@@ -329,9 +353,11 @@ class MainWindow(QMainWindow):
                 description = "All files"
             type = "*" + ext
             dest = QFileDialog.getSaveFileName(self, "Choose where to receive the file",
-                file.name, "%s (%s)" % (description, type))
+                defaultPath, "%s (%s)" % (description, type))
             if dest:
-                self.app.startTransfer(self.selectedID, unicode(dest))
+                chosenPath = unicode(dest)
+                self.app.startTransfer(self.selectedID, chosenPath)
+                self.lastUsedFolder = os.path.dirname(chosenPath)
     
     def action_open(self, fileID):
         if fileID is not None:

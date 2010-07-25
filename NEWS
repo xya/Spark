@@ -1,3 +1,13 @@
+Version 0.0.4 (not released yet)
+================================
+It is now possible to drag and drop files to add them to the shared list
+Double-clicking on a file in the list performs the default action
+Spark now minimizes itself to a tray icon
+The selection is no longer lost when the transfer list is refreshed
+Added an 'About Spark' window with the new logo
+Released packages for Ubuntu
+Added a menu launcher (.desktop file) for Linux
+
 Version 0.0.3 (2010-05-13)
 ==========================
 Ask the user where to save the file before starting a transfer

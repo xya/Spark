@@ -19,8 +19,138 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 import math
-from PyQt4.QtCore import QPointF, QRectF, QSize, Qt
+from PyQt4.QtCore import QPointF, QRectF, QSize, QSizeF, Qt, SIGNAL, SLOT
 from PyQt4.QtGui import *
+
+class AboutWindow(QWidget):
+    def __init__(self, parent=None):
+        QWidget.__init__(self, parent)
+        self.title = QLabel(u"Spark 0.0.4")
+        titleFont = self.title.font()
+        titleFont.setWeight(QFont.Bold)
+        titleFont.setPointSize(18)
+        self.title.setFont(titleFont)
+        self.subtitle = QLabel(u"A simple file-transfer tool")
+        subtitleFont = self.subtitle.font()
+        subtitleFont.setPointSize(12)
+        self.subtitle.setFont(subtitleFont)
+        self.author = QLabel(u"Pierre-Adré Saulais <pasaulais@free.fr>")
+        authorFont = self.author.font()
+        authorFont.setPointSize(10)
+        self.author.setFont(authorFont)
+        self.copyright = QLabel(u"Copyright (c) 2009-2010")
+        copyrightFont = self.copyright.font()
+        copyrightFont.setPointSize(10)
+        self.copyright.setFont(copyrightFont)
+        self.closeButton = QPushButton(u"Close")
+        self.logoWidget = LogoWidget()
+        self.logoWidget.logo.branchWidth = 18
+        self.logoWidget.logo.branchSize = 50
+        self.logoWidget.logo.borderThickness = 20.0
+        self.logoWidget.logo.distance = 0.0
+        self.logoWidget.logo.rotation = 23.0
+        self.logoWidget.logo.showBranchDots = False
+        self.logoWidget.setFixedSize(QSize(96, 96))
+        self.initLayout()
+        self.setWindowTitle("About Spark")
+        self.setWindowFlags(Qt.Dialog)
+        self.setFixedSize(self.sizeHint())
+        QWidget.connect(self.closeButton, SIGNAL("clicked()"), self, SLOT("close()"))
+    
+    def initLayout(self):
+        buttonLayout = QHBoxLayout()
+        buttonLayout.addWidget(self.closeButton, 0, Qt.AlignHCenter)
+        
+        infoLayout = QVBoxLayout()
+        infoLayout.addWidget(self.title, 0, Qt.AlignHCenter)
+        infoLayout.addWidget(self.subtitle, 0, Qt.AlignHCenter)
+        infoLayout.addWidget(self.author, 0, Qt.AlignHCenter)
+        infoLayout.addWidget(self.copyright, 0, Qt.AlignHCenter)
+        infoLayout.setSpacing(0)
+        
+        hLayout = QHBoxLayout()
+        hLayout.addWidget(self.logoWidget, 0, Qt.AlignCenter)
+        hLayout.addLayout(infoLayout)
+        hLayout.setSpacing(20)
+        
+        mainLayout = QVBoxLayout(self)
+        mainLayout.addLayout(hLayout)
+        mainLayout.addLayout(buttonLayout)
+        mainLayout.setSpacing(15)
+
+class LogoWidget(QWidget):
+    def __init__(self, parent=None):
+        QWidget.__init__(self, parent)
+        self.logo = SparkLogo()
+    
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        # scale to widget size while preserving the aspect ratio
+        size = QSizeF(p.device().width(), p.device().height())
+        viewport = self.viewportFromSize(size)
+        p.setTransform(self.viewportTransform(size, viewport))
+        self.logo.draw(p)
+    
+    def exportToSvg(self):
+        size = self.size()
+        viewport = self.viewportFromSize(QSizeF(size))
+        transform = self.viewportTransform(QSizeF(size), viewport)
+        fileName = QFileDialog.getSaveFileName(self, "Save logo", "", "SVG files (*.svg)")
+        if not fileName or fileName.isEmpty():
+            return
+        svg = QSvgGenerator()
+        svg.setFileName(fileName)
+        svg.setTitle("Spark Logo")
+        # save settings as description
+        settings = self.settingsMap()
+        settingsText = "{%s}" % ", ".join(["'%s': %s" % (k, repr(v))
+                                           for (k, v) in settings.iteritems()])
+        svg.setDescription("This picture was generated to be a Spark logo.\n"
+            "The settings used were: %s" % settingsText)
+        # crop the logo to its bounding box
+        svg.setViewBox(transform.mapRect(viewport))
+        svg.setSize(size)
+        p = QPainter()
+        p.begin(svg)
+        p.setTransform(transform)
+        self.logo.draw(p)
+        p.end()
+    
+    def settingsMap(self):
+        l = self.logo
+        return {"branches": l.branches,
+                "branchWidth": l.branchWidth,
+                "branchHeight": l.branchSize,
+                "dotRadius": l.dotRadius,
+                "borderThickness": l.borderThickness,
+                "distance": l.distance,
+                "rotation": l.rotation,
+                "inverseGradient": l.inverseGradient}
+    
+    def viewportFromSize(self, size):
+        bounds = self.logo.boundingPath().boundingRect()
+        if bounds.width() > bounds.height():
+            return self.computeViewport(size, bounds.left(), bounds.right())
+        else:
+            return self.computeViewport(size, bounds.top(), bounds.bottom())
+    
+    def computeViewport(self, size, minN, maxN):
+        if size.width() > size.height():
+            yMin, yAmpl = minN, (maxN - minN)
+            xAmpl = (1.0 + ((size.width() - size.height()) / size.height())) * yAmpl
+            xMin = -xAmpl / 2.0
+        else:
+            xMin, xAmpl = minN, (maxN - minN)
+            yAmpl = (1.0 + ((size.height() - size.width()) / size.width())) * xAmpl
+            yMin = -yAmpl / 2.0
+        return QRectF(xMin, yMin, xAmpl, yAmpl)
+    
+    def viewportTransform(self, size, bounds):
+        t = QTransform()
+        t.scale(size.width() / bounds.width(), size.height() / bounds.height())
+        t.translate(-bounds.left(), -bounds.top())
+        return t
 
 Degrees90 = (math.pi * 0.5)
 Degrees180 = math.pi

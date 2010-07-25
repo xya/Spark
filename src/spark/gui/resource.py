@@ -23,20 +23,33 @@ import os
 
 __all__ = ["find", "iconPath"]
 
-def find(resource):
+def find(resource, pathHints=[]):
     """ Find a resource file (e.g. icon) and return its path. """
+    if not resource:
+        return None
+    paths = []
+    paths.extend(pathHints)
     if sys.platform.lower().startswith("win") and (sys.executable.find("python") < 0):
-        return os.path.join(os.path.dirname(sys.executable), resource)
-    else:
-        path = os.path.join(os.path.dirname(__file__), resource)
-        if os.path.exists(path):
-            return path
-        else:
-            return os.path.join("/usr/share/spark", resource)
+        paths.append(os.path.dirname(sys.executable))
+    paths.append(os.path.dirname(__file__))
+    paths.append("/usr/share/spark")
+    for path in paths:
+        file = os.path.join(path, resource)
+        if os.path.exists(file):
+            return file
 
 def iconPath(name, size=None):
     """ Return the path of the specified GNOME icon. """
     if size:
-        return find("icons/%ix%i/%s.png" % (size, size, name))
+        file = "%ix%i/%s.png" % (size, size, name)
     else:
-        return find("icons/scalable/%s.svg" % name)
+        file = "scalable/%s.svg" % name
+    return _findGnomeIconFile(file)
+
+def _findGnomeIconFile(file):
+    path = find("icons/%s" % file)
+    if path:
+        return path
+    else:
+        pathHints = ["/usr/share/icons/gnome"]
+        return find(file, pathHints)
