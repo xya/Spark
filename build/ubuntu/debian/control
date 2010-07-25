@@ -2,8 +2,8 @@ Source: spark
 Section: net
 Priority: optional
 Maintainer: Pierre-André Saulais <pasaulais@free.fr>
-Build-Depends: debhelper (>= 7), python-support, python (>=2.4)
-Standards-Version: 3.8.3
+Build-Depends: debhelper (>= 7.0.50~), python-support, python (>=2.4)
+Standards-Version: 3.8.4
 Homepage: http://pasaulais.free.fr/spark/
 
 Package: spark

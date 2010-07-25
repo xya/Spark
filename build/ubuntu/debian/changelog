@@ -1,3 +1,14 @@
+spark (0.0.4-0ubuntu1) karmic; urgency=low
+
+  * It is now possible to drag and drop files to add them to the shared list
+  * Double-clicking on a file in the list performs the default action
+  * Spark now minimizes itself to a tray icon
+  * The selection is no longer lost when the transfer list is refreshed
+  * Added an 'About Spark' window with the new logo
+  * Added a menu launcher (.desktop file)
+
+ -- Pierre-André Saulais <pasaulais@free.fr>  Sun, 25 Jul 2010 20:02:47 +0100
+
 spark (0.0.3-0ubuntu2) karmic; urgency=low
 
   * Removed python-gobject and python-kde4 from recommended packages 
