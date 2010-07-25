@@ -21,6 +21,10 @@
 import math
 from PyQt4.QtCore import QPointF, QRectF, QSize, QSizeF, Qt, SIGNAL, SLOT
 from PyQt4.QtGui import *
+try:
+    from PyQt4.QtSvg import QSvgGenerator
+except ImportError:
+    QSvgGenerator = None
 
 class AboutWindow(QWidget):
     def __init__(self, parent=None):
@@ -92,8 +96,25 @@ class LogoWidget(QWidget):
         p.setTransform(self.viewportTransform(size, viewport))
         self.logo.draw(p)
     
+    def exportToPng(self):
+        size = QSize(self.logo.imageSize, self.logo.imageSize)
+        viewport = self.viewportFromSize(QSizeF(size))
+        transform = self.viewportTransform(QSizeF(size), viewport)
+        fileName = QFileDialog.getSaveFileName(self, "Save logo", "", "PNG files (*.png)")
+        if not fileName or fileName.isEmpty():
+            return
+        image = QPixmap(size)
+        image.fill(Qt.transparent)
+        p = QPainter()
+        p.begin(image)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setTransform(transform)
+        self.logo.draw(p)
+        p.end()
+        image.save(fileName, "png")
+    
     def exportToSvg(self):
-        size = self.size()
+        size = QSize(self.logo.imageSize, self.logo.imageSize)
         viewport = self.viewportFromSize(QSizeF(size))
         transform = self.viewportTransform(QSizeF(size), viewport)
         fileName = QFileDialog.getSaveFileName(self, "Save logo", "", "SVG files (*.svg)")
@@ -206,6 +227,7 @@ class SparkLogo(object):
                             QColor("darkorange")]
         self.endBranchColor = QColor("white")
         self.inverseGradient = True
+        self.imageSize = 512
     
     @property
     def branchAngle(self):

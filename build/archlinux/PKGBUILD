@@ -20,11 +20,13 @@ build() {
     cd "$srcdir/Spark-$pkgver"
     python setup.py install --root="$pkgdir/" --optimize=1 || return 1
     
-    # install application shortcut and icon (atm copied from GNOME icons)
+    # install application shortcut and icon
     install -D -m 644 "$srcdir/Spark-$pkgver/spark.desktop" \
             "$pkgdir/usr/share/applications/spark.desktop"
     for size in 16x16 24x24 32x32 48x48; do
-        install -D -m 644 "$srcdir/Spark-$pkgver/icons/$size/emblems/emblem-new.png" \
+        install -D -m 644 "$srcdir/Spark-$pkgver/icons/$size/apps/spark.png" \
             "$pkgdir/usr/share/icons/hicolor/$size/apps/spark.png"
     done
+    install -D -m 644 "$srcdir/Spark-$pkgver/icons/scalable/apps/spark.svg" \
+            "$pkgdir/usr/share/icons/hicolor/scalable/apps/spark.svg"
 }

@@ -45,7 +45,7 @@ class MainView(object):
 class MainWindow(QMainWindow):
     def __init__(self, app, parent=None):
         super(MainWindow, self).__init__(parent)
-        self.setWindowIcon(QIcon(iconPath("emblems/emblem-new", 16)))
+        self.setWindowIcon(QIcon(iconPath("apps/spark", 16)))
         self.setWindowTitle("Spark")
         self.setMinimumSize(530, 360)
         self.aboutWindow = AboutWindow(self)

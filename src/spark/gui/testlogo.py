@@ -21,10 +21,6 @@
 
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
-try:
-    from PyQt4.QtSvg import QSvgGenerator
-except ImportError:
-    QSvgGenerator = None
 import sys
 import about
 
@@ -33,6 +29,7 @@ class TestLogoWidow(QWidget):
         QWidget.__init__(self, parent)
         self.setWindowTitle("Spark Logo")
         self.logoWidget = about.LogoWidget()
+        self.exportToPng = QPushButton("Export to PNG")
         self.exportToSvg = QPushButton("Export to SVG")
         self.form = QFormLayout()
         self.addRangeOption("Number of branches", "branches", 3, 8)
@@ -45,10 +42,13 @@ class TestLogoWidow(QWidget):
         self.addToggleOption("Show branch dots", "showBranchDots")
         self.addToggleOption("Round branches", "roundBranches")
         self.addToggleOption("Inverse color gradient", "inverseGradient")
+        self.addRangeOption("Image export size", "imageSize", 16, 1024)
+        self.form.addRow(self.exportToPng)
         self.form.addRow(self.exportToSvg)
         vbox = QHBoxLayout(self)
         vbox.addWidget(self.logoWidget, 1)
         vbox.addLayout(self.form)
+        QObject.connect(self.exportToPng, SIGNAL('clicked()'), self.logoWidget.exportToPng)
         QObject.connect(self.exportToSvg, SIGNAL('clicked()'), self.logoWidget.exportToSvg)
     
     def addRangeOption(self, label, attribute, min, max):
