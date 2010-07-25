@@ -38,7 +38,7 @@ class AboutWindow(QWidget):
         subtitleFont = self.subtitle.font()
         subtitleFont.setPointSize(12)
         self.subtitle.setFont(subtitleFont)
-        self.author = QLabel(u"Pierre-Adré Saulais <pasaulais@free.fr>")
+        self.author = QLabel(u"Pierre-André Saulais <pasaulais@free.fr>")
         authorFont = self.author.font()
         authorFont.setPointSize(10)
         self.author.setFont(authorFont)
