@@ -14,7 +14,7 @@ provides=('spark')
 conflicts=('spark')
 install=spark.install
 source=("http://pasaulais.free.fr/spark/src/Spark-$pkgver.tar.gz")
-md5sums=('fc80cef1e37a5a41fcc3369aecdfa21c')
+md5sums=('4fd6059e3d57f5597946c245ea798031')
 
 build() {
     cd "$srcdir/Spark-$pkgver"
