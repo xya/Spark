@@ -21,9 +21,10 @@
 import sys
 import os
 import socket
+from gnutls.connection import ClientSession, ServerSession, OpenPGPCredentials
 from spark.core import *
 
-__all__ = ["TcpSocket", "TcpReceiver"]
+__all__ = ["TcpSocket", "TcpReceiver", "SecureTcpSocket", "SecureTcpReceiver"]
 
 class TcpSocket(ProcessBase):
     """ Base class for processes that can communicate using sockets. """
@@ -75,8 +76,8 @@ class TcpSocket(ProcessBase):
     
     def cleanup(self, state):
         try:
-            self._closeConnection(state)
-            self._closeServer(state)
+            self.closeConnection(state)
+            self.closeServer(state)
         finally:
             super(TcpSocket, self).cleanup(state)
     
@@ -154,13 +155,13 @@ class TcpSocket(ProcessBase):
         if acceptPid == childPid:
             state.acceptReceiver = None
         if receivePid == childPid:
-            self._closeConnection(state)
+            self.closeConnection(state)
             state.receiver = None
     
     def doDisconnect(self, m, state):
-        self._closeConnection(state)
+        self.closeConnection(state)
 
-    def _closeConnection(self, state):
+    def closeConnection(self, state):
         if state.conn:
             state.receiver = None
             TcpSocket.closeSocket(state.conn, state.logger)
@@ -173,7 +174,7 @@ class TcpSocket(ProcessBase):
             state.logger.info("Disconnected from %s." % repr(remoteAddr))
             self.disconnected()
     
-    def _closeServer(self, state):
+    def closeServer(self, state):
         if state.server:
             if sys.platform.lower().startswith("win"):
                 # on Windows, calling shutdown() on a listening socket returns an error
@@ -252,8 +253,7 @@ class TcpReceiver(ProcessBase):
             Process.send(senderPid, Event("connection-error", e))
             Process.exit()
         else:
-            state.conn = conn
-            self.confirmConnection(state)
+            self.connectionEstablished(conn, remoteAddr, state)
 
     def doAccept(self, m, server, senderPid, messengerPid, state):
         if state.conn:
@@ -264,7 +264,7 @@ class TcpReceiver(ProcessBase):
         state.messengerPid = messengerPid
         state.logger.info("Waiting for a connection.")
         try:
-            state.conn, state.remoteAddr = server.accept()
+            conn, remoteAddr = server.accept()
         except socket.error as e:
             # EINVAL error happens when shutdown() is called while waiting on accept()
             if (e.errno != os.errno.EINVAL) and (e.errno != 10004):
@@ -272,10 +272,11 @@ class TcpReceiver(ProcessBase):
                 Process.send(senderPid, Event("accept-error", e))
             Process.exit()
         else:
-            self.confirmConnection(state)
+            self.connectionEstablished(conn, remoteAddr, state)
     
-    def confirmConnection(self, state):
-        """ Notify the messenger process that a connection has been established. """
+    def connectionEstablished(self, conn, remoteAddr, state):
+        state.conn = conn
+        state.remoteAddr = remoteAddr
         Process.send(state.messengerPid,
             Event("child-connected", state.conn, state.remoteAddr, state.initiating))
     
@@ -286,4 +287,73 @@ class TcpReceiver(ProcessBase):
         Process.exit()
     
     def onConnected(self, m, state):
+        pass
+
+class SecureTcpSocket(TcpSocket):
+    def __init__(self, cert, key):
+        super(SecureTcpSocket, self).__init__()
+        self.cert = cert
+        self.key = key
+        self.authenticated = EventSender("authenticated", None)
+        
+    def initState(self, state):
+        super(SecureTcpSocket, self).initState(state)
+        state.cert = self.cert
+        state.key = self.key
+        state.peer_cert = None
+    
+    def initPatterns(self, loop, state):
+        super(SecureTcpSocket, self).initPatterns(loop, state)
+        loop.addHandlers(self,
+            Event("handshake-done", None))
+    
+    def closeConnection(self, state):
+        try:
+            if state.conn:
+                try:
+                    state.conn.bye()
+                    state.logger.info("Sent TLS 'bye' message")
+                except Exception:
+                    pass
+        finally:
+            super(SecureTcpSocket, self).closeConnection(state)
+    
+    def createReceiver(self, state):
+        return SecureTcpReceiver(state.cert, state.key)
+    
+    def onHandshakeDone(self, m, peer_cert, state):
+        state.peer_cert = peer_cert
+        state.logger.info("Connected to peer: " + unicode(state.peer_cert.name))
+        Process.send(state.receiver, Event("authenticated"))
+        self.authenticated(peer_cert)
+
+class SecureTcpReceiver(TcpReceiver):
+    def __init__(self, cert, key):
+        super(SecureTcpReceiver, self).__init__()
+        self.cert = cert
+        self.key = key
+    
+    def initState(self, state):
+        super(SecureTcpReceiver, self).initState(state)
+        state.cert = self.cert
+        state.key = self.key
+        state.cred = None
+    
+    def initPatterns(self, loop, state):
+        super(SecureTcpReceiver, self).initPatterns(loop, state)
+        loop.addHandlers(self, Event("authenticated"))
+    
+    def connectionEstablished(self, conn, remoteAddr, state):
+        state.cred = OpenPGPCredentials(state.cert, state.key)
+        if state.initiating:
+            session = ClientSession(conn, state.cred)
+        else:
+            session = ServerSession(conn, state.cred, True)
+        super(SecureTcpReceiver, self).connectionEstablished(session, remoteAddr, state)
+    
+    def onConnected(self, m, state):
+        state.conn.handshake()
+        Process.send(state.messengerPid, Event("handshake-done", state.conn.peer_certificate))
+    
+    def onAuthenticated(self, m, state):
         pass
