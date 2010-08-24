@@ -100,9 +100,9 @@ class TestSecureTcpSocket(SecureTcpSocket):
         loop.addHandlers(self, Command("send", basestring))
     
     def createReceiver(self, state):
-        return self.receiverClass(state.cert, state.key)
+        return self.receiverClass(state.cred)
 
-class SecureNotifierTcpReceiver(SecureTcpReceiver):
+class ClientSecureTcpReceiver(SecureTcpReceiver):
     def onAuthenticated(self, m, state):
         p = state.conn.recv(128)
         while len(p) > 0:
@@ -110,7 +110,7 @@ class SecureNotifierTcpReceiver(SecureTcpReceiver):
             p = state.conn.recv(128)
         Process.exit()
 
-class SecureEchoTcpReceiver(SecureTcpReceiver):
+class ServerSecureTcpReceiver(SecureTcpReceiver):
     def onAuthenticated(self, m, state):
         p = state.conn.recv(128)
         while len(p) > 0:
@@ -121,10 +121,12 @@ class SecureEchoTcpReceiver(SecureTcpReceiver):
 class SecureTcpIoTest(unittest.TestCase):
     @processTimeout(3.0)
     def testSecureConnection(self):
-        server = TestSecureTcpSocket(SecureEchoTcpReceiver, 'barney.pub.gpg', 'barney.priv.gpg')
-        client = TestSecureTcpSocket(SecureNotifierTcpReceiver, 'alice.pub.gpg', 'alice.priv.gpg')
+        server = TestSecureTcpSocket(ServerSecureTcpReceiver, 'barney.pub.gpg', 'barney.priv.gpg')
+        client = TestSecureTcpSocket(ClientSecureTcpReceiver, 'alice.pub.gpg', 'alice.priv.gpg')
         with server:
+            server.listening.suscribe()
             server.listen((BIND_ADDRESS, BIND_PORT))
+            assertMatch(Event("listening", None), Process.receive())
             server.accept()
             with client:
                 client.connected.suscribe()

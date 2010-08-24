@@ -298,8 +298,7 @@ class SecureTcpSocket(TcpSocket):
         
     def initState(self, state):
         super(SecureTcpSocket, self).initState(state)
-        state.cert = self.cert
-        state.key = self.key
+        state.cred = OpenPGPCredentials(self.cert, self.key)
         state.peer_cert = None
     
     def initPatterns(self, loop, state):
@@ -319,7 +318,7 @@ class SecureTcpSocket(TcpSocket):
             super(SecureTcpSocket, self).closeConnection(state)
     
     def createReceiver(self, state):
-        return SecureTcpReceiver(state.cert, state.key)
+        return SecureTcpReceiver(state.cred)
     
     def onHandshakeDone(self, m, peer_cert, state):
         state.peer_cert = peer_cert
@@ -328,23 +327,19 @@ class SecureTcpSocket(TcpSocket):
         self.authenticated(peer_cert)
 
 class SecureTcpReceiver(TcpReceiver):
-    def __init__(self, cert, key):
+    def __init__(self, cred):
         super(SecureTcpReceiver, self).__init__()
-        self.cert = cert
-        self.key = key
+        self.cred = cred
     
     def initState(self, state):
         super(SecureTcpReceiver, self).initState(state)
-        state.cert = self.cert
-        state.key = self.key
-        state.cred = None
+        state.cred = self.cred
     
     def initPatterns(self, loop, state):
         super(SecureTcpReceiver, self).initPatterns(loop, state)
         loop.addHandlers(self, Event("authenticated"))
     
     def connectionEstablished(self, conn, remoteAddr, state):
-        state.cred = OpenPGPCredentials(state.cert, state.key)
         if state.initiating:
             session = ClientSession(conn, state.cred)
         else:
