@@ -20,6 +20,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 import sys
+import os
 import unittest
 from unittest import TestCase, TestLoader, TestSuite
 import logging
@@ -70,3 +71,6 @@ def assertNoMatch(pattern, o):
     if match(pattern, o):
         raise AssertionError("Object %s should not match the pattern %s, but does"
             % (repr(o), repr(pattern)))
+
+def testFilePath(fileName):
+    return os.path.join(os.path.dirname(__file__), fileName)

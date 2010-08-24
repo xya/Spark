@@ -274,10 +274,10 @@ def format_exception(type, value, tb):
         if hasattr(tb, "tb_frame"):
             tb = traceback.extract_tb(tb)
         for line in traceback.format_list(tb):
-            buffer.write(line)
+            buffer.write(unicode(line))
     if (type is not None) and (value is not None):
         for line in traceback.format_exception_only(type, value):
-            buffer.write(line)
+            buffer.write(unicode(line))
     buffer.seek(0)
     return buffer.readlines()
 
@@ -292,9 +292,9 @@ class TaskFailedError(TaskError):
         # hack until Python 3 which supports chained exceptions
         lines = format_exception(self.type, self.value, self.tb)
         lines[-1] = lines[-1].rstrip("\n")
-        desc = "|  ".join(lines)
+        desc = "| ".join(lines)
         if len(desc):
-            desc = "\n" + desc
+            desc = "\n| " + desc
         return "The task failed: %s" % desc
     
     def inner(self):

@@ -26,10 +26,10 @@ import sys
 import os
 from spark.core import Future, TaskFailedError, Process
 from spark.messaging import *
-from spark.tests.common import run_tests, processTimeout, assertMatch
+from spark.tests.common import run_tests, processTimeout, assertMatch, testFilePath
 from io import BytesIO
 
-TestFile = os.path.join(os.path.dirname(__file__), 'ProtocolTest.log')
+TestFile = testFilePath('ProtocolTest.log')
 TestText = b"""0025 > list-files 0 [{"register": true}]
 007f < list-files 0 [{"<guid>": {"id": "<guid>", "last-modified": "20090619T173529.000Z", "name": "Report.pdf", "size": 3145728}}]
 007e ! file-added 55 [{"id": "<guid>", "last-modified": "20090619T173529.000Z", "name": "SeisRoX-2.0.9660.exe", "size": 3145728}]
