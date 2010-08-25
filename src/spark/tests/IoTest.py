@@ -21,8 +21,8 @@
 
 import unittest
 import threading
+from gnutls.connection import OpenPGPCredentials, DHParams
 from gnutls.crypto import OpenPGPCertificate, OpenPGPPrivateKey
-from gnutls.connection import OpenPGPCredentials
 from spark.core import *
 from spark.messaging import *
 from spark.tests.common import run_tests, processTimeout, assertMatch, testFilePath
@@ -118,7 +118,17 @@ class ServerSecureTcpReceiver(SecureTcpReceiver):
             p = state.conn.recv(128)
         Process.exit()
 
+TestDHParams = """-----BEGIN DH PARAMETERS-----
+MIGGAoGAtkxw2jlsVCsrfLqxrN+IrF/3W8vVFvDzYbLmxi2GQv9s/PQGWP1d9i22
+P2DprfcJknWt7KhCI1SaYseOQIIIAYP78CfyIpGScW/vS8khrw0rlQiyeCvQgF3O
+GeGOEywcw+oQT4SmFOD7H0smJe2CNyjYpexBXQ/A0mbTF9QKm1cCAQU=
+-----END DH PARAMETERS-----"""
+
 class SecureTcpIoTest(unittest.TestCase):
+    def setUp(self):
+        # generating Diffie-Helman parameters is slow and we don't need the security for testing
+        OpenPGPCredentials.set_dh_params(DHParams.from_pkcs3(TestDHParams))
+    
     @processTimeout(2.0)
     def testSecureConnection(self):
         with TestSecureTcpSocket(ServerSecureTcpReceiver, 'barney.pub.gpg', 'barney.priv.gpg') as server:
