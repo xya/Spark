@@ -64,23 +64,23 @@ class EchoTcpReceiver(TcpReceiver):
             p = state.conn.recv(128)
         Process.exit()
     
-#class TcpIoTest(unittest.TestCase):
-#    @processTimeout(1.0)
-#    def testConection(self):
-#        server = TestTcpSocket(EchoTcpReceiver)
-#        client = TestTcpSocket(NotifierTcpReceiver)
-#        with server:
-#            server.listen((BIND_ADDRESS, BIND_PORT))
-#            server.accept()
-#            with client:
-#                client.connected.suscribe()
-#                client.disconnected.suscribe()
-#                client.connect((BIND_ADDRESS, BIND_PORT))
-#                assertMatch(client.connected.pattern, Process.receive())
-#                client.send("foo")
-#                assertMatch(Event("packet-received", "foo"), Process.receive())
-#                client.disconnect()
-#                assertMatch(client.disconnected.pattern, Process.receive())
+class TcpIoTest(unittest.TestCase):
+    @processTimeout(1.0)
+    def testConection(self):
+        server = TestTcpSocket(EchoTcpReceiver)
+        client = TestTcpSocket(NotifierTcpReceiver)
+        with server:
+            server.listen((BIND_ADDRESS, BIND_PORT))
+            server.accept()
+            with client:
+                client.connected.suscribe()
+                client.disconnected.suscribe()
+                client.connect((BIND_ADDRESS, BIND_PORT))
+                assertMatch(client.connected.pattern, Process.receive())
+                client.send("foo")
+                assertMatch(Event("packet-received", "foo"), Process.receive())
+                client.disconnect()
+                assertMatch(client.disconnected.pattern, Process.receive())
 
 class TestSecureTcpSocket(SecureTcpSocket):
     def __init__(self, receiverClass, cert_path, key_path):
@@ -103,7 +103,7 @@ class TestSecureTcpSocket(SecureTcpSocket):
         return self.receiverClass(state.cred)
 
 class ClientSecureTcpReceiver(SecureTcpReceiver):
-    def onAuthenticated(self, m, state):
+    def onSessionStarted(self, m, state):
         p = state.conn.recv(128)
         while len(p) > 0:
             Process.send(state.senderPid, Event("packet-received", p))
@@ -111,7 +111,7 @@ class ClientSecureTcpReceiver(SecureTcpReceiver):
         Process.exit()
 
 class ServerSecureTcpReceiver(SecureTcpReceiver):
-    def onAuthenticated(self, m, state):
+    def onSessionStarted(self, m, state):
         p = state.conn.recv(128)
         while len(p) > 0:
             state.conn.send(p)
@@ -119,27 +119,45 @@ class ServerSecureTcpReceiver(SecureTcpReceiver):
         Process.exit()
 
 class SecureTcpIoTest(unittest.TestCase):
-    @processTimeout(3.0)
+    @processTimeout(2.0)
     def testSecureConnection(self):
-        server = TestSecureTcpSocket(ServerSecureTcpReceiver, 'barney.pub.gpg', 'barney.priv.gpg')
-        client = TestSecureTcpSocket(ClientSecureTcpReceiver, 'alice.pub.gpg', 'alice.priv.gpg')
-        with server:
+        with TestSecureTcpSocket(ServerSecureTcpReceiver, 'barney.pub.gpg', 'barney.priv.gpg') as server:
             server.listening.suscribe()
+            server.connected.suscribe()
+            server.certificateReceived.suscribe()
+            server.disconnected.suscribe()
             server.listen((BIND_ADDRESS, BIND_PORT))
-            assertMatch(Event("listening", None), Process.receive())
+            assertMatch(server.listening.pattern, Process.receive())
             server.accept()
-            with client:
-                client.connected.suscribe()
-                client.authenticated.suscribe()
-                client.disconnected.suscribe()
-                client.connect((BIND_ADDRESS, BIND_PORT))
-                assertMatch(client.connected.pattern, Process.receive())
-                assertMatch(client.authenticated.pattern, Process.receive())
-                client.send("foo")
-                assertMatch(Event("packet-received", "foo"), Process.receive())
-                client.disconnect()
-                assertMatch(client.disconnected.pattern, Process.receive())
+            Process.spawn_linked(self.startClient, name="testSecureConnectionClient")
+            assertMatch(server.connected.pattern, Process.receive())
+            auth = Process.receive()
+            assertMatch(Event("certificate-received", None), auth)
+            peer_cert = auth[2]
+            self.assertEqual("27fbcdf93820a93363987a1d6beca16cefaf6aa4", peer_cert.fingerprint)
+            server.startSession()
+            assertMatch(server.disconnected.pattern, Process.receive())
+    
+    def startClient(self):
+        with TestSecureTcpSocket(ClientSecureTcpReceiver, 'alice.pub.gpg', 'alice.priv.gpg') as client:
+            client.connected.suscribe()
+            client.certificateReceived.suscribe()
+            client.disconnected.suscribe()
+            client.connect((BIND_ADDRESS, BIND_PORT))
+            assertMatch(client.connected.pattern, Process.receive())
+            auth = Process.receive()
+            assertMatch(Event("certificate-received", None), auth)
+            peer_cert = auth[2]
+            self.assertEqual("b778501ce25e5fc894c8d93364a5d23253a4402", peer_cert.fingerprint)
+            client.startSession()
+            client.send("foo")
+            assertMatch(Event("packet-received", "foo"), Process.receive())
+            client.disconnect()
+            assertMatch(client.disconnected.pattern, Process.receive())
 
 if __name__ == '__main__':
     import logging
+    from spark.core import debugger
+    watch_pipe_name = "/tmp/spark_watcher_%s_%d" % (BIND_ADDRESS, BIND_PORT)
+    debugger.start_watcher(watch_pipe_name)
     run_tests(level=logging.INFO)

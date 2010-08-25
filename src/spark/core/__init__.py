@@ -24,7 +24,8 @@ from spark.core.queue import *
 from spark.core.debugger import *
 from spark.core.process import *
 from spark.core.io import *
+from spark.core.secureio import *
 
 __all__ = []
-for module in (tasks, queue, debugger, process, io):
+for module in (tasks, queue, debugger, process, io, secureio):
     __all__.extend(module.__all__)

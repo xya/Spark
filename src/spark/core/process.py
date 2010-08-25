@@ -575,7 +575,10 @@ class ProcessBase(object):
     def stop(self):
         """ Stop the process if it is running. """
         if self.pid:
-            Process.try_send(self.pid, Command("stop"))
+            try:
+                Process.try_send(self.pid, Command("stop"))
+            except ProcessKilled:
+                Process.kill(self.pid)
             self.pid = None
     
     def initState(self, state):
@@ -611,9 +614,6 @@ class ProcessBase(object):
             while True:
                 m = Process.receive()
                 self.handleMessage(m, state)
-        except ProcessExit as e:
-            if e.reason is not None:
-                raise
         finally:
             self.cleanup(state)
     
@@ -624,7 +624,7 @@ class ProcessBase(object):
     
     def __enter__(self):
         """ Start the new process if it is not already running. """
-        self.start()
+        self.start_linked()
         return self
     
     def __exit__(self, type, val, tb):
