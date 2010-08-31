@@ -23,6 +23,8 @@ import unittest
 import threading
 from gnutls.connection import OpenPGPCredentials, DHParams
 from gnutls.crypto import OpenPGPCertificate, OpenPGPPrivateKey
+from gnutls.library.types import gnutls_log_func
+from gnutls.library.functions import gnutls_global_set_log_function, gnutls_global_set_log_level
 from spark.core import *
 from spark.messaging import *
 from spark.tests.common import run_tests, processTimeout, assertMatch, testFilePath
@@ -131,6 +133,10 @@ class SecureTcpIoTest(unittest.TestCase):
     
     @processTimeout(2.0)
     def testSecureConnection(self):
+        # enable GnuTLS logging
+        log_func_ptr = gnutls_log_func(lambda level, message: Process.logger().info(message.rstrip()))
+        gnutls_global_set_log_function(log_func_ptr)
+        gnutls_global_set_log_level(5)
         with TestSecureTcpSocket(ServerSecureTcpReceiver, 'barney.pub.gpg', 'barney.priv.gpg') as server:
             server.listening.suscribe()
             server.connected.suscribe()
