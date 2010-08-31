@@ -20,6 +20,7 @@ keyring = OpenPGPKeyring(open('pubring.gpg').read())
 cert = OpenPGPCertificate(open('barney.pub.gpg').read())
 key = OpenPGPPrivateKey(open('barney.priv.gpg').read())
 cred = OpenPGPCredentials(cert, key)
+cred.attach_dh_params()
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

@@ -38,6 +38,7 @@ class SecureTcpSocket(TcpSocket):
     def initState(self, state):
         super(SecureTcpSocket, self).initState(state)
         state.cred = OpenPGPCredentials(self.cert, self.key)
+        state.cred.attach_dh_params()
         state.peer_cert = None
     
     def initPatterns(self, loop, state):
