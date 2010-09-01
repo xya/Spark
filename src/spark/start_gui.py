@@ -73,7 +73,7 @@ class GuiProcess(QObject):
 
 class MessageReceivedEvent(QEvent):
     """ A message was received by a process. """
-    Type = QEvent.registerEventType()
+    Type = QEvent.Type(QEvent.registerEventType())
     def __init__(self, m):
         super(MessageReceivedEvent, self).__init__(MessageReceivedEvent.Type)
         self.m = m

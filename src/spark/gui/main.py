@@ -180,7 +180,7 @@ class MainWindow(QMainWindow):
     
     def initTrayIcon(self):
         self.trayIcon = QSystemTrayIcon(self)
-        self.trayIcon.setIcon(QIcon(QPixmap(iconPath("emblems/emblem-new", 24))))
+        self.trayIcon.setIcon(QIcon(QPixmap(iconPath("apps/spark", 24))))
         self.trayIcon.setToolTip(self.windowTitle())
         self.trayMenu = QMenu(self)
         quit = QAction("Quit", self)
